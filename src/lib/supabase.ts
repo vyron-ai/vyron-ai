@@ -6,9 +6,12 @@ const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ?? ""
 const supabaseUrl = rawUrl.replace(/\/(rest|auth|storage|realtime)(\/.*)?$/, "").replace(/\/$/, "");
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error(
+  console.warn(
     "[VYRON AI] Supabase credentials are missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment secrets."
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(
+  supabaseUrl || "https://placeholder.supabase.co",
+  supabaseAnonKey || "placeholder-anon-key"
+);
