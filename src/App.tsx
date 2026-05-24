@@ -1,5 +1,4 @@
-import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
-import { useEffect } from "react";
+import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -24,33 +23,35 @@ const Spinner = () => (
   </div>
 );
 
+/**
+ * Protected route — requires auth.
+ * While loading: show spinner.
+ * After loading: if no user, redirect to /login.
+ * If user: render the component.
+ * Key: never re-mount the component once rendered (no intermediate Spinner when user exists).
+ */
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, loading } = useAuth();
-  const [, navigate] = useLocation();
-
-  useEffect(() => {
-    if (!loading && !user) {
-      navigate("/login");
-    }
-  }, [loading, user, navigate]);
+  const [location] = useLocation();
 
   if (loading) return <Spinner />;
-  if (!user) return <Spinner />;
+  if (!user) return <Redirect to={`/login`} />;
   return <Component />;
 }
 
+/**
+ * Public-only route — redirects logged-in users away.
+ * While loading: show spinner.
+ * After loading: if user exists, redirect to /projects.
+ * If no user: render the component.
+ * Key: once the component mounts (no user), never unmount it due to auth state changes
+ *      until a deliberate navigation happens. This keeps form inputs stable.
+ */
 function PublicOnlyRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, loading } = useAuth();
-  const [, navigate] = useLocation();
-
-  useEffect(() => {
-    if (!loading && user) {
-      navigate("/projects");
-    }
-  }, [loading, user, navigate]);
 
   if (loading) return <Spinner />;
-  if (user) return <Spinner />;
+  if (user) return <Redirect to="/projects" />;
   return <Component />;
 }
 
@@ -91,7 +92,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+        <WouterRouter base="">
           <AuthProvider>
             <Router />
             <Toaster />

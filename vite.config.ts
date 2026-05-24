@@ -25,6 +25,16 @@ export default defineConfig({
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
+    watch: {
+      // Exclude Replit internal state dirs and non-source files from triggering reloads
+      ignored: [
+        "**/.local/**",
+        "**/supabase/**",
+        "**/.git/**",
+        "**/node_modules/**",
+        "**/dist/**",
+      ],
+    },
     proxy: {
       "/api": {
         target: "http://localhost:3001",
