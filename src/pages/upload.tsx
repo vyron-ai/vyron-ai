@@ -1,8 +1,9 @@
 import { useRef, useState, useCallback } from "react";
+import { useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
   UploadCloud, Info, Check, X, CircleDashed,
-  AlertCircle, Copy, CheckCheck, ExternalLink,
+  AlertCircle, Copy, CheckCheck, ExternalLink, FolderKanban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useVideoUpload, UploadJob } from "@/hooks/useVideoUpload";
@@ -69,13 +70,14 @@ function CopyButton({ text }: { text: string }) {
 }
 
 export default function UploadPage() {
+  const [, navigate] = useLocation();
   const [quality, setQuality] = useState("1080p HD");
   const [settings, setSettings] = useState({
     noise: true, sharpness: true, color: true, framerate: false,
   });
   const [dragging, setDragging] = useState(false);
-  const [bucketError, setBucketError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
   const { jobs, addFiles, cancelJob, removeJob, activeCount, doneCount } = useVideoUpload();
 
   const toggleSetting = (key: keyof typeof settings) =>
@@ -88,10 +90,7 @@ export default function UploadPage() {
         if (f.size > 2 * 1024 * 1024 * 1024) return false;
         return true;
       });
-      if (valid.length) {
-        setBucketError(false);
-        addFiles(valid);
-      }
+      if (valid.length) addFiles(valid);
     },
     [addFiles]
   );
@@ -113,6 +112,7 @@ export default function UploadPage() {
   };
 
   const hasError = jobs.some((j) => j.status === "error");
+  const hasUploaded = jobs.some((j) => j.status === "done");
 
   return (
     <AppLayout title="Video AI">
@@ -156,16 +156,18 @@ export default function UploadPage() {
             />
           </div>
 
-          {/* Bucket setup guide — shown only when upload fails with bucket error */}
+          {/* Storage bucket error guide */}
           {hasError && (
             <div className="flex flex-col gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
               <div className="flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                 <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium text-amber-300">Storage bucket not found</p>
+                  <p className="text-sm font-medium text-amber-300">Upload failed</p>
                   <p className="text-xs text-muted-foreground">
-                    Create a <strong className="text-foreground">videos</strong> bucket in your Supabase project, then enable the policy:
-                    <br /><code className="text-primary text-[11px]">authenticated users → INSERT → videos/*</code>
+                    Make sure you have a <strong className="text-foreground">videos</strong> bucket in Supabase Storage
+                    with a policy allowing authenticated users to upload.
+                    <br />
+                    <code className="text-primary text-[11px]">authenticated → INSERT → videos/*</code>
                   </p>
                 </div>
               </div>
@@ -178,6 +180,27 @@ export default function UploadPage() {
                 <ExternalLink className="w-3 h-3" /> Open Supabase Storage →
               </a>
             </div>
+          )}
+
+          {/* View Projects CTA — shown when at least one upload succeeds */}
+          {hasUploaded && (
+            <button
+              onClick={() => navigate("/projects")}
+              className="flex items-center justify-between gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/30 hover:bg-green-500/15 transition-colors group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-green-500/20 flex items-center justify-center">
+                  <FolderKanban className="w-5 h-5 text-green-400" />
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-semibold text-green-300">
+                    {doneCount} video{doneCount !== 1 ? "s" : ""} uploaded successfully
+                  </p>
+                  <p className="text-xs text-muted-foreground">Click to view your projects →</p>
+                </div>
+              </div>
+              <ExternalLink className="w-4 h-4 text-green-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+            </button>
           )}
 
           {/* Policy note */}
@@ -202,7 +225,7 @@ export default function UploadPage() {
                   <span className="text-sm font-medium">{label}</span>
                   <div
                     className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${settings[key as keyof typeof settings] ? "bg-primary" : "bg-muted"}`}
-                    onClick={() => toggleSetting(key as keyof typeof settings)}
+                    onClick={(e) => { e.stopPropagation(); toggleSetting(key as keyof typeof settings); }}
                     data-testid={`toggle-${key}`}
                   >
                     <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform ${settings[key as keyof typeof settings] ? "translate-x-5" : "translate-x-1"}`} />
@@ -225,11 +248,12 @@ export default function UploadPage() {
             <Button
               className="w-full bg-primary text-primary-foreground hover:bg-primary/90 electric-glow mt-4"
               size="lg"
-              disabled={activeCount === 0 && jobs.length === 0}
               onClick={() => fileInputRef.current?.click()}
               data-testid="btn-start"
             >
-              {activeCount > 0 ? `Uploading ${activeCount} file${activeCount > 1 ? "s" : ""}…` : "Select Files to Upload"}
+              {activeCount > 0
+                ? `Uploading ${activeCount} file${activeCount > 1 ? "s" : ""}…`
+                : "Select Files to Upload"}
             </Button>
           </div>
         </div>
@@ -263,7 +287,10 @@ export default function UploadPage() {
                       <span className="font-medium text-sm truncate max-w-[200px]" title={job.name}>
                         {job.name}
                       </span>
-                      <span className="text-xs text-muted-foreground">{job.size}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {job.size}
+                        {job.durationSeconds ? ` · ${Math.floor(job.durationSeconds / 60)}:${String(job.durationSeconds % 60).padStart(2, "0")}` : ""}
+                      </span>
                       {job.status === "error" && job.error && (
                         <span className="text-xs text-destructive mt-0.5">{job.error}</span>
                       )}
@@ -321,6 +348,18 @@ export default function UploadPage() {
               </div>
             </div>
           </div>
+
+          {/* Go to Projects */}
+          {hasUploaded && (
+            <Button
+              variant="outline"
+              className="w-full gap-2 border-primary/30 text-primary hover:bg-primary/10"
+              onClick={() => navigate("/projects")}
+            >
+              <FolderKanban className="w-4 h-4" />
+              View All Projects
+            </Button>
+          )}
         </div>
 
       </div>

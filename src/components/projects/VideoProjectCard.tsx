@@ -2,10 +2,10 @@ import { useRef, useState } from "react";
 import {
   ExternalLink, Copy, Trash2, CheckCheck,
   CheckCircle2, Clock, CircleDashed, AlertCircle, Upload,
-  Film,
+  Film, Timer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { VideoProject, formatProjectDate } from "@/lib/projects";
+import { VideoProject, formatProjectDate, formatDuration } from "@/lib/projects";
 import { formatBytes } from "@/lib/storage";
 
 interface VideoProjectCardProps {
@@ -40,23 +40,19 @@ function VideoThumbnail({ src, fileName }: { src: string; fileName: string }) {
     }
   };
 
-  const handleSeeked = () => {
-    setThumbReady(true);
-  };
-
-  const handleError = () => {
-    setThumbError(true);
-  };
+  const handleSeeked = () => setThumbReady(true);
+  const handleError = () => setThumbError(true);
 
   return (
     <div className="relative w-full h-full">
-      {/* Fallback / placeholder shown until video thumb is ready */}
       {!thumbReady && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/20">
           {thumbError ? (
             <>
               <Film className="w-8 h-8 text-muted-foreground/40" />
-              <span className="text-[10px] text-muted-foreground/60 font-mono truncate px-4 max-w-full text-center">{fileName}</span>
+              <span className="text-[10px] text-muted-foreground/60 font-mono truncate px-4 max-w-full text-center">
+                {fileName}
+              </span>
             </>
           ) : (
             <Film className="w-8 h-8 text-primary/30 animate-pulse" />
@@ -78,7 +74,6 @@ function VideoThumbnail({ src, fileName }: { src: string; fileName: string }) {
         />
       )}
 
-      {/* Cinematic gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/20 to-transparent pointer-events-none" />
     </div>
   );
@@ -107,31 +102,38 @@ function CopyUrlButton({ url }: { url: string }) {
 }
 
 export function VideoProjectCard({ project, onDelete }: VideoProjectCardProps) {
-  const { id, file_name, file_url, file_size, status, created_at } = project;
+  const { id, file_name, file_url, file_size, duration_seconds, status, created_at } = project;
+  const duration = formatDuration(duration_seconds);
 
   return (
     <div
       className="glass rounded-xl overflow-hidden border border-border hover:border-primary/40 transition-all duration-300 flex flex-col group"
       data-testid={`project-card-${id}`}
     >
-      {/* Thumbnail area */}
+      {/* Thumbnail */}
       <div className="relative aspect-video bg-card overflow-hidden">
         <VideoThumbnail src={file_url} fileName={file_name} />
 
-        {/* Status badge top-left */}
         <div className="absolute top-2.5 left-2.5 z-10">
           <StatusBadge status={status} />
         </div>
 
-        {/* File size badge bottom-right */}
-        <div className="absolute bottom-2.5 right-2.5 z-10 px-2 py-0.5 rounded bg-black/70 text-[10px] text-white font-mono backdrop-blur-sm">
-          {formatBytes(file_size)}
+        <div className="absolute bottom-2.5 right-2.5 z-10 flex items-center gap-1.5">
+          {duration && (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-black/70 text-[10px] text-white font-mono backdrop-blur-sm">
+              <Timer className="w-3 h-3" />
+              {duration}
+            </span>
+          )}
+          <span className="px-2 py-0.5 rounded bg-black/70 text-[10px] text-white font-mono backdrop-blur-sm">
+            {formatBytes(file_size)}
+          </span>
         </div>
       </div>
 
       {/* Card body */}
       <div className="flex flex-col gap-3 p-4 flex-1">
-        {/* File name + date */}
+        {/* Filename + date */}
         <div className="flex flex-col gap-0.5">
           <h3
             className="font-semibold text-sm leading-snug truncate text-foreground"
@@ -144,7 +146,7 @@ export function VideoProjectCard({ project, onDelete }: VideoProjectCardProps) {
           </p>
         </div>
 
-        {/* Public URL — truncated, monospace */}
+        {/* Public URL */}
         <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-muted/40 border border-border/60">
           <ExternalLink className="w-3 h-3 text-muted-foreground shrink-0" />
           <a
@@ -154,18 +156,13 @@ export function VideoProjectCard({ project, onDelete }: VideoProjectCardProps) {
             className="text-[10px] font-mono text-primary truncate hover:underline min-w-0"
             title={file_url}
           >
-            {file_url.replace(/^https?:\/\//, "").slice(0, 48)}…
+            {file_url.replace(/^https?:\/\//, "").slice(0, 52)}…
           </a>
         </div>
 
-        {/* Action buttons — always visible */}
+        {/* Action buttons */}
         <div className="flex items-center gap-2 mt-auto pt-1">
-          <a
-            href={file_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1"
-          >
+          <a href={file_url} target="_blank" rel="noopener noreferrer" className="flex-1">
             <Button
               variant="default"
               size="sm"

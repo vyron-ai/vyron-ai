@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { uploadVideoXHR, formatBytes } from "@/lib/storage";
+import { uploadVideoXHR, formatBytes, getVideoDuration } from "@/lib/storage";
 import { insertProject } from "@/lib/projects";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -13,6 +13,7 @@ export interface UploadJob {
   progress: number;
   status: UploadStatus;
   publicUrl: string | null;
+  durationSeconds: number | null;
   error: string | null;
 }
 
@@ -39,6 +40,7 @@ export function useVideoUpload(onProjectSaved?: () => void) {
           progress: 0,
           status: "uploading",
           publicUrl: null,
+          durationSeconds: null,
           error: null,
         };
 
@@ -47,6 +49,11 @@ export function useVideoUpload(onProjectSaved?: () => void) {
         const controller = new AbortController();
         abortControllers.current.set(id, controller);
 
+        // Extract duration before uploading
+        getVideoDuration(file).then((durationSeconds) => {
+          updateJob(id, { durationSeconds });
+        });
+
         uploadVideoXHR(
           file,
           userId,
@@ -54,10 +61,10 @@ export function useVideoUpload(onProjectSaved?: () => void) {
           controller.signal
         )
           .then(async ({ publicUrl }) => {
-            updateJob(id, { status: "done", progress: 100, publicUrl });
+            const durationSeconds = await getVideoDuration(file).catch(() => null);
+            updateJob(id, { status: "done", progress: 100, publicUrl, durationSeconds });
             abortControllers.current.delete(id);
 
-            // Save project row to Supabase
             if (user) {
               try {
                 await insertProject({
@@ -65,11 +72,12 @@ export function useVideoUpload(onProjectSaved?: () => void) {
                   file_name: file.name,
                   file_url: publicUrl,
                   file_size: file.size,
+                  duration_seconds: durationSeconds,
                   status: "uploaded",
                 });
                 onProjectSaved?.();
-              } catch {
-                // Row insert failed silently — upload still succeeded
+              } catch (err) {
+                console.warn("[VYRON] Project row insert failed:", err);
               }
             }
           })

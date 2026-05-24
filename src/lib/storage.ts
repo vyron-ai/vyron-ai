@@ -5,6 +5,11 @@ export interface UploadResult {
   publicUrl: string;
 }
 
+function getSupabaseBaseUrl(): string {
+  const raw = (import.meta.env.VITE_SUPABASE_URL as string) ?? "";
+  return raw.replace(/\/(rest|auth|storage|realtime)(\/.*)?$/, "").replace(/\/$/, "");
+}
+
 export function uploadVideoXHR(
   file: File,
   userId: string,
@@ -12,17 +17,19 @@ export function uploadVideoXHR(
   signal: AbortSignal
 ): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
+    const supabaseUrl = getSupabaseBaseUrl();
+    const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ?? "";
+
+    if (!supabaseUrl || supabaseUrl.includes("placeholder")) {
+      reject(new Error("Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your secrets."));
+      return;
+    }
+
     const ext = file.name.split(".").pop() ?? "mp4";
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const path = `${userId}/${Date.now()}-${safeName}`;
 
-    const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string)
-      .replace(/\/(rest|auth|storage|realtime)(\/.*)?$/, "")
-      .replace(/\/$/, "");
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-    const session = supabase.auth.getSession();
-    session.then(({ data }) => {
+    supabase.auth.getSession().then(({ data }) => {
       const token = data.session?.access_token ?? anonKey;
       const url = `${supabaseUrl}/storage/v1/object/videos/${path}`;
 
@@ -72,4 +79,22 @@ export function formatBytes(bytes: number): string {
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+export function getVideoDuration(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      const dur = isFinite(video.duration) ? Math.round(video.duration) : null;
+      URL.revokeObjectURL(url);
+      resolve(dur);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    video.src = url;
+  });
 }
