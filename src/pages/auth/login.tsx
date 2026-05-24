@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Loader2, AlertCircle, Settings2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -34,7 +35,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-4 relative overflow-hidden dark">
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] mix-blend-screen pointer-events-none"></div>
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] mix-blend-screen pointer-events-none" />
 
       <div className="glass-strong border border-border w-full max-w-md p-8 rounded-2xl relative z-10 flex flex-col gap-6">
         <div className="flex flex-col items-center text-center gap-2 mb-2">
@@ -46,6 +47,20 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold">Welcome back</h1>
           <p className="text-muted-foreground text-sm">Sign in to your account to continue</p>
         </div>
+
+        {/* Supabase setup banner */}
+        {!isSupabaseConfigured && (
+          <div className="flex items-start gap-3 px-4 py-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-400 text-sm">
+            <Settings2 className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>
+              <strong>Setup required:</strong> Add{" "}
+              <code className="text-xs bg-amber-500/20 px-1 py-0.5 rounded font-mono">VITE_SUPABASE_URL</code>{" "}
+              and{" "}
+              <code className="text-xs bg-amber-500/20 px-1 py-0.5 rounded font-mono">VITE_SUPABASE_ANON_KEY</code>{" "}
+              to your Replit Secrets, then restart the app.
+            </span>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-start gap-3 px-4 py-3 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive text-sm" data-testid="alert-error">
@@ -117,9 +132,9 @@ export default function LoginPage() {
         </form>
 
         <div className="relative flex items-center py-2">
-          <div className="flex-grow border-t border-border"></div>
+          <div className="flex-grow border-t border-border" />
           <span className="flex-shrink-0 mx-4 text-muted-foreground text-xs uppercase tracking-wider">or</span>
-          <div className="flex-grow border-t border-border"></div>
+          <div className="flex-grow border-t border-border" />
         </div>
 
         <div className="relative group">

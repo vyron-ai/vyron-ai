@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2, Settings2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
@@ -51,7 +52,7 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-4 relative overflow-hidden dark">
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] mix-blend-screen pointer-events-none"></div>
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] mix-blend-screen pointer-events-none" />
 
       <div className="glass-strong border border-border w-full max-w-md p-8 rounded-2xl relative z-10 flex flex-col gap-6">
         <div className="flex flex-col items-center text-center gap-2 mb-2">
@@ -63,6 +64,20 @@ export default function RegisterPage() {
           <h1 className="text-2xl font-bold">Create Account</h1>
           <p className="text-muted-foreground text-sm">Sign up to get started with VYRON AI</p>
         </div>
+
+        {/* Supabase setup banner */}
+        {!isSupabaseConfigured && (
+          <div className="flex items-start gap-3 px-4 py-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-400 text-sm">
+            <Settings2 className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>
+              <strong>Setup required:</strong> Add{" "}
+              <code className="text-xs bg-amber-500/20 px-1 py-0.5 rounded font-mono">VITE_SUPABASE_URL</code>{" "}
+              and{" "}
+              <code className="text-xs bg-amber-500/20 px-1 py-0.5 rounded font-mono">VITE_SUPABASE_ANON_KEY</code>{" "}
+              to your Replit Secrets, then restart the app.
+            </span>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-start gap-3 px-4 py-3 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive text-sm" data-testid="alert-error">
