@@ -14,15 +14,60 @@ import {
   formatMs,
 } from "@/lib/subtitles";
 
+// ── Keyframe styles injected once ────────────────────────────────────────────
+const CINEMATIC_STYLES = `
+@keyframes subtitleFadeUp {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+`;
+
+// ── Merge very short / single-word segments for smoother reading ──────────────
+function mergeShortSegments(
+  segs: SubtitleSegment[],
+  minDurationMs = 950
+): SubtitleSegment[] {
+  if (segs.length <= 1) return segs;
+  const result: SubtitleSegment[] = [];
+  let i = 0;
+  while (i < segs.length) {
+    const seg = segs[i];
+    const dur = seg.end - seg.start;
+    const wordCount = seg.text.trim().split(/\s+/).filter(Boolean).length;
+    if ((dur < minDurationMs || wordCount <= 1) && i < segs.length - 1) {
+      const next = segs[i + 1];
+      result.push({
+        id: seg.id,
+        start: seg.start,
+        end: next.end,
+        text: seg.text.trim() + " " + next.text.trim(),
+      });
+      i += 2;
+    } else {
+      result.push(seg);
+      i++;
+    }
+  }
+  const stillShort = result.some(
+    (s, idx) => idx < result.length - 1 && s.end - s.start < minDurationMs
+  );
+  if (stillShort && result.length < segs.length) {
+    return mergeShortSegments(result, minDurationMs);
+  }
+  return result;
+}
+
 // ── Active-word highlight helper ─────────────────────────────────────────────
 function getActiveWordIndex(seg: SubtitleSegment, currentMs: number): number {
-  const words = seg.text.split(" ").filter(Boolean);
-  const dur = Math.max(seg.end - seg.start, 200);
-  const progress = Math.min(Math.max((currentMs - seg.start) / dur, 0), 1);
+  const words = seg.text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 0;
+  const dur = Math.max(seg.end - seg.start, 300);
+  const elapsed = Math.max(currentMs - seg.start, 0);
+  const progress = Math.min(elapsed / dur, 1);
   return Math.min(words.length - 1, Math.floor(progress * words.length));
 }
 
-// ── Subtitle overlay rendered over the video ─────────────────────────────────
+// ── Cinematic subtitle overlay ────────────────────────────────────────────────
 function SubtitleOverlay({
   segment,
   currentMs,
@@ -31,13 +76,36 @@ function SubtitleOverlay({
   currentMs: number;
 }) {
   if (!segment) return null;
-  const words = segment.text.toLowerCase().split(" ").filter(Boolean);
+
+  const words = segment.text.trim().split(/\s+/).filter(Boolean);
   const activeIdx = getActiveWordIndex(segment, currentMs);
 
   return (
-    <div className="absolute inset-0 flex items-end justify-center pointer-events-none"
-      style={{ paddingLeft: 24, paddingRight: 24, paddingBottom: 72 }}>
-      <div style={{ textAlign: "center", lineHeight: 0.95, fontFamily: "Inter, Helvetica Neue, Arial, sans-serif" }}>
+    <div
+      className="absolute inset-0 pointer-events-none"
+      style={{
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        paddingLeft: 18,
+        paddingRight: 18,
+        paddingBottom: 60,
+      }}
+    >
+      <style>{CINEMATIC_STYLES}</style>
+      <div
+        style={{
+          animation: "subtitleFadeUp 210ms cubic-bezier(0.22,1,0.36,1) both",
+          background: "rgba(0,0,0,0.52)",
+          backdropFilter: "blur(10px)",
+          WebkitBackdropFilter: "blur(10px)",
+          borderRadius: 10,
+          padding: "9px 16px 11px",
+          textAlign: "center",
+          maxWidth: "100%",
+          lineHeight: 1.4,
+        }}
+      >
         {words.map((word, i) => {
           const active = i === activeIdx;
           return (
@@ -46,13 +114,20 @@ function SubtitleOverlay({
               style={{
                 display: "inline-block",
                 marginRight: "0.28em",
-                color: "#ffffff",
-                fontWeight: active ? 850 : 300,
-                fontSize: active ? 30 : 26,
-                letterSpacing: active ? "-0.04em" : "0.01em",
-                opacity: active ? 1 : 0.7,
-                textShadow: "0 2px 24px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,1)",
-                transition: "opacity 220ms ease, font-size 220ms ease, font-weight 220ms ease",
+                marginBottom: "0.08em",
+                color: active ? "#ffffff" : "rgba(255,255,255,0.48)",
+                fontWeight: active ? 700 : 400,
+                fontSize: active ? "clamp(17px, 5.4vw, 25px)" : "clamp(15px, 4.8vw, 22px)",
+                fontFamily: '"Inter", "Helvetica Neue", Arial, sans-serif',
+                letterSpacing: active ? "-0.025em" : "0.008em",
+                textShadow: active
+                  ? "0 2px 24px rgba(0,0,0,1), 0 0 8px rgba(0,0,0,0.9), 0 1px 0 rgba(0,0,0,0.6)"
+                  : "0 1px 8px rgba(0,0,0,0.8)",
+                transform: active ? "scale(1.08)" : "scale(1)",
+                transformOrigin: "center bottom",
+                transition:
+                  "color 150ms ease, transform 150ms cubic-bezier(0.34,1.56,0.64,1), font-weight 150ms ease",
+                willChange: "transform, color",
               }}
             >
               {word}
@@ -92,7 +167,7 @@ export default function SubtitlesPage() {
 
   const [videoUrl, setVideoUrl] = useState(initialUrl);
   const [subtitles, setSubtitles] = useState<SubtitleSegment[]>(() =>
-    initialUrl ? loadSubtitlesForUrl(initialUrl) : []
+    initialUrl ? mergeShortSegments(loadSubtitlesForUrl(initialUrl)) : []
   );
   const [currentMs, setCurrentMs] = useState(0);
   const [generating, setGenerating] = useState(false);
@@ -139,7 +214,7 @@ export default function SubtitlesPage() {
         throw new Error((data.error as string) ?? `Server error ${res.status}`);
       }
 
-      const segs = (data.subtitles as SubtitleSegment[]) ?? [];
+      const segs = mergeShortSegments((data.subtitles as SubtitleSegment[]) ?? []);
       setSubtitles(segs);
       saveSubtitleSession(videoUrl.trim(), segs);
     } catch (err) {
@@ -390,7 +465,12 @@ export default function SubtitlesPage() {
                 </div>
               )}
 
-              <SubtitleOverlay segment={currentSegment} currentMs={currentMs} />
+              {/* key forces remount → re-triggers CSS animation on each new segment */}
+              <SubtitleOverlay
+                key={currentSegment?.id ?? -1}
+                segment={currentSegment}
+                currentMs={currentMs}
+              />
             </div>
 
             {/* Preview legend */}
