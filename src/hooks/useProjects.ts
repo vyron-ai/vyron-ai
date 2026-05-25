@@ -2,21 +2,36 @@ import { useState, useEffect, useCallback } from "react";
 import { VideoProject, fetchProjects, deleteProject } from "@/lib/projects";
 import { useAuth } from "@/contexts/AuthContext";
 
-export function useProjects() {
+export interface UseProjectsResult {
+  projects: VideoProject[];
+  loading: boolean;
+  error: string | null;
+  isLocalFallback: boolean;
+  reload: () => void;
+  remove: (id: string) => void;
+}
+
+export function useProjects(): UseProjectsResult {
   const { user } = useAuth();
   const [projects, setProjects] = useState<VideoProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isLocalFallback, setIsLocalFallback] = useState(false);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const rows = await fetchProjects();
-      setProjects(rows);
+      const result = await fetchProjects();
+      setProjects(result.projects);
+      setIsLocalFallback(result.isLocalFallback);
     } catch (err) {
       setError((err as Error).message);
+      setIsLocalFallback(false);
     } finally {
       setLoading(false);
     }
@@ -38,5 +53,5 @@ export function useProjects() {
     [load]
   );
 
-  return { projects, loading, error, reload: load, remove };
+  return { projects, loading, error, isLocalFallback, reload: load, remove };
 }
