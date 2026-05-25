@@ -96,11 +96,11 @@ function SubtitleOverlay({
       <div
         style={{
           animation: "subtitleFadeUp 210ms cubic-bezier(0.22,1,0.36,1) both",
-          background: "rgba(0,0,0,0.52)",
-          backdropFilter: "blur(10px)",
-          WebkitBackdropFilter: "blur(10px)",
-          borderRadius: 10,
-          padding: "9px 16px 11px",
+          background: "rgba(0,0,0,0.38)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+          borderRadius: 14,
+          padding: "7px 14px 9px",
           textAlign: "center",
           maxWidth: "100%",
           lineHeight: 1.4,
