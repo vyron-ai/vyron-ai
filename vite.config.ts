@@ -6,6 +6,192 @@ import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import type { IncomingMessage, ServerResponse } from "http";
 
 /**
+ * AssemblyAI subtitle generation API — server-side Vite middleware.
+ *
+ * SECURITY: reads ASSEMBLYAI_API_KEY from process.env only (never VITE_*).
+ * The key is never embedded in the browser bundle.
+ *
+ * Flow: POST /api/subtitles/generate { videoUrl }
+ *   1. Submit transcript request to AssemblyAI
+ *   2. Poll until completed (max 3 min)
+ *   3. Group words into ~6-word subtitle segments
+ *   4. Return { success, subtitles: [{ id, start, end, text }] }
+ */
+function assemblyAIPlugin(): Plugin {
+  return {
+    name: "assemblyai-subtitles-api",
+    configureServer(server) {
+      server.middlewares.use(
+        "/api/subtitles/generate",
+        async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+          if (req.method !== "POST") return next();
+
+          res.setHeader("Content-Type", "application/json");
+
+          const apiKey = process.env.ASSEMBLYAI_API_KEY ?? "";
+          if (!apiKey || apiKey.includes("placeholder")) {
+            res.writeHead(400);
+            res.end(
+              JSON.stringify({
+                success: false,
+                error:
+                  "ASSEMBLYAI_API_KEY is not set. Add it to Replit Secrets " +
+                  "(no VITE_ prefix — it must stay server-only), then restart the app.",
+              })
+            );
+            return;
+          }
+
+          // Parse request body
+          let rawBody = "";
+          for await (const chunk of req as AsyncIterable<Buffer>) {
+            rawBody += chunk.toString();
+          }
+
+          let videoUrl = "";
+          try {
+            ({ videoUrl } = JSON.parse(rawBody));
+          } catch {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, error: "Invalid JSON body" }));
+            return;
+          }
+
+          if (!videoUrl?.trim()) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, error: "videoUrl is required" }));
+            return;
+          }
+
+          const AAI_BASE = "https://api.assemblyai.com/v2";
+          const headers = {
+            Authorization: apiKey,
+            "Content-Type": "application/json",
+          };
+
+          try {
+            // 1. Submit transcription job
+            const submitRes = await fetch(`${AAI_BASE}/transcript`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                audio_url: videoUrl.trim(),
+                punctuate: true,
+                format_text: true,
+                language_detection: true,
+              }),
+            });
+
+            const submitData = (await submitRes.json()) as {
+              id?: string;
+              error?: string;
+              status?: string;
+            };
+
+            if (!submitRes.ok || submitData.error) {
+              throw new Error(
+                submitData.error ??
+                  `AssemblyAI submit failed: HTTP ${submitRes.status}`
+              );
+            }
+
+            const transcriptId = submitData.id!;
+
+            // 2. Poll until completed or error (max 60 × 3s = 3 min)
+            type Word = { text: string; start: number; end: number };
+            type TranscriptResult = {
+              status: string;
+              error?: string;
+              words?: Word[];
+            };
+
+            let result: TranscriptResult | null = null;
+            const MAX_POLLS = 60;
+
+            for (let i = 0; i < MAX_POLLS; i++) {
+              await new Promise((r) => setTimeout(r, 3000));
+
+              const pollRes = await fetch(
+                `${AAI_BASE}/transcript/${transcriptId}`,
+                { headers }
+              );
+              result = (await pollRes.json()) as TranscriptResult;
+
+              if (result.status === "completed") break;
+              if (result.status === "error") {
+                throw new Error(
+                  result.error ?? "AssemblyAI transcription error"
+                );
+              }
+            }
+
+            if (!result || result.status !== "completed") {
+              throw new Error(
+                "Transcription timed out after 3 minutes. Try a shorter video."
+              );
+            }
+
+            // 3. Group words → subtitle segments (~6 words, break on sentence-end punctuation)
+            const words: Word[] = result.words ?? [];
+
+            if (words.length === 0) {
+              res.writeHead(200);
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  subtitles: [],
+                  warning: "No words detected in the audio.",
+                })
+              );
+              return;
+            }
+
+            const subtitles: { id: number; start: number; end: number; text: string }[] = [];
+            let segId = 0;
+            let i = 0;
+
+            while (i < words.length) {
+              const chunk: string[] = [];
+              const startMs = words[i].start;
+              let endMs = words[i].end;
+
+              while (i < words.length && chunk.length < 6) {
+                chunk.push(words[i].text);
+                endMs = words[i].end;
+                const endsPhrase = /[.!?]$/.test(words[i].text);
+                i++;
+                if (endsPhrase) break;
+              }
+
+              if (chunk.length > 0) {
+                subtitles.push({
+                  id: segId++,
+                  start: startMs,
+                  end: endMs,
+                  text: chunk.join(" "),
+                });
+              }
+            }
+
+            res.writeHead(200);
+            res.end(JSON.stringify({ success: true, subtitles }));
+          } catch (err) {
+            res.writeHead(500);
+            res.end(
+              JSON.stringify({
+                success: false,
+                error:
+                  err instanceof Error ? err.message : "Unexpected server error",
+              })
+            );
+          }
+        }
+      );
+    },
+  };
+}
+
+/**
  * Vite dev-server plugin: exposes /api/setup-bucket as a Node.js middleware.
  *
  * SECURITY: reads SUPABASE_SERVICE_ROLE_KEY from process.env (server-side only).
@@ -121,6 +307,7 @@ export default defineConfig({
     tailwindcss(),
     runtimeErrorOverlay(),
     supabaseSetupPlugin(),
+    assemblyAIPlugin(),
   ],
   resolve: {
     alias: {

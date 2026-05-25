@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
+import { useLocation } from "wouter";
 import {
   ExternalLink, Copy, Trash2, CheckCheck,
   CheckCircle2, Clock, CircleDashed, AlertCircle, Upload,
-  Film, Timer,
+  Film, Timer, Captions,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { VideoProject, formatProjectDate, formatDuration } from "@/lib/projects";
@@ -104,6 +105,7 @@ function CopyUrlButton({ url }: { url: string }) {
 export function VideoProjectCard({ project, onDelete }: VideoProjectCardProps) {
   const { id, file_name, file_url, file_size, duration_seconds, status, created_at } = project;
   const duration = formatDuration(duration_seconds);
+  const [, navigate] = useLocation();
 
   return (
     <div
@@ -161,29 +163,42 @@ export function VideoProjectCard({ project, onDelete }: VideoProjectCardProps) {
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2 mt-auto pt-1">
-          <a href={file_url} target="_blank" rel="noopener noreferrer" className="flex-1">
-            <Button
-              variant="default"
-              size="sm"
-              className="w-full h-8 text-xs gap-1.5 bg-primary/90 hover:bg-primary text-primary-foreground electric-glow"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              Open Video
-            </Button>
-          </a>
+        <div className="flex flex-col gap-2 mt-auto pt-1">
+          <div className="flex items-center gap-2">
+            <a href={file_url} target="_blank" rel="noopener noreferrer" className="flex-1">
+              <Button
+                variant="default"
+                size="sm"
+                className="w-full h-8 text-xs gap-1.5 bg-primary/90 hover:bg-primary text-primary-foreground electric-glow"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open Video
+              </Button>
+            </a>
 
-          <CopyUrlButton url={file_url} />
+            <CopyUrlButton url={file_url} />
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-border hover:border-destructive/30"
+              onClick={() => onDelete?.(id)}
+              title="Delete project"
+              data-testid={`btn-delete-${id}`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          </div>
 
           <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-border hover:border-destructive/30"
-            onClick={() => onDelete?.(id)}
-            title="Delete project"
-            data-testid={`btn-delete-${id}`}
+            variant="outline"
+            size="sm"
+            className="w-full h-8 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+            onClick={() => navigate(`/subtitles?videoUrl=${encodeURIComponent(file_url)}`)}
+            data-testid={`btn-subtitles-${id}`}
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Captions className="w-3.5 h-3.5" />
+            Generate Subtitles
           </Button>
         </div>
       </div>
