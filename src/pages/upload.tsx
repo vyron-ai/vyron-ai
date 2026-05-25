@@ -4,13 +4,102 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import {
   UploadCloud, Info, Check, X, CircleDashed,
   AlertCircle, Copy, CheckCheck, ExternalLink, FolderKanban,
+  CheckCircle2, XCircle, HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useVideoUpload, UploadJob } from "@/hooks/useVideoUpload";
+import { getStorageDiagnostics, UPLOAD_BUCKET } from "@/lib/storage";
+import { useAuth } from "@/contexts/AuthContext";
 
 const ACCEPTED = ["video/mp4", "video/quicktime", "video/x-matroska", "video/webm"];
 const ACCEPT_ATTR = ".mp4,.mov,.mkv,.webm,video/mp4,video/quicktime,video/x-matroska,video/webm";
 
+// ── Supabase Status Panel ────────────────────────────────────────────────────
+function StatusRow({
+  label,
+  ok,
+  detail,
+}: {
+  label: string;
+  ok: boolean | null;
+  detail?: string;
+}) {
+  const Icon =
+    ok === true ? CheckCircle2 : ok === false ? XCircle : HelpCircle;
+  const color =
+    ok === true
+      ? "text-green-400"
+      : ok === false
+      ? "text-destructive"
+      : "text-muted-foreground";
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={`flex items-center gap-1 font-medium ${color}`}>
+        <Icon className="w-3.5 h-3.5 shrink-0" />
+        {detail ?? (ok ? "Yes" : "No")}
+      </span>
+    </div>
+  );
+}
+
+function SupabaseStatusPanel({ isDemoMode }: { isDemoMode: boolean }) {
+  const diag = getStorageDiagnostics();
+
+  return (
+    <div className="glass border border-border rounded-xl p-5 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-bold text-sm">Supabase Connection</h3>
+        <span
+          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+            diag.clientReady
+              ? "text-green-400 border-green-500/40 bg-green-500/10"
+              : "text-destructive border-destructive/40 bg-destructive/10"
+          }`}
+        >
+          {diag.clientReady ? "Connected" : "Not configured"}
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <StatusRow label="VITE_SUPABASE_URL loaded" ok={diag.urlLoaded} />
+        <StatusRow label="VITE_SUPABASE_ANON_KEY loaded" ok={diag.keyLoaded} />
+        <StatusRow label="Supabase client ready" ok={diag.clientReady} />
+        <StatusRow label="Upload bucket" ok={null} detail={`"${diag.bucket}"`} />
+        <StatusRow
+          label="Auth mode"
+          ok={null}
+          detail={isDemoMode ? "Demo (anon token)" : "Authenticated"}
+        />
+      </div>
+
+      {!diag.clientReady && (
+        <p className="text-[11px] text-muted-foreground border-t border-border pt-2 mt-1">
+          Add <code className="text-primary bg-primary/10 px-1 rounded font-mono">VITE_SUPABASE_URL</code> and{" "}
+          <code className="text-primary bg-primary/10 px-1 rounded font-mono">VITE_SUPABASE_ANON_KEY</code> in{" "}
+          <strong>Tools → Secrets</strong>, then click <strong>Restart</strong>.
+        </p>
+      )}
+
+      {diag.clientReady && isDemoMode && (
+        <p className="text-[11px] text-amber-400 border-t border-border pt-2 mt-1">
+          Demo mode uses the anon token. Uploads require your Supabase{" "}
+          <strong>"{UPLOAD_BUCKET}"</strong> bucket to allow anonymous INSERT, or sign in
+          with a real account for full access.
+        </p>
+      )}
+
+      {diag.clientReady && !isDemoMode && (
+        <p className="text-[11px] text-muted-foreground border-t border-border pt-2 mt-1">
+          Ensure a bucket named <strong>"{UPLOAD_BUCKET}"</strong> exists in Supabase Storage
+          with an <strong>INSERT</strong> policy for authenticated users.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Upload helpers ───────────────────────────────────────────────────────────
 function statusBadge(job: UploadJob) {
   if (job.status === "done")
     return (
@@ -69,8 +158,10 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+// ── Page ─────────────────────────────────────────────────────────────────────
 export default function UploadPage() {
   const [, navigate] = useLocation();
+  const { isDemoMode } = useAuth();
   const [quality, setQuality] = useState("1080p HD");
   const [settings, setSettings] = useState({
     noise: true, sharpness: true, color: true, framerate: false,
@@ -121,6 +212,9 @@ export default function UploadPage() {
         {/* Left Column */}
         <div className="flex flex-col gap-6">
 
+          {/* Supabase status panel — always visible for diagnostics */}
+          <SupabaseStatusPanel isDemoMode={isDemoMode} />
+
           {/* Dropzone */}
           <div
             className={`glass-strong border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center text-center gap-4 transition-colors cursor-pointer group relative overflow-hidden
@@ -156,33 +250,42 @@ export default function UploadPage() {
             />
           </div>
 
-          {/* Storage bucket error guide */}
+          {/* Exact error reason — shown when any job fails */}
           {hasError && (
-            <div className="flex flex-col gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/30">
+            <div className="flex flex-col gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/30">
               <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium text-amber-300">Upload failed</p>
-                  <p className="text-xs text-muted-foreground">
-                    Make sure you have a <strong className="text-foreground">videos</strong> bucket in Supabase Storage
-                    with a policy allowing authenticated users to upload.
-                    <br />
-                    <code className="text-primary text-[11px]">authenticated → INSERT → videos/*</code>
-                  </p>
+                <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-sm font-semibold text-destructive">Upload failed — error details:</p>
+                  {jobs.filter((j) => j.status === "error").map((j) => (
+                    <p key={j.id} className="text-xs text-muted-foreground font-mono bg-background/50 px-2 py-1.5 rounded border border-border">
+                      <span className="text-foreground font-medium">{j.name}:</span> {j.error ?? "Unknown error"}
+                    </p>
+                  ))}
                 </div>
               </div>
-              <a
-                href="https://supabase.com/dashboard/project/_/storage/buckets"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="self-start flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-              >
-                <ExternalLink className="w-3 h-3" /> Open Supabase Storage →
-              </a>
+              <div className="flex gap-3 pt-1 flex-wrap">
+                <a
+                  href="https://supabase.com/dashboard/project/_/storage/buckets"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                >
+                  <ExternalLink className="w-3 h-3" /> Supabase Storage Buckets
+                </a>
+                <a
+                  href="https://supabase.com/dashboard/project/_/storage/policies"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                >
+                  <ExternalLink className="w-3 h-3" /> Storage Policies
+                </a>
+              </div>
             </div>
           )}
 
-          {/* View Projects CTA — shown when at least one upload succeeds */}
+          {/* View Projects CTA */}
           {hasUploaded && (
             <button
               onClick={() => navigate("/projects")}
@@ -289,10 +392,14 @@ export default function UploadPage() {
                       </span>
                       <span className="text-xs text-muted-foreground">
                         {job.size}
-                        {job.durationSeconds ? ` · ${Math.floor(job.durationSeconds / 60)}:${String(job.durationSeconds % 60).padStart(2, "0")}` : ""}
+                        {job.durationSeconds
+                          ? ` · ${Math.floor(job.durationSeconds / 60)}:${String(job.durationSeconds % 60).padStart(2, "0")}`
+                          : ""}
                       </span>
                       {job.status === "error" && job.error && (
-                        <span className="text-xs text-destructive mt-0.5">{job.error}</span>
+                        <span className="text-xs text-destructive mt-0.5 break-words max-w-[280px]">
+                          {job.error}
+                        </span>
                       )}
                       {job.status === "done" && job.publicUrl && (
                         <div className="flex items-center gap-2 mt-1">
@@ -349,7 +456,6 @@ export default function UploadPage() {
             </div>
           </div>
 
-          {/* Go to Projects */}
           {hasUploaded && (
             <Button
               variant="outline"

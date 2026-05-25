@@ -26,9 +26,10 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
     watch: {
-      // Exclude Replit internal state dirs and non-source files from triggering reloads
+      // Exclude Replit internal state/cache dirs and non-source files from triggering reloads
       ignored: [
         "**/.local/**",
+        "**/.cache/**",
         "**/supabase/**",
         "**/.git/**",
         "**/node_modules/**",

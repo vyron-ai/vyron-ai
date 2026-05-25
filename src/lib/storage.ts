@@ -1,4 +1,6 @@
-import { supabase } from "@/lib/supabase";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+
+export const UPLOAD_BUCKET = "videos";
 
 export interface UploadResult {
   path: string;
@@ -10,28 +12,47 @@ function getSupabaseBaseUrl(): string {
   return raw.replace(/\/(rest|auth|storage|realtime)(\/.*)?$/, "").replace(/\/$/, "");
 }
 
+/** Diagnostics — never returns actual secret values */
+export function getStorageDiagnostics() {
+  const urlRaw = (import.meta.env.VITE_SUPABASE_URL as string) ?? "";
+  const keyRaw = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ?? "";
+  return {
+    urlLoaded: Boolean(urlRaw) && !urlRaw.includes("placeholder"),
+    keyLoaded: Boolean(keyRaw) && !keyRaw.includes("placeholder"),
+    clientReady: isSupabaseConfigured,
+    bucket: UPLOAD_BUCKET,
+  };
+}
+
 export function uploadVideoXHR(
   file: File,
   userId: string,
   onProgress: (percent: number) => void,
-  signal: AbortSignal
+  signal: AbortSignal,
+  /** Optional: pass a JWT to use instead of the session token (e.g. for demo mode) */
+  overrideToken?: string
 ): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
     const supabaseUrl = getSupabaseBaseUrl();
     const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ?? "";
 
     if (!supabaseUrl || supabaseUrl.includes("placeholder")) {
-      reject(new Error("Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your secrets."));
+      reject(
+        new Error(
+          "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your Replit Secrets, then restart the app."
+        )
+      );
       return;
     }
 
-    const ext = file.name.split(".").pop() ?? "mp4";
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const ext = file.name.split(".").pop() ?? "mp4";
     const path = `${userId}/${Date.now()}-${safeName}`;
 
     supabase.auth.getSession().then(({ data }) => {
-      const token = data.session?.access_token ?? anonKey;
-      const url = `${supabaseUrl}/storage/v1/object/videos/${path}`;
+      // Prefer: real session token → override token → anon key
+      const token = data.session?.access_token ?? overrideToken ?? anonKey;
+      const url = `${supabaseUrl}/storage/v1/object/${UPLOAD_BUCKET}/${path}`;
 
       const xhr = new XMLHttpRequest();
 
@@ -48,20 +69,41 @@ export function uploadVideoXHR(
 
       xhr.addEventListener("load", () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          const publicUrl = `${supabaseUrl}/storage/v1/object/public/videos/${path}`;
+          const publicUrl = `${supabaseUrl}/storage/v1/object/public/${UPLOAD_BUCKET}/${path}`;
           resolve({ path, publicUrl });
         } else {
-          let msg = `Upload failed (${xhr.status})`;
+          let msg = `HTTP ${xhr.status}`;
           try {
             const body = JSON.parse(xhr.responseText);
+            // Supabase returns { error, message, statusCode }
             msg = body.message ?? body.error ?? msg;
-          } catch {}
+          } catch {
+            if (xhr.responseText) msg += ` — ${xhr.responseText.slice(0, 200)}`;
+          }
+
+          // Translate common Supabase storage errors to actionable messages
+          if (xhr.status === 404) {
+            msg = `Bucket "${UPLOAD_BUCKET}" not found. Create it in Supabase → Storage → New Bucket named "videos".`;
+          } else if (xhr.status === 403 || xhr.status === 401) {
+            msg = `Permission denied (${xhr.status}). Add an INSERT policy on the "${UPLOAD_BUCKET}" bucket for authenticated users in Supabase → Storage → Policies.`;
+          } else if (xhr.status === 413) {
+            msg = "File too large. Check your Supabase storage limits.";
+          }
+
           reject(new Error(msg));
         }
       });
 
-      xhr.addEventListener("error", () => reject(new Error("Network error during upload")));
-      xhr.addEventListener("abort", () => reject(new DOMException("Upload aborted", "AbortError")));
+      xhr.addEventListener("error", () =>
+        reject(
+          new Error(
+            "Network error. Check your VITE_SUPABASE_URL is correct and the Supabase project is online."
+          )
+        )
+      );
+      xhr.addEventListener("abort", () =>
+        reject(new DOMException("Upload aborted", "AbortError"))
+      );
 
       xhr.open("POST", url);
       xhr.setRequestHeader("apikey", anonKey);
