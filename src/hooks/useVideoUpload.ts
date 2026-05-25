@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { uploadVideoXHR, formatBytes, getVideoDuration } from "@/lib/storage";
+import { uploadVideoXHR, formatBytes, getVideoDuration, DEFAULT_BUCKET } from "@/lib/storage";
 import { insertProject } from "@/lib/projects";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -13,11 +13,15 @@ export interface UploadJob {
   progress: number;
   status: UploadStatus;
   publicUrl: string | null;
+  bucket: string | null;
   durationSeconds: number | null;
   error: string | null;
 }
 
-export function useVideoUpload(onProjectSaved?: () => void) {
+export function useVideoUpload(
+  bucket: string = DEFAULT_BUCKET,
+  onProjectSaved?: () => void
+) {
   const [jobs, setJobs] = useState<UploadJob[]>([]);
   const { user } = useAuth();
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
@@ -33,13 +37,13 @@ export function useVideoUpload(onProjectSaved?: () => void) {
       for (const file of files) {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         const job: UploadJob = {
-          id,
-          file,
+          id, file,
           name: file.name,
           size: formatBytes(file.size),
           progress: 0,
           status: "uploading",
           publicUrl: null,
+          bucket: null,
           durationSeconds: null,
           error: null,
         };
@@ -49,7 +53,6 @@ export function useVideoUpload(onProjectSaved?: () => void) {
         const controller = new AbortController();
         abortControllers.current.set(id, controller);
 
-        // Extract duration before uploading
         getVideoDuration(file).then((durationSeconds) => {
           updateJob(id, { durationSeconds });
         });
@@ -58,11 +61,12 @@ export function useVideoUpload(onProjectSaved?: () => void) {
           file,
           userId,
           (percent) => updateJob(id, { progress: percent }),
-          controller.signal
+          controller.signal,
+          bucket
         )
-          .then(async ({ publicUrl }) => {
+          .then(async ({ publicUrl, bucket: usedBucket }) => {
             const durationSeconds = await getVideoDuration(file).catch(() => null);
-            updateJob(id, { status: "done", progress: 100, publicUrl, durationSeconds });
+            updateJob(id, { status: "done", progress: 100, publicUrl, bucket: usedBucket, durationSeconds });
             abortControllers.current.delete(id);
 
             if (user) {
@@ -91,7 +95,7 @@ export function useVideoUpload(onProjectSaved?: () => void) {
           });
       }
     },
-    [user, updateJob, onProjectSaved]
+    [user, bucket, updateJob, onProjectSaved]
   );
 
   const cancelJob = useCallback((id: string) => {

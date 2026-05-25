@@ -1,15 +1,19 @@
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
-export const UPLOAD_BUCKET = "videos";
+export const DEFAULT_BUCKET = "videos";
 
 export interface UploadResult {
   path: string;
   publicUrl: string;
+  bucket: string;
 }
 
 function getSupabaseBaseUrl(): string {
   const raw = (import.meta.env.VITE_SUPABASE_URL as string) ?? "";
-  return raw.replace(/\/(rest|auth|storage|realtime)(\/.*)?$/, "").replace(/\/$/, "");
+  return raw
+    .trim()
+    .replace(/\/(rest|auth|storage|realtime)(\/.*)?$/, "")
+    .replace(/\/$/, "");
 }
 
 /** Diagnostics — never returns actual secret values */
@@ -17,10 +21,9 @@ export function getStorageDiagnostics() {
   const urlRaw = (import.meta.env.VITE_SUPABASE_URL as string) ?? "";
   const keyRaw = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ?? "";
   return {
-    urlLoaded: Boolean(urlRaw) && !urlRaw.includes("placeholder"),
-    keyLoaded: Boolean(keyRaw) && !keyRaw.includes("placeholder"),
+    urlLoaded: Boolean(urlRaw.trim()) && !urlRaw.includes("placeholder"),
+    keyLoaded: Boolean(keyRaw.trim()) && !keyRaw.includes("placeholder"),
     clientReady: isSupabaseConfigured,
-    bucket: UPLOAD_BUCKET,
   };
 }
 
@@ -29,8 +32,7 @@ export function uploadVideoXHR(
   userId: string,
   onProgress: (percent: number) => void,
   signal: AbortSignal,
-  /** Optional: pass a JWT to use instead of the session token (e.g. for demo mode) */
-  overrideToken?: string
+  bucket: string = DEFAULT_BUCKET
 ): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
     const supabaseUrl = getSupabaseBaseUrl();
@@ -39,9 +41,14 @@ export function uploadVideoXHR(
     if (!supabaseUrl || supabaseUrl.includes("placeholder")) {
       reject(
         new Error(
-          "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your Replit Secrets, then restart the app."
+          "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your Replit Secrets, then restart."
         )
       );
+      return;
+    }
+
+    if (!bucket) {
+      reject(new Error("No storage bucket selected. Choose a bucket in the Supabase Connection panel."));
       return;
     }
 
@@ -50,9 +57,8 @@ export function uploadVideoXHR(
     const path = `${userId}/${Date.now()}-${safeName}`;
 
     supabase.auth.getSession().then(({ data }) => {
-      // Prefer: real session token → override token → anon key
-      const token = data.session?.access_token ?? overrideToken ?? anonKey;
-      const url = `${supabaseUrl}/storage/v1/object/${UPLOAD_BUCKET}/${path}`;
+      const token = data.session?.access_token ?? anonKey;
+      const url = `${supabaseUrl}/storage/v1/object/${bucket}/${path}`;
 
       const xhr = new XMLHttpRequest();
 
@@ -62,44 +68,37 @@ export function uploadVideoXHR(
       });
 
       xhr.upload.addEventListener("progress", (e) => {
-        if (e.lengthComputable) {
-          onProgress(Math.round((e.loaded / e.total) * 100));
-        }
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
       });
 
       xhr.addEventListener("load", () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          const publicUrl = `${supabaseUrl}/storage/v1/object/public/${UPLOAD_BUCKET}/${path}`;
-          resolve({ path, publicUrl });
-        } else {
-          let msg = `HTTP ${xhr.status}`;
-          try {
-            const body = JSON.parse(xhr.responseText);
-            // Supabase returns { error, message, statusCode }
-            msg = body.message ?? body.error ?? msg;
-          } catch {
-            if (xhr.responseText) msg += ` — ${xhr.responseText.slice(0, 200)}`;
-          }
-
-          // Translate common Supabase storage errors to actionable messages
-          if (xhr.status === 404) {
-            msg = `Bucket "${UPLOAD_BUCKET}" not found. Create it in Supabase → Storage → New Bucket named "videos".`;
-          } else if (xhr.status === 403 || xhr.status === 401) {
-            msg = `Permission denied (${xhr.status}). Add an INSERT policy on the "${UPLOAD_BUCKET}" bucket for authenticated users in Supabase → Storage → Policies.`;
-          } else if (xhr.status === 413) {
-            msg = "File too large. Check your Supabase storage limits.";
-          }
-
-          reject(new Error(msg));
+          const publicUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${path}`;
+          resolve({ path, publicUrl, bucket });
+          return;
         }
+
+        let msg = `HTTP ${xhr.status}`;
+        try {
+          const body = JSON.parse(xhr.responseText);
+          msg = body.message ?? body.error ?? msg;
+        } catch {
+          if (xhr.responseText) msg += ` — ${xhr.responseText.slice(0, 200)}`;
+        }
+
+        if (xhr.status === 404) {
+          msg = `Bucket "${bucket}" not found. Create it in Supabase → Storage → New Bucket, or select an existing bucket in the panel above.`;
+        } else if (xhr.status === 403 || xhr.status === 401) {
+          msg = `Permission denied (${xhr.status}) on bucket "${bucket}". Add an INSERT policy for authenticated users in Supabase → Storage → Policies.`;
+        } else if (xhr.status === 413) {
+          msg = "File too large. Check your Supabase storage limits.";
+        }
+
+        reject(new Error(msg));
       });
 
       xhr.addEventListener("error", () =>
-        reject(
-          new Error(
-            "Network error. Check your VITE_SUPABASE_URL is correct and the Supabase project is online."
-          )
-        )
+        reject(new Error("Network error — check VITE_SUPABASE_URL and that the Supabase project is online."))
       );
       xhr.addEventListener("abort", () =>
         reject(new DOMException("Upload aborted", "AbortError"))
@@ -133,10 +132,7 @@ export function getVideoDuration(file: File): Promise<number | null> {
       URL.revokeObjectURL(url);
       resolve(dur);
     };
-    video.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(null);
-    };
+    video.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
     video.src = url;
   });
 }

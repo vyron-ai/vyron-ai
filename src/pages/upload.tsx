@@ -2,36 +2,24 @@ import { useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
-  UploadCloud, Info, Check, X, CircleDashed,
-  AlertCircle, Copy, CheckCheck, ExternalLink, FolderKanban,
-  CheckCircle2, XCircle, HelpCircle,
+  UploadCloud, Info, Check, X, CircleDashed, AlertCircle,
+  Copy, CheckCheck, ExternalLink, FolderKanban,
+  CheckCircle2, XCircle, HelpCircle, RefreshCw, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useVideoUpload, UploadJob } from "@/hooks/useVideoUpload";
-import { getStorageDiagnostics, UPLOAD_BUCKET } from "@/lib/storage";
+import { getStorageDiagnostics } from "@/lib/storage";
+import { useBuckets } from "@/hooks/useBuckets";
 import { useAuth } from "@/contexts/AuthContext";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 const ACCEPTED = ["video/mp4", "video/quicktime", "video/x-matroska", "video/webm"];
 const ACCEPT_ATTR = ".mp4,.mov,.mkv,.webm,video/mp4,video/quicktime,video/x-matroska,video/webm";
 
-// ── Supabase Status Panel ────────────────────────────────────────────────────
-function StatusRow({
-  label,
-  ok,
-  detail,
-}: {
-  label: string;
-  ok: boolean | null;
-  detail?: string;
-}) {
-  const Icon =
-    ok === true ? CheckCircle2 : ok === false ? XCircle : HelpCircle;
-  const color =
-    ok === true
-      ? "text-green-400"
-      : ok === false
-      ? "text-destructive"
-      : "text-muted-foreground";
+// ── Small status row ─────────────────────────────────────────────────────────
+function StatusRow({ label, ok, detail }: { label: string; ok: boolean | null; detail?: string }) {
+  const Icon = ok === true ? CheckCircle2 : ok === false ? XCircle : HelpCircle;
+  const color = ok === true ? "text-green-400" : ok === false ? "text-destructive" : "text-muted-foreground";
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
       <span className="text-muted-foreground">{label}</span>
@@ -43,63 +31,135 @@ function StatusRow({
   );
 }
 
+// ── Supabase Connection + Bucket Selector Panel ──────────────────────────────
 function SupabaseStatusPanel({ isDemoMode }: { isDemoMode: boolean }) {
   const diag = getStorageDiagnostics();
+  const { buckets, loading, error: bucketsError, selectedBucket, setSelectedBucket, refetch } = useBuckets();
+
+  const hasBuckets = buckets.length > 0;
 
   return (
     <div className="glass border border-border rounded-xl p-5 flex flex-col gap-3">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-sm">Supabase Connection</h3>
-        <span
-          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+        <div className="flex items-center gap-2">
+          {isSupabaseConfigured && (
+            <button
+              onClick={refetch}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              title="Re-check buckets"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+            </button>
+          )}
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
             diag.clientReady
               ? "text-green-400 border-green-500/40 bg-green-500/10"
               : "text-destructive border-destructive/40 bg-destructive/10"
-          }`}
-        >
-          {diag.clientReady ? "Connected" : "Not configured"}
-        </span>
+          }`}>
+            {diag.clientReady ? "Connected" : "Not configured"}
+          </span>
+        </div>
       </div>
 
+      {/* Connection rows */}
       <div className="flex flex-col gap-2">
         <StatusRow label="VITE_SUPABASE_URL loaded" ok={diag.urlLoaded} />
         <StatusRow label="VITE_SUPABASE_ANON_KEY loaded" ok={diag.keyLoaded} />
         <StatusRow label="Supabase client ready" ok={diag.clientReady} />
-        <StatusRow label="Upload bucket" ok={null} detail={`"${diag.bucket}"`} />
-        <StatusRow
-          label="Auth mode"
-          ok={null}
-          detail={isDemoMode ? "Demo (anon token)" : "Authenticated"}
-        />
+        <StatusRow label="Auth mode" ok={null} detail={isDemoMode ? "Demo (anon token)" : "Authenticated"} />
       </div>
+
+      {/* Bucket selector */}
+      {diag.clientReady && (
+        <div className="border-t border-border pt-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Storage Bucket
+            </span>
+            {loading && <span className="text-[10px] text-muted-foreground animate-pulse">Detecting…</span>}
+          </div>
+
+          {bucketsError && (
+            <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-lg border border-destructive/20">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{bucketsError}</span>
+            </div>
+          )}
+
+          {!loading && !bucketsError && !hasBuckets && (
+            <div className="text-xs text-amber-400 bg-amber-500/10 px-3 py-2 rounded-lg border border-amber-500/20">
+              No buckets found. Create a bucket in{" "}
+              <a
+                href="https://supabase.com/dashboard/project/_/storage/buckets"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-amber-300"
+              >
+                Supabase → Storage
+              </a>
+              .
+            </div>
+          )}
+
+          {hasBuckets && (
+            <>
+              <div className="relative">
+                <select
+                  value={selectedBucket ?? ""}
+                  onChange={(e) => setSelectedBucket(e.target.value)}
+                  className="w-full h-9 pl-3 pr-8 rounded-lg bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
+                >
+                  {buckets.map((b) => (
+                    <option key={b.id} value={b.name}>
+                      {b.name}{b.public ? " (public)" : " (private)"}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 mt-0.5">
+                {buckets.map((b) => (
+                  <button
+                    key={b.id}
+                    onClick={() => setSelectedBucket(b.name)}
+                    className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
+                      selectedBucket === b.name
+                        ? "bg-primary/20 border-primary/50 text-primary"
+                        : "bg-card border-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                    }`}
+                  >
+                    {b.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {isDemoMode && selectedBucket && (
+            <p className="text-[11px] text-amber-400 mt-1">
+              Demo mode uses the anon token. Uploads to <strong>"{selectedBucket}"</strong> require
+              an anonymous INSERT policy, or sign in with a real account.
+            </p>
+          )}
+        </div>
+      )}
 
       {!diag.clientReady && (
         <p className="text-[11px] text-muted-foreground border-t border-border pt-2 mt-1">
-          Add <code className="text-primary bg-primary/10 px-1 rounded font-mono">VITE_SUPABASE_URL</code> and{" "}
-          <code className="text-primary bg-primary/10 px-1 rounded font-mono">VITE_SUPABASE_ANON_KEY</code> in{" "}
-          <strong>Tools → Secrets</strong>, then click <strong>Restart</strong>.
-        </p>
-      )}
-
-      {diag.clientReady && isDemoMode && (
-        <p className="text-[11px] text-amber-400 border-t border-border pt-2 mt-1">
-          Demo mode uses the anon token. Uploads require your Supabase{" "}
-          <strong>"{UPLOAD_BUCKET}"</strong> bucket to allow anonymous INSERT, or sign in
-          with a real account for full access.
-        </p>
-      )}
-
-      {diag.clientReady && !isDemoMode && (
-        <p className="text-[11px] text-muted-foreground border-t border-border pt-2 mt-1">
-          Ensure a bucket named <strong>"{UPLOAD_BUCKET}"</strong> exists in Supabase Storage
-          with an <strong>INSERT</strong> policy for authenticated users.
+          Add{" "}
+          <code className="text-primary bg-primary/10 px-1 rounded font-mono">VITE_SUPABASE_URL</code> and{" "}
+          <code className="text-primary bg-primary/10 px-1 rounded font-mono">VITE_SUPABASE_ANON_KEY</code>{" "}
+          in <strong>Tools → Secrets</strong>, then click <strong>Restart</strong>.
         </p>
       )}
     </div>
   );
 }
 
-// ── Upload helpers ───────────────────────────────────────────────────────────
+// ── Upload helpers ────────────────────────────────────────────────────────────
 function statusBadge(job: UploadJob) {
   if (job.status === "done")
     return (
@@ -130,12 +190,7 @@ function progressBar(job: UploadJob) {
   if (job.status === "done") return <div className="h-full bg-green-400 w-full transition-all" />;
   if (job.status === "error") return <div className="h-full bg-destructive w-full" />;
   if (job.status === "aborted") return null;
-  return (
-    <div
-      className="h-full bg-primary transition-all duration-300"
-      style={{ width: `${job.progress}%` }}
-    />
-  );
+  return <div className="h-full bg-primary transition-all duration-300" style={{ width: `${job.progress}%` }} />;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -147,29 +202,26 @@ function CopyButton({ text }: { text: string }) {
     });
   };
   return (
-    <button
-      onClick={copy}
-      className="ml-auto flex items-center gap-1 text-xs text-primary hover:underline"
-      title="Copy URL"
-    >
+    <button onClick={copy} className="ml-auto flex items-center gap-1 text-xs text-primary hover:underline" title="Copy URL">
       {copied ? <CheckCheck className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
       {copied ? "Copied" : "Copy URL"}
     </button>
   );
 }
 
-// ── Page ─────────────────────────────────────────────────────────────────────
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function UploadPage() {
   const [, navigate] = useLocation();
   const { isDemoMode } = useAuth();
+  const { selectedBucket } = useBuckets();
   const [quality, setQuality] = useState("1080p HD");
-  const [settings, setSettings] = useState({
-    noise: true, sharpness: true, color: true, framerate: false,
-  });
+  const [settings, setSettings] = useState({ noise: true, sharpness: true, color: true, framerate: false });
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { jobs, addFiles, cancelJob, removeJob, activeCount, doneCount } = useVideoUpload();
+  const { jobs, addFiles, cancelJob, removeJob, activeCount, doneCount } = useVideoUpload(
+    selectedBucket ?? undefined
+  );
 
   const toggleSetting = (key: keyof typeof settings) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -186,21 +238,10 @@ export default function UploadPage() {
     [addFiles]
   );
 
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragging(false);
-      handleFiles(e.dataTransfer.files);
-    },
-    [handleFiles]
-  );
-
+  const onDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }, [handleFiles]);
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setDragging(true); };
   const onDragLeave = () => setDragging(false);
-  const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) handleFiles(e.target.files);
-    e.target.value = "";
-  };
+  const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files) handleFiles(e.target.files); e.target.value = ""; };
 
   const hasError = jobs.some((j) => j.status === "error");
   const hasUploaded = jobs.some((j) => j.status === "done");
@@ -212,16 +253,13 @@ export default function UploadPage() {
         {/* Left Column */}
         <div className="flex flex-col gap-6">
 
-          {/* Supabase status panel — always visible for diagnostics */}
           <SupabaseStatusPanel isDemoMode={isDemoMode} />
 
           {/* Dropzone */}
           <div
             className={`glass-strong border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center text-center gap-4 transition-colors cursor-pointer group relative overflow-hidden
               ${dragging ? "border-primary bg-primary/10" : "border-primary/40 hover:bg-primary/5"}`}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
+            onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave}
             onClick={() => fileInputRef.current?.click()}
             data-testid="upload-zone"
           >
@@ -235,57 +273,44 @@ export default function UploadPage() {
               </h3>
               <p className="text-sm text-muted-foreground mt-1">or click to browse</p>
             </div>
+            {selectedBucket && (
+              <div className="text-[11px] text-muted-foreground bg-primary/10 border border-primary/20 px-3 py-1 rounded-full">
+                Uploading to bucket: <strong className="text-primary">{selectedBucket}</strong>
+              </div>
+            )}
             <div className="flex gap-2 text-xs font-mono text-muted-foreground bg-background/50 px-3 py-1 rounded border border-border">
               <span>MP4</span><span>MOV</span><span>MKV</span><span>WebM</span>
             </div>
             <p className="text-xs text-muted-foreground mt-2">Max file size: 2 GB · Up to 4K resolution</p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={ACCEPT_ATTR}
-              multiple
-              className="sr-only"
-              onChange={onInputChange}
-              data-testid="file-input"
-            />
+            <input ref={fileInputRef} type="file" accept={ACCEPT_ATTR} multiple className="sr-only" onChange={onInputChange} data-testid="file-input" />
           </div>
 
-          {/* Exact error reason — shown when any job fails */}
+          {/* Error panel with exact Supabase message */}
           {hasError && (
             <div className="flex flex-col gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/30">
               <div className="flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
                 <div className="flex flex-col gap-1.5">
-                  <p className="text-sm font-semibold text-destructive">Upload failed — error details:</p>
+                  <p className="text-sm font-semibold text-destructive">Upload failed — exact error:</p>
                   {jobs.filter((j) => j.status === "error").map((j) => (
-                    <p key={j.id} className="text-xs text-muted-foreground font-mono bg-background/50 px-2 py-1.5 rounded border border-border">
+                    <p key={j.id} className="text-xs text-muted-foreground font-mono bg-background/50 px-2 py-1.5 rounded border border-border break-words">
                       <span className="text-foreground font-medium">{j.name}:</span> {j.error ?? "Unknown error"}
                     </p>
                   ))}
                 </div>
               </div>
               <div className="flex gap-3 pt-1 flex-wrap">
-                <a
-                  href="https://supabase.com/dashboard/project/_/storage/buckets"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-                >
-                  <ExternalLink className="w-3 h-3" /> Supabase Storage Buckets
+                <a href="https://supabase.com/dashboard/project/_/storage/buckets" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline">
+                  <ExternalLink className="w-3 h-3" /> Storage Buckets
                 </a>
-                <a
-                  href="https://supabase.com/dashboard/project/_/storage/policies"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-                >
+                <a href="https://supabase.com/dashboard/project/_/storage/policies" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline">
                   <ExternalLink className="w-3 h-3" /> Storage Policies
                 </a>
               </div>
             </div>
           )}
 
-          {/* View Projects CTA */}
+          {/* Success CTA */}
           {hasUploaded && (
             <button
               onClick={() => navigate("/projects")}
@@ -296,9 +321,7 @@ export default function UploadPage() {
                   <FolderKanban className="w-5 h-5 text-green-400" />
                 </div>
                 <div className="text-left">
-                  <p className="text-sm font-semibold text-green-300">
-                    {doneCount} video{doneCount !== 1 ? "s" : ""} uploaded successfully
-                  </p>
+                  <p className="text-sm font-semibold text-green-300">{doneCount} video{doneCount !== 1 ? "s" : ""} uploaded successfully</p>
                   <p className="text-xs text-muted-foreground">Click to view your projects →</p>
                 </div>
               </div>
@@ -314,7 +337,7 @@ export default function UploadPage() {
             </p>
           </div>
 
-          {/* Settings Panel */}
+          {/* Settings */}
           <div className="glass border border-border rounded-xl p-6 flex flex-col gap-5">
             <h3 className="font-bold text-lg">Enhancement Settings</h3>
             <div className="flex flex-col gap-3">
@@ -354,9 +377,7 @@ export default function UploadPage() {
               onClick={() => fileInputRef.current?.click()}
               data-testid="btn-start"
             >
-              {activeCount > 0
-                ? `Uploading ${activeCount} file${activeCount > 1 ? "s" : ""}…`
-                : "Select Files to Upload"}
+              {activeCount > 0 ? `Uploading ${activeCount} file${activeCount > 1 ? "s" : ""}…` : "Select Files to Upload"}
             </Button>
           </div>
         </div>
@@ -366,9 +387,7 @@ export default function UploadPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold">Upload Queue</h2>
             {jobs.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {doneCount}/{jobs.length} uploaded
-              </span>
+              <span className="text-xs text-muted-foreground">{doneCount}/{jobs.length} uploaded</span>
             )}
           </div>
 
@@ -387,19 +406,14 @@ export default function UploadPage() {
                 >
                   <div className="flex justify-between items-start mb-3 pr-6">
                     <div className="flex flex-col gap-1 min-w-0">
-                      <span className="font-medium text-sm truncate max-w-[200px]" title={job.name}>
-                        {job.name}
-                      </span>
+                      <span className="font-medium text-sm truncate max-w-[200px]" title={job.name}>{job.name}</span>
                       <span className="text-xs text-muted-foreground">
                         {job.size}
-                        {job.durationSeconds
-                          ? ` · ${Math.floor(job.durationSeconds / 60)}:${String(job.durationSeconds % 60).padStart(2, "0")}`
-                          : ""}
+                        {job.durationSeconds ? ` · ${Math.floor(job.durationSeconds / 60)}:${String(job.durationSeconds % 60).padStart(2, "0")}` : ""}
+                        {job.bucket ? ` · ${job.bucket}` : ""}
                       </span>
                       {job.status === "error" && job.error && (
-                        <span className="text-xs text-destructive mt-0.5 break-words max-w-[280px]">
-                          {job.error}
-                        </span>
+                        <span className="text-xs text-destructive mt-0.5 break-words max-w-[280px]">{job.error}</span>
                       )}
                       {job.status === "done" && job.publicUrl && (
                         <div className="flex items-center gap-2 mt-1">
@@ -412,11 +426,7 @@ export default function UploadPage() {
                     </div>
                     {statusBadge(job)}
                   </div>
-
-                  <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden">
-                    {progressBar(job)}
-                  </div>
-
+                  <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden">{progressBar(job)}</div>
                   <button
                     className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-card transition-opacity text-muted-foreground hover:text-foreground"
                     onClick={() => job.status === "uploading" ? cancelJob(job.id) : removeJob(job.id)}
@@ -446,6 +456,10 @@ export default function UploadPage() {
                 <span className="font-medium">{jobs.length}</span>
               </div>
               <div className="flex justify-between items-center border-b border-border/50 pb-2">
+                <span className="text-muted-foreground">Active Bucket</span>
+                <span className="font-medium text-primary">{selectedBucket ?? "—"}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-border/50 pb-2">
                 <span className="text-muted-foreground">Uploading</span>
                 <span className={`font-medium ${activeCount > 0 ? "text-primary" : ""}`}>{activeCount}</span>
               </div>
@@ -457,11 +471,7 @@ export default function UploadPage() {
           </div>
 
           {hasUploaded && (
-            <Button
-              variant="outline"
-              className="w-full gap-2 border-primary/30 text-primary hover:bg-primary/10"
-              onClick={() => navigate("/projects")}
-            >
+            <Button variant="outline" className="w-full gap-2 border-primary/30 text-primary hover:bg-primary/10" onClick={() => navigate("/projects")}>
               <FolderKanban className="w-4 h-4" />
               View All Projects
             </Button>

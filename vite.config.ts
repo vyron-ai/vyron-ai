@@ -30,6 +30,8 @@ export default defineConfig({
       ignored: [
         "**/.local/**",
         "**/.cache/**",
+        "**/.replit",
+        "**/replit.nix",
         "**/supabase/**",
         "**/.git/**",
         "**/node_modules/**",
