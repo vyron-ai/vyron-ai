@@ -1,4 +1,10 @@
-import { supabaseAdmin, isAdminConfigured, getProjectRef } from "@/lib/supabaseAdmin";
+/**
+ * bucketSetup — browser-safe bucket setup helpers.
+ *
+ * Bucket creation is delegated to the /api/setup-bucket endpoint which runs
+ * inside the Vite dev-server (see vite.config.ts).  No service-role key is
+ * ever read or used here.
+ */
 
 export const SETUP_BUCKET = "videos";
 
@@ -8,12 +14,12 @@ export interface SetupResult {
   policiesCreated: boolean;
   policySQL: string;
   error: string | null;
+  serviceKeyMissing?: boolean;
 }
 
-/** SQL that grants authenticated users INSERT, SELECT, UPDATE and DELETE on the videos bucket. */
+/** SQL to paste in Supabase → SQL Editor to create storage policies. */
 export function buildPolicySQL(bucket = SETUP_BUCKET): string {
-  return `-- Run this in your Supabase project → SQL Editor
--- (Dashboard → SQL Editor → New query → paste → Run)
+  return `-- Run this in Supabase → SQL Editor → New query → Run
 
 -- Allow authenticated users to upload videos
 CREATE POLICY "Allow authenticated uploads"
@@ -38,86 +44,54 @@ CREATE POLICY "Allow owner deletes"
 }
 
 /**
- * Try to apply storage policies via the Supabase Management API.
- * This requires a Personal Access Token as the bearer — service-role keys
- * do NOT work with api.supabase.com, so this will 401 in most setups.
- * We catch silently and return false so the caller can fall back to showing SQL.
+ * Creates the videos bucket by calling the Vite dev-server API route.
+ * The API route reads SUPABASE_SERVICE_ROLE_KEY from process.env (server-only).
+ * This function is safe to call from the browser — it never touches any secret.
  */
-async function tryManagementAPIPolicies(bucket: string): Promise<boolean> {
-  const ref = getProjectRef();
-  const serviceKey = (import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY as string) ?? "";
-  if (!ref || !serviceKey) return false;
-
-  const sql = buildPolicySQL(bucket)
-    .split("\n")
-    .filter((l) => !l.trim().startsWith("--") && l.trim())
-    .join(" ");
-
-  try {
-    const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${serviceKey}`,
-      },
-      body: JSON.stringify({ query: sql }),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-/** Main entry point for the one-click bucket setup button. */
 export async function setupVideosBucket(): Promise<SetupResult> {
-  if (!isAdminConfigured || !supabaseAdmin) {
-    return {
-      bucketCreated: false,
-      bucketAlreadyExisted: false,
-      policiesCreated: false,
-      policySQL: buildPolicySQL(),
-      error: "VITE_SUPABASE_SERVICE_ROLE_KEY is not configured. Add it in Replit Secrets.",
-    };
-  }
+  try {
+    const res = await fetch("/api/setup-bucket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bucket: SETUP_BUCKET }),
+    });
 
-  let bucketCreated = false;
-  let bucketAlreadyExisted = false;
+    let data: Record<string, unknown> = {};
+    try {
+      data = await res.json();
+    } catch {
+      data = {};
+    }
 
-  const { error: createErr } = await supabaseAdmin.storage.createBucket(SETUP_BUCKET, {
-    public: false,
-    fileSizeLimit: 2 * 1024 * 1024 * 1024,
-    allowedMimeTypes: ["video/mp4", "video/quicktime", "video/x-matroska", "video/webm"],
-  });
-
-  if (createErr) {
-    const msg = createErr.message ?? "";
-    if (
-      msg.toLowerCase().includes("already exists") ||
-      msg.toLowerCase().includes("duplicate") ||
-      (createErr as { statusCode?: string }).statusCode === "23505"
-    ) {
-      bucketAlreadyExisted = true;
-    } else {
+    if (!res.ok) {
+      const errMsg = (data.error as string) ?? `Server error ${res.status}`;
+      const serviceKeyMissing = errMsg.toLowerCase().includes("supabase_service_role_key");
       return {
         bucketCreated: false,
         bucketAlreadyExisted: false,
         policiesCreated: false,
         policySQL: buildPolicySQL(),
-        error: `Bucket creation failed: ${msg}`,
+        error: errMsg,
+        serviceKeyMissing,
       };
     }
-  } else {
-    bucketCreated = true;
+
+    return {
+      bucketCreated: Boolean(data.bucketCreated),
+      bucketAlreadyExisted: Boolean(data.bucketAlreadyExisted),
+      policiesCreated: Boolean(data.policiesCreated),
+      policySQL: data.policiesCreated ? "" : buildPolicySQL(),
+      error: null,
+      serviceKeyMissing: false,
+    };
+  } catch (err) {
+    return {
+      bucketCreated: false,
+      bucketAlreadyExisted: false,
+      policiesCreated: false,
+      policySQL: buildPolicySQL(),
+      error: err instanceof Error ? err.message : "Network error reaching /api/setup-bucket",
+      serviceKeyMissing: false,
+    };
   }
-
-  const policiesCreated = await tryManagementAPIPolicies(SETUP_BUCKET);
-  const policySQL = policiesCreated ? "" : buildPolicySQL();
-
-  return {
-    bucketCreated,
-    bucketAlreadyExisted,
-    policiesCreated,
-    policySQL,
-    error: null,
-  };
 }

@@ -1,13 +1,11 @@
 import { useState, useCallback } from "react";
 import { setupVideosBucket, SetupResult } from "@/lib/bucketSetup";
-import { isAdminConfigured } from "@/lib/supabaseAdmin";
 
 export type SetupPhase = "idle" | "loading" | "done" | "error";
 
 export interface UseBucketSetupResult {
   phase: SetupPhase;
   result: SetupResult | null;
-  adminConfigured: boolean;
   run: () => Promise<void>;
   reset: () => void;
 }
@@ -19,13 +17,20 @@ export function useBucketSetup(onSuccess?: () => void): UseBucketSetupResult {
   const run = useCallback(async () => {
     setPhase("loading");
     setResult(null);
-    const res = await setupVideosBucket();
-    setResult(res);
-    if (res.error) {
+    try {
+      const res = await setupVideosBucket();
+      setResult(res);
+      setPhase(res.error ? "error" : "done");
+      if (!res.error) onSuccess?.();
+    } catch (err) {
+      setResult({
+        bucketCreated: false,
+        bucketAlreadyExisted: false,
+        policiesCreated: false,
+        policySQL: "",
+        error: err instanceof Error ? err.message : "Unexpected error",
+      });
       setPhase("error");
-    } else {
-      setPhase("done");
-      onSuccess?.();
     }
   }, [onSuccess]);
 
@@ -34,5 +39,5 @@ export function useBucketSetup(onSuccess?: () => void): UseBucketSetupResult {
     setResult(null);
   }, []);
 
-  return { phase, result, adminConfigured: isAdminConfigured, run, reset };
+  return { phase, result, run, reset };
 }
