@@ -3,7 +3,7 @@ import { useState, ReactNode } from "react";
 import {
   LayoutDashboard, FolderKanban, Video, Subtitles, Layers,
   LineChart, Workflow, Settings, Bell, Search, Menu, HardDrive,
-  LogOut, Loader2,
+  LogOut, Loader2, FlaskConical,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
   const [location] = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const { user, signOut } = useAuth();
+  const { user, isDemoMode, signOut } = useAuth();
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -74,12 +74,18 @@ export function AppLayout({ children, title }: AppLayoutProps) {
 
   const SidebarContent = () => (
     <>
-      <div className="h-16 flex items-center px-6 border-b border-border">
+      <div className="h-16 flex items-center px-6 border-b border-border gap-3">
         <Link href="/">
           <span className="text-xl font-bold tracking-tight flex items-center cursor-pointer">
             VYRON<span className="text-primary ml-1 text-2xl leading-none">.</span>AI
           </span>
         </Link>
+        {isDemoMode && (
+          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/20 border border-primary/40 text-primary text-[10px] font-bold uppercase tracking-wider shrink-0">
+            <FlaskConical className="w-2.5 h-2.5" />
+            Demo
+          </span>
+        )}
       </div>
 
       <div className="flex-1 py-6 px-4 space-y-6 overflow-y-auto">
@@ -109,7 +115,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{displayName}</p>
-            <p className="text-xs text-muted-foreground truncate">{user?.email ?? ""}</p>
+            <p className="text-xs text-muted-foreground truncate">{isDemoMode ? "Demo session" : (user?.email ?? "")}</p>
           </div>
         </div>
         <button
@@ -119,7 +125,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
           data-testid="button-sign-out"
         >
           {signingOut ? <Loader2 size={16} className="animate-spin" /> : <LogOut size={16} />}
-          {signingOut ? "Signing out..." : "Sign out"}
+          {signingOut ? "Exiting..." : isDemoMode ? "Exit Demo" : "Sign out"}
         </button>
       </div>
     </>
@@ -174,9 +180,16 @@ export function AppLayout({ children, title }: AppLayoutProps) {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Demo mode badge in header */}
+            {isDemoMode && (
+              <span className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/15 border border-primary/30 text-primary text-xs font-semibold">
+                <FlaskConical className="w-3 h-3" />
+                Demo Mode
+              </span>
+            )}
             <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground">
               <Bell className="w-5 h-5" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full electric-glow"></span>
+              <span className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full electric-glow" />
             </Button>
             <div
               className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm border border-primary/30 cursor-pointer"

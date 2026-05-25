@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -24,34 +24,24 @@ const Spinner = () => (
 );
 
 /**
- * Protected route — requires auth.
- * While loading: show spinner.
- * After loading: if no user, redirect to /login.
- * If user: render the component.
- * Key: never re-mount the component once rendered (no intermediate Spinner when user exists).
+ * Protected route — requires real auth OR demo mode.
+ * While loading: spinner. No user + no demo: redirect to /login. Otherwise: render.
  */
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
-  const { user, loading } = useAuth();
-  const [location] = useLocation();
-
+  const { user, loading, isDemoMode } = useAuth();
   if (loading) return <Spinner />;
-  if (!user) return <Redirect to={`/login`} />;
+  if (!user && !isDemoMode) return <Redirect to="/login" />;
   return <Component />;
 }
 
 /**
- * Public-only route — redirects logged-in users away.
- * While loading: show spinner.
- * After loading: if user exists, redirect to /projects.
- * If no user: render the component.
- * Key: once the component mounts (no user), never unmount it due to auth state changes
- *      until a deliberate navigation happens. This keeps form inputs stable.
+ * Public-only route — redirects authenticated (or demo) users away.
+ * While loading: spinner. If user or demo: redirect to /dashboard. Otherwise: render.
  */
 function PublicOnlyRoute({ component: Component }: { component: React.ComponentType }) {
-  const { user, loading } = useAuth();
-
+  const { user, loading, isDemoMode } = useAuth();
   if (loading) return <Spinner />;
-  if (user) return <Redirect to="/projects" />;
+  if (user || isDemoMode) return <Redirect to="/dashboard" />;
   return <Component />;
 }
 
