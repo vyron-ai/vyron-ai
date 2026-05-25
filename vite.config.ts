@@ -132,7 +132,7 @@ function assemblyAIPlugin(): Plugin {
               );
             }
 
-            // 3. Group words → subtitle segments (~6 words, break on sentence-end punctuation)
+            // 3. Group words → natural subtitle phrases
             const words: Word[] = result.words ?? [];
 
             if (words.length === 0) {
@@ -147,29 +147,57 @@ function assemblyAIPlugin(): Plugin {
               return;
             }
 
+            // Words that sound unnatural as the last word of a subtitle line
+            const WEAK = new Set([
+              "a","de","que","y","o","para","con","en","la","el","los","las",
+              "al","del","un","una","lo","se","su","por","sin","ni","le","les",
+              "me","te","nos","si","e","u","its","a","the","of","to","and",
+              "or","for","in","on","at","by","an","is","as","be","we","he",
+              "she","it","up","do","if","my","so","no","but","not","are","was",
+            ]);
+
+            function endsWeak(wordText: string): boolean {
+              const bare = wordText.toLowerCase().replace(/[.,!?;:\u00bf\u00a1"""']+/g, "").trim();
+              return WEAK.has(bare);
+            }
+
             const subtitles: { id: number; start: number; end: number; text: string }[] = [];
             let segId = 0;
             let i = 0;
 
             while (i < words.length) {
-              const chunk: string[] = [];
-              const startMs = words[i].start;
-              let endMs = words[i].end;
+              const chunk: Word[] = [];
 
-              while (i < words.length && chunk.length < 6) {
-                chunk.push(words[i].text);
-                endMs = words[i].end;
-                const endsPhrase = /[.!?]$/.test(words[i].text);
+              while (i < words.length) {
+                chunk.push(words[i]);
                 i++;
-                if (endsPhrase) break;
+
+                const last = chunk[chunk.length - 1];
+                const w = last.text;
+                const n = chunk.length;
+
+                // Hard stop — never exceed 9 words
+                if (n >= 9) break;
+
+                // Strong punctuation (. ! ?) → break if we have ≥2 words
+                if (n >= 2 && /[.!?\u00bf\u00a1]$/.test(w)) break;
+
+                // Soft punctuation (, ; :) → break if we have ≥4 words
+                if (n >= 4 && /[,;:]$/.test(w)) break;
+
+                // Ideal break point: ≥5 words and NOT ending on a weak connector
+                if (n >= 5 && !endsWeak(w)) break;
+
+                // Safety max: 8 words regardless of connector
+                if (n >= 8) break;
               }
 
               if (chunk.length > 0) {
                 subtitles.push({
                   id: segId++,
-                  start: startMs,
-                  end: endMs,
-                  text: chunk.join(" "),
+                  start: chunk[0].start,
+                  end: chunk[chunk.length - 1].end,
+                  text: chunk.map((w) => w.text).join(" "),
                 });
               }
             }
