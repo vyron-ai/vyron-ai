@@ -79,6 +79,7 @@ function assemblyAIPlugin(): Plugin {
                 punctuate: true,
                 format_text: true,
                 language_detection: true,
+                speech_models: ["universal-3-pro"],
               }),
             });
 
