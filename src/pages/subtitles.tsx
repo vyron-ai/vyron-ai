@@ -46,12 +46,12 @@ const PRESETS: Record<SubtitlePreset, PresetDef> = {
       WebkitBackdropFilter: "none",
     },
     activeWord: {
-      color: "#ffffff",
+      color: "#fde047",
       fontWeight: 900,
       letterSpacing: "-0.035em",
       textShadow:
-        "0 0 32px rgba(255,200,40,0.65), 0 0 12px rgba(255,180,0,0.4), 0 2px 28px rgba(0,0,0,1)",
-      transform: "scale(1.16)",
+        "0 0 24px rgba(253,224,71,0.55), 0 0 48px rgba(253,200,40,0.28), 0 2px 32px rgba(0,0,0,1), 0 0 4px rgba(0,0,0,0.9)",
+      animation: "wordSpring 320ms cubic-bezier(0.34,1.56,0.64,1) both",
     },
     inactiveWord: {
       color: "rgba(255,255,255,0.5)",
@@ -130,6 +130,13 @@ const CINEMATIC_STYLES = `
 @keyframes subtitleFadeUp {
   from { opacity: 0; transform: translateY(12px) scale(0.96); }
   to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+@keyframes wordSpring {
+  0%   { transform: scale(1);    }
+  35%  { transform: scale(1.22); }
+  60%  { transform: scale(1.13); }
+  80%  { transform: scale(1.18); }
+  100% { transform: scale(1.16); }
 }
 `;
 
@@ -221,9 +228,13 @@ function SubtitleOverlay({
         {words.map((word, i) => {
           const active = i === activeIdx;
           const baseStyle = active ? p.activeWord : p.inactiveWord;
+          // For viral, key active word uniquely so it remounts → re-fires spring animation
+          const spanKey = preset === "viral" && active
+            ? `active-${activeIdx}`
+            : `${i}`;
           return (
             <span
-              key={`${word}-${i}`}
+              key={spanKey}
               style={{
                 display: "inline-block",
                 marginRight: "0.3em",
@@ -231,8 +242,9 @@ function SubtitleOverlay({
                 fontSize: active ? p.activeFontSize : p.inactiveFontSize,
                 fontFamily: '"Inter", "Helvetica Neue", Arial, sans-serif',
                 transformOrigin: "center bottom",
-                transition:
-                  "color 150ms ease, font-weight 150ms ease, transform 155ms cubic-bezier(0.34,1.56,0.64,1), text-shadow 150ms ease",
+                transition: preset === "viral" && active
+                  ? "color 120ms ease, font-weight 120ms ease, text-shadow 120ms ease"
+                  : "color 150ms ease, font-weight 150ms ease, transform 155ms cubic-bezier(0.34,1.56,0.64,1), text-shadow 150ms ease",
                 willChange: "transform, color, text-shadow",
                 ...baseStyle,
               }}
