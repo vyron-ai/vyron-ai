@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
-  Captions, UploadCloud, RefreshCw, AlertCircle, CheckCircle2,
+  Captions, RefreshCw, AlertCircle, CheckCircle2,
   Loader2, Play, Trash2, Copy, CheckCheck, Clock, Sparkles,
-  ExternalLink,
+  ExternalLink, Zap, Film, Mic,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,11 +14,123 @@ import {
   formatMs,
 } from "@/lib/subtitles";
 
-// ── Keyframe styles injected once ────────────────────────────────────────────
+// ── Preset definitions ────────────────────────────────────────────────────────
+type SubtitlePreset = "viral" | "documentary" | "podcast";
+
+interface PresetDef {
+  id: SubtitlePreset;
+  label: string;
+  icon: React.ReactNode;
+  description: string;
+  container: React.CSSProperties;
+  activeWord: React.CSSProperties;
+  inactiveWord: React.CSSProperties;
+  activeGlow: string;
+  activeFontSize: string;
+  inactiveFontSize: string;
+}
+
+const PRESETS: Record<SubtitlePreset, PresetDef> = {
+  viral: {
+    id: "viral",
+    label: "Viral",
+    icon: <Zap className="w-3 h-3" />,
+    description: "Bold · High contrast · TikTok / Reels",
+    container: {
+      background: "linear-gradient(to top, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.0) 100%)",
+      borderRadius: 0,
+      padding: "20px 16px 10px",
+      backdropFilter: "none",
+      WebkitBackdropFilter: "none",
+    },
+    activeWord: {
+      color: "#ffffff",
+      fontWeight: 800,
+      letterSpacing: "-0.03em",
+      textShadow: "0 0 28px rgba(255,210,50,0.5), 0 2px 24px rgba(0,0,0,1), 0 0 4px rgba(0,0,0,1)",
+      transform: "scale(1.13)",
+    },
+    inactiveWord: {
+      color: "rgba(255,255,255,0.52)",
+      fontWeight: 500,
+      letterSpacing: "-0.01em",
+      textShadow: "0 1px 10px rgba(0,0,0,0.9)",
+    },
+    activeGlow: "rgba(255,210,50,0.5)",
+    activeFontSize: "clamp(19px, 5.8vw, 27px)",
+    inactiveFontSize: "clamp(17px, 5.1vw, 24px)",
+  },
+  documentary: {
+    id: "documentary",
+    label: "Documentary",
+    icon: <Film className="w-3 h-3" />,
+    description: "Elegant · Cinematic · Editorial",
+    container: {
+      background: "rgba(0,0,0,0.22)",
+      borderRadius: 18,
+      padding: "7px 20px 9px",
+      backdropFilter: "blur(4px)",
+      WebkitBackdropFilter: "blur(4px)",
+      border: "1px solid rgba(255,255,255,0.04)",
+    },
+    activeWord: {
+      color: "#ffffff",
+      fontWeight: 600,
+      letterSpacing: "-0.02em",
+      textShadow: "0 0 20px rgba(160,210,255,0.45), 0 2px 22px rgba(0,0,0,1)",
+      transform: "scale(1.07)",
+    },
+    inactiveWord: {
+      color: "rgba(255,255,255,0.4)",
+      fontWeight: 300,
+      letterSpacing: "0.015em",
+      textShadow: "0 1px 8px rgba(0,0,0,0.8)",
+    },
+    activeGlow: "rgba(160,210,255,0.45)",
+    activeFontSize: "clamp(16px, 4.9vw, 23px)",
+    inactiveFontSize: "clamp(14px, 4.3vw, 20px)",
+  },
+  podcast: {
+    id: "podcast",
+    label: "Podcast",
+    icon: <Mic className="w-3 h-3" />,
+    description: "Clean · Legible · Accessible",
+    container: {
+      background: "rgba(10,10,14,0.58)",
+      borderRadius: 12,
+      padding: "9px 18px 11px",
+      backdropFilter: "blur(10px)",
+      WebkitBackdropFilter: "blur(10px)",
+      border: "1px solid rgba(255,255,255,0.07)",
+    },
+    activeWord: {
+      color: "#ffffff",
+      fontWeight: 700,
+      letterSpacing: "-0.025em",
+      textShadow: "0 2px 24px rgba(0,0,0,1), 0 0 6px rgba(0,0,0,0.9)",
+      transform: "scale(1.05)",
+    },
+    inactiveWord: {
+      color: "rgba(255,255,255,0.54)",
+      fontWeight: 400,
+      letterSpacing: "0.005em",
+      textShadow: "0 1px 8px rgba(0,0,0,0.85)",
+    },
+    activeGlow: "none",
+    activeFontSize: "clamp(17px, 5.3vw, 25px)",
+    inactiveFontSize: "clamp(15px, 4.7vw, 22px)",
+  },
+};
+
+// ── Keyframes ─────────────────────────────────────────────────────────────────
 const CINEMATIC_STYLES = `
 @keyframes subtitleFadeUp {
-  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
   to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+@keyframes wordGlow {
+  0%,100% { filter: brightness(1); }
+  50%      { filter: brightness(1.12); }
 }
 `;
 
@@ -71,12 +183,15 @@ function getActiveWordIndex(seg: SubtitleSegment, currentMs: number): number {
 function SubtitleOverlay({
   segment,
   currentMs,
+  preset,
 }: {
   segment: SubtitleSegment | undefined;
   currentMs: number;
+  preset: SubtitlePreset;
 }) {
   if (!segment) return null;
 
+  const p = PRESETS[preset];
   const words = segment.text.trim().split(/\s+/).filter(Boolean);
   const activeIdx = getActiveWordIndex(segment, currentMs);
 
@@ -87,51 +202,86 @@ function SubtitleOverlay({
         display: "flex",
         alignItems: "flex-end",
         justifyContent: "center",
-        paddingLeft: 18,
-        paddingRight: 18,
-        paddingBottom: 60,
+        paddingLeft: preset === "viral" ? 0 : 16,
+        paddingRight: preset === "viral" ? 0 : 16,
+        paddingBottom: preset === "viral" ? 0 : 52,
       }}
     >
       <style>{CINEMATIC_STYLES}</style>
       <div
         style={{
-          animation: "subtitleFadeUp 210ms cubic-bezier(0.22,1,0.36,1) both",
-          background: "rgba(0,0,0,0.38)",
-          backdropFilter: "blur(6px)",
-          WebkitBackdropFilter: "blur(6px)",
-          borderRadius: 14,
-          padding: "7px 14px 9px",
+          ...p.container,
+          animation: "subtitleFadeUp 220ms cubic-bezier(0.22,1,0.36,1) both",
           textAlign: "center",
-          maxWidth: "100%",
+          width: preset === "viral" ? "100%" : undefined,
+          maxWidth: preset === "viral" ? undefined : "100%",
           lineHeight: 1.4,
         }}
       >
         {words.map((word, i) => {
           const active = i === activeIdx;
+          const baseStyle = active ? p.activeWord : p.inactiveWord;
           return (
             <span
               key={`${word}-${i}`}
               style={{
                 display: "inline-block",
-                marginRight: "0.28em",
-                marginBottom: "0.08em",
-                color: active ? "#ffffff" : "rgba(255,255,255,0.48)",
-                fontWeight: active ? 700 : 400,
-                fontSize: active ? "clamp(17px, 5.4vw, 25px)" : "clamp(15px, 4.8vw, 22px)",
+                marginRight: "0.3em",
+                marginBottom: "0.1em",
+                fontSize: active ? p.activeFontSize : p.inactiveFontSize,
                 fontFamily: '"Inter", "Helvetica Neue", Arial, sans-serif',
-                letterSpacing: active ? "-0.025em" : "0.008em",
-                textShadow: active
-                  ? "0 2px 24px rgba(0,0,0,1), 0 0 8px rgba(0,0,0,0.9), 0 1px 0 rgba(0,0,0,0.6)"
-                  : "0 1px 8px rgba(0,0,0,0.8)",
-                transform: active ? "scale(1.08)" : "scale(1)",
                 transformOrigin: "center bottom",
                 transition:
-                  "color 150ms ease, transform 150ms cubic-bezier(0.34,1.56,0.64,1), font-weight 150ms ease",
-                willChange: "transform, color",
+                  "color 160ms ease, font-weight 160ms ease, transform 160ms cubic-bezier(0.34,1.56,0.64,1), text-shadow 160ms ease, opacity 160ms ease",
+                willChange: "transform, color, text-shadow",
+                ...baseStyle,
               }}
             >
               {word}
             </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Preset selector ───────────────────────────────────────────────────────────
+function PresetSelector({
+  value,
+  onChange,
+}: {
+  value: SubtitlePreset;
+  onChange: (p: SubtitlePreset) => void;
+}) {
+  const options: SubtitlePreset[] = ["viral", "documentary", "podcast"];
+  return (
+    <div className="flex flex-col gap-2 w-full max-w-[320px] mx-auto">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+          Style Preset
+        </span>
+        <span className="text-[10px] text-muted-foreground">
+          {PRESETS[value].description}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-card/60 border border-border">
+        {options.map((id) => {
+          const p = PRESETS[id];
+          const active = value === id;
+          return (
+            <button
+              key={id}
+              onClick={() => onChange(id)}
+              className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-semibold transition-all ${
+                active
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-card"
+              }`}
+            >
+              {p.icon}
+              {p.label}
+            </button>
           );
         })}
       </div>
@@ -174,6 +324,7 @@ export default function SubtitlesPage() {
   const [error, setError] = useState("");
   const [fromCache, setFromCache] = useState(() => initialUrl ? loadSubtitlesForUrl(initialUrl).length > 0 : false);
   const [copied, setCopied] = useState(false);
+  const [preset, setPreset] = useState<SubtitlePreset>("viral");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -184,7 +335,6 @@ export default function SubtitlesPage() {
     [subtitles, currentMs]
   );
 
-  // Scroll active segment into view
   useEffect(() => {
     if (!currentSegment || !timelineRef.current) return;
     const el = timelineRef.current.querySelector(`[data-seg="${currentSegment.id}"]`);
@@ -432,9 +582,9 @@ export default function SubtitlesPage() {
 
           {/* ── Right: Video preview ── */}
           <div className="flex flex-col items-center gap-4">
-            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider self-start">
-              Preview
-            </div>
+
+            {/* Preset selector */}
+            <PresetSelector value={preset} onChange={setPreset} />
 
             {/* Phone-shaped video preview */}
             <div
@@ -465,11 +615,11 @@ export default function SubtitlesPage() {
                 </div>
               )}
 
-              {/* key forces remount → re-triggers CSS animation on each new segment */}
               <SubtitleOverlay
-                key={currentSegment?.id ?? -1}
+                key={`${currentSegment?.id ?? -1}-${preset}`}
                 segment={currentSegment}
                 currentMs={currentMs}
+                preset={preset}
               />
             </div>
 
