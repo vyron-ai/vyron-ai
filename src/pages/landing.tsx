@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import {
@@ -15,9 +15,12 @@ import {
   Menu,
   X,
   UploadCloud,
+  MonitorPlay,
+  LogIn,
 } from "lucide-react";
 import { useState } from "react";
 import { useIntersectionObserver } from "@/hooks/use-intersection-observer";
+import { useAuth } from "@/contexts/AuthContext";
 
 const fadeUpVariant = {
   hidden: { opacity: 0, y: 30 },
@@ -34,6 +37,13 @@ const staggerContainer = {
 
 export default function Landing() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { enterDemoMode } = useAuth();
+  const [, navigate] = useLocation();
+
+  function handleDemoStudio() {
+    enterDemoMode();
+    navigate("/dashboard");
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden selection:bg-primary/30 dark">
@@ -72,13 +82,23 @@ export default function Landing() {
             </Link>
           </div>
 
-          <div className="hidden md:flex items-center">
-            <Button
-              className="animate-pulse-blue electric-glow bg-primary text-primary-foreground hover:bg-primary/90"
-              data-testid="button-early-access"
+          <div className="hidden md:flex items-center gap-3">
+            <button
+              onClick={handleDemoStudio}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
             >
-              Get Early Access
-            </Button>
+              <MonitorPlay className="w-4 h-4" />
+              Demo Studio
+            </button>
+            <Link href="/login">
+              <Button
+                className="animate-pulse-blue electric-glow bg-primary text-primary-foreground hover:bg-primary/90"
+                data-testid="button-early-access"
+              >
+                <LogIn className="w-4 h-4 mr-1.5" />
+                Get Early Access
+              </Button>
+            </Link>
           </div>
 
           <div className="md:hidden flex items-center">
@@ -121,9 +141,26 @@ export default function Landing() {
             >
               Dashboard
             </Link>
-            <Button className="w-full electric-glow mt-2">
-              Get Early Access
-            </Button>
+            <Link
+              href="/login"
+              className="text-sm font-medium p-2 flex items-center gap-2"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <LogIn className="w-4 h-4" />
+              Login
+            </Link>
+            <button
+              className="text-sm font-medium p-2 flex items-center gap-2 text-left"
+              onClick={() => { setMobileMenuOpen(false); handleDemoStudio(); }}
+            >
+              <MonitorPlay className="w-4 h-4 text-primary" />
+              <span>Demo Studio</span>
+            </button>
+            <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
+              <Button className="w-full electric-glow mt-2">
+                Get Early Access
+              </Button>
+            </Link>
           </div>
         )}
       </nav>
@@ -176,19 +213,22 @@ export default function Landing() {
               variants={fadeUpVariant}
               className="flex flex-col sm:flex-row gap-4 mt-8 w-full sm:w-auto"
             >
-              <Button
-                size="lg"
-                className="h-14 px-8 text-base electric-glow animate-pulse-blue bg-primary hover:bg-primary/90 text-primary-foreground"
-              >
-                Start Free Trial
-              </Button>
+              <Link href="/login">
+                <Button
+                  size="lg"
+                  className="h-14 px-8 text-base electric-glow animate-pulse-blue bg-primary hover:bg-primary/90 text-primary-foreground"
+                >
+                  Start Free Trial
+                </Button>
+              </Link>
               <Button
                 size="lg"
                 variant="outline"
                 className="h-14 px-8 text-base border-border hover:bg-card"
+                onClick={handleDemoStudio}
               >
-                <Play className="w-4 h-4 mr-2" />
-                Watch Demo
+                <MonitorPlay className="w-4 h-4 mr-2" />
+                Demo Studio
               </Button>
             </motion.div>
 
