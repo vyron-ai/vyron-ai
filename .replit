@@ -43,9 +43,10 @@ localPort = 5000
 externalPort = 80
 
 [deployment]
-deploymentTarget = "static"
+deploymentTarget = "autoscale"
 build = ["pnpm", "run", "build"]
 publicDir = "dist/public"
+run = ["node", "server/index.js"]
 
 [userenv]
 
