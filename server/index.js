@@ -140,7 +140,7 @@ app.post("/api/subtitles/generate", async (req, res) => {
 // ── Serve built React app (SPA) ───────────────────────────────────────────────
 app.use(express.static(distDir));
 
-app.get("*", (_req, res) => {
+app.get("/{*path}", (_req, res) => {
   res.sendFile(join(distDir, "index.html"));
 });
 
