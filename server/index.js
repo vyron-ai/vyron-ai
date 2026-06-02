@@ -37,14 +37,63 @@ function msToAssTime(ms) {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
 }
 
+// ASS colour format: &HAABBGGRR  (AA=alpha 00=opaque FF=transparent)
+// Preset colour mappings mirror the React preview exactly
+const ASS_PRESET = {
+  viral: {
+    //  active: #fde047 (yellow)  inactive: rgba(255,255,255,0.5)
+    activeColor:   "&H0047E0FD",  // yellow #fde047
+    inactiveColor: "&H80FFFFFF",  // 50 % transparent white
+    activeBold:    true,
+    activeFs:      27,
+    inactiveFs:    22,
+    activeScale:   null,          // size change is enough
+    // Style: base = inactive colours, bold off, outline+shadow
+    styleDef: "Arial,22,&H80FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,3,1,2,20,20,55,1",
+  },
+  documentary: {
+    //  active: #ffffff  inactive: rgba(255,255,255,0.38)
+    activeColor:   "&H00FFFFFF",  // full white
+    inactiveColor: "&H9EFFFFFF",  // 38 % opaque white  (alpha ≈ 0x9E)
+    activeBold:    true,
+    activeFs:      null,          // use scale instead
+    inactiveFs:    null,
+    activeScale:   107,           // scale(1.07)
+    styleDef: "Arial,17,&H9EFFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,3,1,0,2,20,20,45,1",
+  },
+  podcast: {
+    //  active: #ffffff  inactive: rgba(255,255,255,0.5)
+    activeColor:   "&H00FFFFFF",  // full white
+    inactiveColor: "&H80FFFFFF",  // 50 % transparent white
+    activeBold:    true,
+    activeFs:      null,
+    inactiveFs:    null,
+    activeScale:   105,           // scale(1.05)
+    styleDef: "Arial,17,&H80FFFFFF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,0,0,3,1,0,2,20,20,45,1",
+  },
+};
+
+function buildWordText(words, activeIdx, p) {
+  return words.map((word, i) => {
+    const isActive = i === activeIdx;
+    const color  = isActive ? p.activeColor  : p.inactiveColor;
+    const bold   = isActive && p.activeBold  ? "\\b1" : "\\b0";
+
+    let sizeTag = "";
+    if (p.activeFs && p.inactiveFs) {
+      sizeTag = isActive ? `\\fs${p.activeFs}` : `\\fs${p.inactiveFs}`;
+    } else if (p.activeScale) {
+      sizeTag = isActive
+        ? `\\fscx${p.activeScale}\\fscy${p.activeScale}`
+        : "\\fscx100\\fscy100";
+    }
+
+    return `{\\1c${color}&${bold}${sizeTag}}${word}`;
+  }).join(" ");
+}
+
 function buildAssFile(subtitles, preset) {
-  // ASS colours: &HAABBGGRR (alpha, blue, green, red)
-  const styles = {
-    viral:      "Arial,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,3,1,2,20,20,55,1",
-    documentary:"Arial,17,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,3,1,0,2,20,20,45,1",
-    podcast:    "Arial,17,&H00FFFFFF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,0,0,3,1,0,2,20,20,45,1",
-  };
-  const style = styles[preset] ?? styles.viral;
+  const p = ASS_PRESET[preset] ?? ASS_PRESET.viral;
 
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -54,14 +103,42 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${style}
+Style: Default,${p.styleDef}
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
 
-  const events = subtitles.map((seg) =>
-    `Dialogue: 0,${msToAssTime(seg.start)},${msToAssTime(seg.end)},Default,,0,0,0,,${seg.text.replace(/\n/g, "\\N")}`
-  );
+  const events = [];
+
+  for (const seg of subtitles) {
+    const words = seg.text.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) continue;
+
+    if (words.length === 1) {
+      // Single word — highlight for the whole segment duration
+      const text = buildWordText(words, 0, p);
+      events.push(
+        `Dialogue: 0,${msToAssTime(seg.start)},${msToAssTime(seg.end)},Default,,0,0,0,,${text}`
+      );
+      continue;
+    }
+
+    // Mirror getActiveWordIndex: evenly divide segment duration across words
+    const dur = Math.max(seg.end - seg.start, 300);
+    const slotMs = dur / words.length;
+
+    for (let i = 0; i < words.length; i++) {
+      const slotStart = seg.start + i * slotMs;
+      const slotEnd   = i < words.length - 1
+        ? seg.start + (i + 1) * slotMs
+        : seg.end;  // last slot ends exactly at seg.end
+
+      const text = buildWordText(words, i, p);
+      events.push(
+        `Dialogue: 0,${msToAssTime(slotStart)},${msToAssTime(slotEnd)},Default,,0,0,0,,${text}`
+      );
+    }
+  }
 
   return header + "\n" + events.join("\n") + "\n";
 }
