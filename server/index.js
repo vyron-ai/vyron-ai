@@ -2,7 +2,7 @@ import express from "express";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { execFile, execSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
   createWriteStream, createReadStream,
@@ -12,17 +12,18 @@ import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { randomBytes } from "node:crypto";
+import ffmpegStatic from "ffmpeg-static";
 
 const execFileAsync = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distDir = join(__dirname, "..", "dist", "public");
 
-// ── Resolve FFmpeg absolute path once at startup ──────────────────────────────
+// ── Resolve FFmpeg path at startup ────────────────────────────────────────────
+// Priority: FFMPEG_PATH env var → ffmpeg-static bundled binary → error
 function resolveFfmpegPath() {
-  if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH.trim();
-  try { return execSync("which ffmpeg", { encoding: "utf8" }).trim(); } catch {}
-  try { return execSync("command -v ffmpeg", { shell: true, encoding: "utf8" }).trim(); } catch {}
+  if (process.env.FFMPEG_PATH?.trim()) return process.env.FFMPEG_PATH.trim();
+  if (ffmpegStatic) return ffmpegStatic;
   return null;
 }
 const FFMPEG = resolveFfmpegPath();
