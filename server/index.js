@@ -19,41 +19,14 @@ const execFileAsync = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distDir = join(__dirname, "..", "dist", "public");
 
-// ── Resolve FFmpeg path at startup ────────────────────────────────────────────
-// Priority: FFMPEG_PATH env var → ffmpeg-static bundled binary → error
-function resolveFfmpegPath() {
-  if (process.env.FFMPEG_PATH?.trim()) return process.env.FFMPEG_PATH.trim();
-  if (ffmpegStatic) return ffmpegStatic;
-  return null;
-}
-const FFMPEG = resolveFfmpegPath();
+// ── FFmpeg binary — ffmpeg-static bundled path only, no env/shell fallback ───
+const FFMPEG = ffmpegStatic ?? null;
 console.log(`FFmpeg path: ${FFMPEG ?? "NOT FOUND — MP4 export will fail"}`);
 
 
 const app = express();
 app.use(express.json());
 
-// ── GET /api/debug/ffmpeg — production diagnostics ────────────────────────────
-app.get("/api/debug/ffmpeg", (req, res) => {
-  function tryShell(cmd) {
-    try { return execSync(cmd, { shell: true, encoding: "utf8" }).trim(); }
-    catch (e) { return `ERROR: ${e.message}`; }
-  }
-
-  const info = {
-    FFMPEG_PATH_env:   process.env.FFMPEG_PATH ?? "(not set)",
-    resolved_at_boot:  FFMPEG ?? "(null — not found at startup)",
-    cwd:               process.cwd(),
-    PATH:              process.env.PATH ?? "(not set)",
-    which_ffmpeg:      tryShell("which ffmpeg"),
-    command_v_ffmpeg:  tryShell("command -v ffmpeg"),
-    ls_nix_ffmpeg:     tryShell("ls /nix/store/*/bin/ffmpeg 2>/dev/null | head -5 || echo 'none found'"),
-    ffmpeg_version:    tryShell("ffmpeg -version 2>&1 | head -1"),
-  };
-
-  console.log("[debug/ffmpeg]", JSON.stringify(info, null, 2));
-  res.json(info);
-});
 
 // ── MP4 export helpers ────────────────────────────────────────────────────────
 function msToAssTime(ms) {
