@@ -369,6 +369,8 @@ export default function SubtitlesPage() {
   );
   const [copied, setCopied] = useState(false);
   const [preset, setPreset] = useState<SubtitlePreset>("viral");
+  const [exportState, setExportState] = useState<"idle"|"preparing"|"rendering"|"done"|"failed">("idle");
+  const [exportError, setExportError] = useState("");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -454,12 +456,50 @@ export default function SubtitlesPage() {
       today.getFullYear().toString() +
       String(today.getMonth() + 1).padStart(2, "0") +
       String(today.getDate()).padStart(2, "0");
-    const url = URL.createObjectURL(blob);
+    const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
+    a.href = blobUrl;
     a.download = `subtitles-${ymd}.srt`;
     a.click();
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(blobUrl);
+  }
+
+  async function exportMp4() {
+    if (!videoUrl.trim() || subtitles.length === 0) return;
+    setExportState("preparing");
+    setExportError("");
+
+    try {
+      setExportState("rendering");
+      const res = await fetch("/api/export/mp4", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoUrl: videoUrl.trim(), subtitles, preset }),
+      });
+
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!res.ok || contentType.includes("application/json")) {
+        const data = await res.json();
+        throw new Error(data.error ?? `Export failed (HTTP ${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const today = new Date();
+      const ymd =
+        today.getFullYear().toString() +
+        String(today.getMonth() + 1).padStart(2, "0") +
+        String(today.getDate()).padStart(2, "0");
+      const mp4Url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = mp4Url;
+      a.download = `subtitles-${ymd}.mp4`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(mp4Url), 60_000);
+      setExportState("done");
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "MP4 export failed");
+      setExportState("failed");
+    }
   }
 
   const apiMissing =
@@ -631,6 +671,7 @@ export default function SubtitlesPage() {
 
             {/* Cache notice + actions */}
             {subtitles.length > 0 && (
+              <>
               <div className="flex items-center justify-between gap-2 px-0.5">
                 <div className="flex items-center gap-1.5 text-xs">
                   {fromCache ? (
@@ -654,6 +695,23 @@ export default function SubtitlesPage() {
                     title="Download .srt file"
                   >
                     <Download className="w-3.5 h-3.5" /> SRT
+                  </button>
+                  <button
+                    onClick={exportMp4}
+                    disabled={exportState === "preparing" || exportState === "rendering"}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Export MP4 with burned-in subtitles"
+                  >
+                    {exportState === "preparing" || exportState === "rendering" ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Film className="w-3.5 h-3.5" />
+                    )}
+                    {exportState === "preparing"
+                      ? "Preparing…"
+                      : exportState === "rendering"
+                      ? "Rendering…"
+                      : "MP4"}
                   </button>
                   <button
                     onClick={copyTranscript}
@@ -684,6 +742,21 @@ export default function SubtitlesPage() {
                   </button>
                 </div>
               </div>
+
+              {/* MP4 export status */}
+              {exportState === "done" && (
+                <div className="flex items-center gap-1.5 px-0.5 text-xs text-green-400">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  MP4 downloaded — click MP4 again to re-export.
+                </div>
+              )}
+              {exportState === "failed" && exportError && (
+                <div className="flex items-center gap-1.5 px-0.5 text-xs text-destructive">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  {exportError}
+                </div>
+              )}
+              </>
             )}
 
             {/* Subtitle timeline */}

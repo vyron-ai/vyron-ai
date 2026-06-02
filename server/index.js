@@ -2,13 +2,132 @@ import express from "express";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { readFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import {
+  createWriteStream, createReadStream,
+  unlinkSync, writeFileSync, existsSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { pipeline } from "node:stream/promises";
+import { Readable } from "node:stream";
+import { randomBytes } from "node:crypto";
+
+const execFileAsync = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distDir = join(__dirname, "..", "dist", "public");
 
 const app = express();
 app.use(express.json());
+
+// ── MP4 export helpers ────────────────────────────────────────────────────────
+function msToAssTime(ms) {
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  const s = Math.floor((ms % 60_000) / 1_000);
+  const cs = Math.floor((ms % 1_000) / 10);
+  return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
+}
+
+function buildAssFile(subtitles, preset) {
+  // ASS colours: &HAABBGGRR (alpha, blue, green, red)
+  const styles = {
+    viral:      "Arial,24,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,3,1,2,20,20,55,1",
+    documentary:"Arial,17,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,3,1,0,2,20,20,45,1",
+    podcast:    "Arial,17,&H00FFFFFF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,0,0,3,1,0,2,20,20,45,1",
+  };
+  const style = styles[preset] ?? styles.viral;
+
+  const header = `[Script Info]
+ScriptType: v4.00+
+PlayResX: 720
+PlayResY: 1280
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,${style}
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
+
+  const events = subtitles.map((seg) =>
+    `Dialogue: 0,${msToAssTime(seg.start)},${msToAssTime(seg.end)},Default,,0,0,0,,${seg.text.replace(/\n/g, "\\N")}`
+  );
+
+  return header + "\n" + events.join("\n") + "\n";
+}
+
+// ── POST /api/export/mp4 ──────────────────────────────────────────────────────
+app.post("/api/export/mp4", async (req, res) => {
+  const { videoUrl, subtitles, preset = "viral" } = req.body ?? {};
+
+  if (!videoUrl?.trim()) {
+    return res.status(400).json({ error: "videoUrl is required" });
+  }
+  if (!Array.isArray(subtitles) || subtitles.length === 0) {
+    return res.status(400).json({ error: "subtitles array is required" });
+  }
+
+  const id = randomBytes(8).toString("hex");
+  const inputPath  = join(tmpdir(), `vyron-in-${id}.mp4`);
+  const assPath    = join(tmpdir(), `vyron-subs-${id}.ass`);
+  const outputPath = join(tmpdir(), `vyron-out-${id}.mp4`);
+
+  const cleanup = () => {
+    for (const p of [inputPath, assPath, outputPath]) {
+      try { if (existsSync(p)) unlinkSync(p); } catch {}
+    }
+  };
+
+  try {
+    // 1. Download source video → temp file
+    const videoRes = await fetch(videoUrl.trim());
+    if (!videoRes.ok || !videoRes.body) {
+      throw new Error(`Could not download video: HTTP ${videoRes.status}`);
+    }
+    await pipeline(Readable.fromWeb(videoRes.body), createWriteStream(inputPath));
+
+    // 2. Write ASS subtitle file
+    writeFileSync(assPath, buildAssFile(subtitles, preset), "utf-8");
+
+    // 3. FFmpeg — burn subtitles, re-encode video, copy audio
+    await execFileAsync(
+      "ffmpeg",
+      [
+        "-y",
+        "-i", inputPath,
+        "-vf", `ass=${assPath}`,
+        "-c:v", "libx264", "-crf", "23", "-preset", "fast",
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        outputPath,
+      ],
+      { maxBuffer: 50 * 1024 * 1024, timeout: 300_000 }
+    );
+
+    // 4. Stream MP4 back as attachment
+    const today = new Date();
+    const ymd =
+      today.getFullYear().toString() +
+      String(today.getMonth() + 1).padStart(2, "0") +
+      String(today.getDate()).padStart(2, "0");
+
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Content-Disposition", `attachment; filename="subtitles-${ymd}.mp4"`);
+
+    const readStream = createReadStream(outputPath);
+    readStream.on("end", cleanup);
+    readStream.on("error", cleanup);
+    readStream.pipe(res);
+  } catch (err) {
+    cleanup();
+    if (!res.headersSent) {
+      res.status(500).json({ error: err?.message ?? "MP4 export failed" });
+    }
+  }
+});
 
 // ── POST /api/subtitles/generate ──────────────────────────────────────────────
 app.post("/api/subtitles/generate", async (req, res) => {
