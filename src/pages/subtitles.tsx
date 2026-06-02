@@ -3,7 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import {
   Captions, RefreshCw, AlertCircle, CheckCircle2,
   Loader2, Play, Trash2, Copy, CheckCheck, Clock, Sparkles,
-  ExternalLink, Zap, Film, Mic,
+  ExternalLink, Zap, Film, Mic, Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -436,6 +436,32 @@ export default function SubtitlesPage() {
     });
   }
 
+  function msToSrtTime(ms: number): string {
+    const h = Math.floor(ms / 3_600_000);
+    const m = Math.floor((ms % 3_600_000) / 60_000);
+    const s = Math.floor((ms % 60_000) / 1_000);
+    const f = ms % 1_000;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(f).padStart(3, "0")}`;
+  }
+
+  function exportSrt() {
+    const lines = subtitles.map((seg, i) =>
+      `${i + 1}\n${msToSrtTime(seg.start)} --> ${msToSrtTime(seg.end)}\n${seg.text}`
+    );
+    const blob = new Blob([lines.join("\n\n") + "\n"], { type: "text/plain;charset=utf-8" });
+    const today = new Date();
+    const ymd =
+      today.getFullYear().toString() +
+      String(today.getMonth() + 1).padStart(2, "0") +
+      String(today.getDate()).padStart(2, "0");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `subtitles-${ymd}.srt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const apiMissing =
     error.toLowerCase().includes("assemblyai_api_key") ||
     error.toLowerCase().includes("not set");
@@ -622,6 +648,13 @@ export default function SubtitlesPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-3">
+                  <button
+                    onClick={exportSrt}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+                    title="Download .srt file"
+                  >
+                    <Download className="w-3.5 h-3.5" /> SRT
+                  </button>
                   <button
                     onClick={copyTranscript}
                     className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
