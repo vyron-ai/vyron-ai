@@ -2,7 +2,7 @@ import express from "express";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, execSync } from "node:child_process";
 import { promisify } from "node:util";
 import {
   createWriteStream, createReadStream,
@@ -17,6 +17,17 @@ const execFileAsync = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distDir = join(__dirname, "..", "dist", "public");
+
+// ── Resolve FFmpeg absolute path once at startup ──────────────────────────────
+function resolveFfmpegPath() {
+  if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH.trim();
+  try { return execSync("which ffmpeg", { encoding: "utf8" }).trim(); } catch {}
+  try { return execSync("command -v ffmpeg", { shell: true, encoding: "utf8" }).trim(); } catch {}
+  return null;
+}
+const FFMPEG = resolveFfmpegPath();
+console.log(`FFmpeg path: ${FFMPEG ?? "NOT FOUND — MP4 export will fail"}`);
+
 
 const app = express();
 app.use(express.json());
@@ -63,6 +74,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
 app.post("/api/export/mp4", async (req, res) => {
   const { videoUrl, subtitles, preset = "viral" } = req.body ?? {};
 
+  if (!FFMPEG) {
+    return res.status(500).json({
+      error: "FFmpeg not found on this server. Set the FFMPEG_PATH environment variable to the absolute path of the ffmpeg binary.",
+    });
+  }
   if (!videoUrl?.trim()) {
     return res.status(400).json({ error: "videoUrl is required" });
   }
@@ -94,7 +110,7 @@ app.post("/api/export/mp4", async (req, res) => {
 
     // 3. FFmpeg — burn subtitles, re-encode video, copy audio
     await execFileAsync(
-      "ffmpeg",
+      FFMPEG,
       [
         "-y",
         "-i", inputPath,
