@@ -55,7 +55,7 @@ const PRESETS: Record<SubtitlePreset, PresetDef> = {
     },
     inactiveWord: {
       color: "rgba(255,255,255,0.5)",
-      fontWeight: 700,
+      fontWeight: 800,
       letterSpacing: "-0.01em",
       textShadow: "0 2px 10px rgba(0,0,0,0.68)",
     },
@@ -78,7 +78,7 @@ const PRESETS: Record<SubtitlePreset, PresetDef> = {
     },
     activeWord: {
       color: "#ffffff",
-      fontWeight: 700,
+      fontWeight: 800,
       letterSpacing: "-0.018em",
       textShadow:
         "0 0 20px rgba(150,205,255,0.45), 0 3px 18px rgba(0,0,0,0.68)",
@@ -86,7 +86,7 @@ const PRESETS: Record<SubtitlePreset, PresetDef> = {
     },
     inactiveWord: {
       color: "rgba(255,255,255,0.38)",
-      fontWeight: 500,
+      fontWeight: 600,
       letterSpacing: "0.018em",
       textShadow: "0 1px 8px rgba(0,0,0,0.55)",
     },
@@ -109,14 +109,14 @@ const PRESETS: Record<SubtitlePreset, PresetDef> = {
     },
     activeWord: {
       color: "#ffffff",
-      fontWeight: 800,
+      fontWeight: 900,
       letterSpacing: "-0.022em",
       textShadow: "0 3px 22px rgba(0,0,0,0.72), 0 1px 6px rgba(0,0,0,0.55)",
       transform: "scale(1.05)",
     },
     inactiveWord: {
       color: "rgba(255,255,255,0.5)",
-      fontWeight: 600,
+      fontWeight: 700,
       letterSpacing: "0.004em",
       textShadow: "0 1px 8px rgba(0,0,0,0.55)",
     },
@@ -379,8 +379,8 @@ export default function SubtitlesPage() {
   const [preset, setPreset] = useState<SubtitlePreset>("viral");
   const [exportState, setExportState] = useState<"idle"|"preparing"|"rendering"|"done"|"failed">("idle");
   const [exportError, setExportError] = useState("");
-  const [subtitleScale, setSubtitleScale] = useState(1.2);
-  const [subtitlePosition, setSubtitlePosition] = useState(20);
+  const [subtitleScale, setSubtitleScale] = useState(1.5);
+  const [subtitlePosition, setSubtitlePosition] = useState(35);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -579,9 +579,9 @@ export default function SubtitlesPage() {
                   onClick={() => setSubtitleScale(s => Math.min(1.5, parseFloat((s + 0.1).toFixed(1))))}
                   className="w-7 h-7 rounded-lg border border-border/60 bg-card/40 flex items-center justify-center text-base leading-none text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors select-none"
                 >+</button>
-                {subtitleScale !== 1.2 && (
+                {subtitleScale !== 1.5 && (
                   <button
-                    onClick={() => setSubtitleScale(1.2)}
+                    onClick={() => setSubtitleScale(1.5)}
                     className="text-[10px] text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
                   >reset</button>
                 )}
@@ -602,9 +602,9 @@ export default function SubtitlesPage() {
                   style={{ accentColor: "hsl(var(--primary))" }}
                 />
                 <span className="text-[10px] text-muted-foreground/35 select-none">↑</span>
-                {subtitlePosition !== 20 && (
+                {subtitlePosition !== 35 && (
                   <button
-                    onClick={() => setSubtitlePosition(20)}
+                    onClick={() => setSubtitlePosition(35)}
                     className="text-[10px] text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
                   >reset</button>
                 )}
