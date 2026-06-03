@@ -182,6 +182,64 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
   return header + "\n" + events.join("\n") + "\n";
 }
 
+// ── POST /api/script/generate ─────────────────────────────────────────────────
+app.post("/api/script/generate", (req, res) => {
+  const { niche = "", product = "", audience = "" } = req.body ?? {};
+  if (!niche.trim() || !product.trim() || !audience.trim()) {
+    return res.status(400).json({ error: "niche, product, and audience are required" });
+  }
+
+  const n = niche.trim();
+  const pr = product.trim();
+  const au = audience.trim();
+
+  const hooks = [
+    `Nobody talks about this ${n} hack — but ${au} are using it to transform their results.`,
+    `Stop scrolling. If you're a ${au.replace(/s$/, "")} struggling with ${n}, this changes everything.`,
+    `I tried every ${n} strategy out there. Only this one actually worked for ${au}.`,
+    `The ${n} secret that ${au} wish they knew sooner — no fluff, just results.`,
+    `POV: You finally figured out the real way to win at ${n}.`,
+  ];
+
+  const scripts = [
+    `Here's the truth about ${n} that most people overlook.\n\nIf you're a ${au.replace(/s$/, "")} trying to grow, the old way isn't working anymore.\n\nThat's exactly why I built ${pr} — a focused tool designed specifically for ${au} who are serious about their ${n} results.\n\nThe best part? You can get started today without any guesswork.`,
+    `Most ${au} spend weeks figuring out ${n} on their own.\n\nI did too — until I stopped doing it the hard way.\n\n${pr} gives you a clear path forward, built for ${au} like you.\n\nYou don't need more information. You need the right system.`,
+    `Here's a simple formula that's working for ${au} right now in ${n}:\n\nStep 1 — Focus on what actually moves the needle.\nStep 2 — Cut everything that wastes your time.\nStep 3 — Use tools like ${pr} to stay consistent.\n\nConsistency plus the right system equals real results.`,
+  ];
+
+  const ctas = [
+    `Drop a "YES" in the comments if you want my free ${n} guide.`,
+    `Follow for more ${n} tips built for ${au} — I post daily.`,
+    `Link in bio to get started with ${pr} today. Zero risk.`,
+    `Save this for later and share it with a ${au.replace(/s$/, "")} who needs this.`,
+    `Comment "${n.toUpperCase()}" and I'll send you the full breakdown.`,
+  ];
+
+  const titles = [
+    `The ${n} strategy every ${au.replace(/s$/, "")} needs to know in 2025`,
+    `Why ${au} are switching to ${pr} for ${n}`,
+    `${n} tips that actually work for ${au} (no fluff)`,
+    `How I changed my ${n} results using ${pr}`,
+    `The #1 ${n} mistake ${au} keep making`,
+  ];
+
+  const hashtagSets = [
+    `#${n.replace(/\s+/g, "")} #${pr.replace(/\s+/g, "")} #${au.replace(/\s+/g, "")} #contentcreator #tiktokmarketing #viral2025 #shortsvideo #growthhacks`,
+    `#${n.replace(/\s+/g, "")}tips #${au.replace(/\s+/g, "")}life #${pr.replace(/\s+/g, "")} #reels #tiktoktips #fyp #smallbusiness #creatoreconomy`,
+    `#${n.replace(/\s+/g, "")}hacks #${au.replace(/\s+/g, "")} #contentmarketing #${pr.replace(/\s+/g, "")} #foryoupage #viral #shorts #businesstips`,
+  ];
+
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  res.json({
+    hook: pick(hooks),
+    script: pick(scripts),
+    cta: pick(ctas),
+    title: pick(titles),
+    hashtags: pick(hashtagSets),
+  });
+});
+
 // ── POST /api/export/mp4 ──────────────────────────────────────────────────────
 app.post("/api/export/mp4", async (req, res) => {
   const { videoUrl, subtitles, preset = "viral", subtitleScale = 1.0, subtitlePosition = 0 } = req.body ?? {};

@@ -3,7 +3,7 @@ import { useState, ReactNode } from "react";
 import {
   LayoutDashboard, FolderKanban, Video, Subtitles, Layers,
   LineChart, Workflow, Settings, Bell, Search, Menu, HardDrive,
-  LogOut, Loader2, FlaskConical,
+  LogOut, Loader2, FlaskConical, ScrollText,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
   const aiTools = [
     { icon: <Video size={18} />, label: "Video AI", href: "/upload" },
     { icon: <Subtitles size={18} />, label: "Subtitles", href: "/subtitles" },
+    { icon: <ScrollText size={18} />, label: "Script Engine", href: "/script-engine" },
     { icon: <Layers size={18} />, label: "Content", href: "/content" },
     { icon: <LineChart size={18} />, label: "Strategy", href: "/strategy" },
   ];
