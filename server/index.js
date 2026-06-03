@@ -120,8 +120,12 @@ function buildWordText(words, activeIdx, p, scale) {
 }
 
 function buildAssFile(subtitles, preset, scale = 1.0, positionPct = 0) {
-  const p       = ASS_PRESET[preset] ?? ASS_PRESET.viral;
+  const p        = ASS_PRESET[preset] ?? ASS_PRESET.viral;
   const styleDef = buildAssStyle(preset, scale, positionPct);
+  // Pre-compute the base MarginV so we can add per-segment line offsets.
+  // Mirrors buildAssStyle's formula exactly.
+  const base       = ASS_BASE[preset] ?? ASS_BASE.viral;
+  const baseMarginV = Math.round(base.marginV + (positionPct / 100) * 1280);
 
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -142,16 +146,24 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
     const words = seg.text.trim().split(/\s+/).filter(Boolean);
     if (words.length === 0) continue;
 
+    // Raise multi-line blocks to stay above platform UI chrome.
+    // Mirrors the preview's estimatedLines heuristic (~4 words per line).
+    const estimatedLines = words.length <= 4 ? 1 : words.length <= 8 ? 2 : 3;
+    const lineOffset     = estimatedLines === 3 ? 128 : estimatedLines === 2 ? 64 : 0;
+    // 5 % of 1280 ≈ 64 px, 10 % ≈ 128 px
+    const segMarginV     = lineOffset > 0 ? baseMarginV + lineOffset : 0;
+    // 0 means "use style default" (= baseMarginV); explicit value overrides it.
+
     if (words.length === 1) {
       const text = buildWordText(words, 0, p, scale);
       events.push(
-        `Dialogue: 0,${msToAssTime(seg.start)},${msToAssTime(seg.end)},Default,,0,0,0,,${text}`
+        `Dialogue: 0,${msToAssTime(seg.start)},${msToAssTime(seg.end)},Default,,0,0,${segMarginV},,${text}`
       );
       continue;
     }
 
     // Mirror getActiveWordIndex: evenly divide segment duration across words
-    const dur   = Math.max(seg.end - seg.start, 300);
+    const dur    = Math.max(seg.end - seg.start, 300);
     const slotMs = dur / words.length;
 
     for (let i = 0; i < words.length; i++) {
@@ -162,7 +174,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
 
       const text = buildWordText(words, i, p, scale);
       events.push(
-        `Dialogue: 0,${msToAssTime(slotStart)},${msToAssTime(slotEnd)},Default,,0,0,0,,${text}`
+        `Dialogue: 0,${msToAssTime(slotStart)},${msToAssTime(slotEnd)},Default,,0,0,${segMarginV},,${text}`
       );
     }
   }

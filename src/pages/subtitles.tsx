@@ -206,6 +206,12 @@ function SubtitleOverlay({
   const activeIdx = getActiveWordIndex(segment, currentMs);
   const isViral = preset === "viral";
 
+  // Raise multi-line blocks so they stay above platform UI chrome.
+  // ~4 words fit per line at scale 1.7× in a 360 px container.
+  const estimatedLines = words.length <= 4 ? 1 : words.length <= 8 ? 2 : 3;
+  const lineOffsetPct  = estimatedLines === 3 ? 10 : estimatedLines === 2 ? 5 : 0;
+  const effectivePos   = positionPct + lineOffsetPct;
+
   return (
     <div
       className="absolute inset-0 pointer-events-none"
@@ -216,8 +222,8 @@ function SubtitleOverlay({
         paddingLeft: isViral ? 0 : 14,
         paddingRight: isViral ? 0 : 14,
         paddingBottom: isViral
-          ? `${positionPct}%`
-          : `calc(${positionPct}% + 50px)`,
+          ? `${effectivePos}%`
+          : `calc(${effectivePos}% + 50px)`,
       }}
     >
       <style>{CINEMATIC_STYLES}</style>
