@@ -380,7 +380,7 @@ export default function SubtitlesPage() {
   const [exportState, setExportState] = useState<"idle"|"preparing"|"rendering"|"done"|"failed">("idle");
   const [exportError, setExportError] = useState("");
   const [subtitleScale, setSubtitleScale] = useState(1.0);
-  const [subtitlePosition, setSubtitlePosition] = useState(0);
+  const [subtitlePosition, setSubtitlePosition] = useState(8);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -569,14 +569,14 @@ export default function SubtitlesPage() {
               <div className="flex items-center gap-2.5">
                 <span className="text-xs text-muted-foreground/70 w-14 shrink-0">Size</span>
                 <button
-                  onClick={() => setSubtitleScale(s => Math.max(0.5, parseFloat((s - 0.1).toFixed(1))))}
+                  onClick={() => setSubtitleScale(s => Math.max(0.7, parseFloat((s - 0.1).toFixed(1))))}
                   className="w-7 h-7 rounded-lg border border-border/60 bg-card/40 flex items-center justify-center text-base leading-none text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors select-none"
                 >−</button>
                 <span className="flex-1 text-center text-xs font-mono tabular-nums text-foreground">
                   {subtitleScale.toFixed(1)}×
                 </span>
                 <button
-                  onClick={() => setSubtitleScale(s => Math.min(2.0, parseFloat((s + 0.1).toFixed(1))))}
+                  onClick={() => setSubtitleScale(s => Math.min(1.5, parseFloat((s + 0.1).toFixed(1))))}
                   className="w-7 h-7 rounded-lg border border-border/60 bg-card/40 flex items-center justify-center text-base leading-none text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors select-none"
                 >+</button>
                 {subtitleScale !== 1.0 && (
@@ -593,8 +593,8 @@ export default function SubtitlesPage() {
                 <span className="text-[10px] text-muted-foreground/35 select-none">↓</span>
                 <input
                   type="range"
-                  min={0}
-                  max={75}
+                  min={3}
+                  max={55}
                   step={1}
                   value={subtitlePosition}
                   onChange={e => setSubtitlePosition(Number(e.target.value))}
@@ -602,9 +602,9 @@ export default function SubtitlesPage() {
                   style={{ accentColor: "hsl(var(--primary))" }}
                 />
                 <span className="text-[10px] text-muted-foreground/35 select-none">↑</span>
-                {subtitlePosition !== 0 && (
+                {subtitlePosition !== 8 && (
                   <button
-                    onClick={() => setSubtitlePosition(0)}
+                    onClick={() => setSubtitlePosition(8)}
                     className="text-[10px] text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
                   >reset</button>
                 )}
