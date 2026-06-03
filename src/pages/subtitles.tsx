@@ -379,8 +379,8 @@ export default function SubtitlesPage() {
   const [preset, setPreset] = useState<SubtitlePreset>("viral");
   const [exportState, setExportState] = useState<"idle"|"preparing"|"rendering"|"done"|"failed">("idle");
   const [exportError, setExportError] = useState("");
-  const [subtitleScale, setSubtitleScale] = useState(1.5);
-  const [subtitlePosition, setSubtitlePosition] = useState(35);
+  const [subtitleScale, setSubtitleScale] = useState(1.7);
+  const [subtitlePosition, setSubtitlePosition] = useState(22);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -576,12 +576,12 @@ export default function SubtitlesPage() {
                   {subtitleScale.toFixed(1)}×
                 </span>
                 <button
-                  onClick={() => setSubtitleScale(s => Math.min(1.5, parseFloat((s + 0.1).toFixed(1))))}
+                  onClick={() => setSubtitleScale(s => Math.min(1.8, parseFloat((s + 0.1).toFixed(1))))}
                   className="w-7 h-7 rounded-lg border border-border/60 bg-card/40 flex items-center justify-center text-base leading-none text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors select-none"
                 >+</button>
-                {subtitleScale !== 1.5 && (
+                {subtitleScale !== 1.7 && (
                   <button
-                    onClick={() => setSubtitleScale(1.5)}
+                    onClick={() => setSubtitleScale(1.7)}
                     className="text-[10px] text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
                   >reset</button>
                 )}
@@ -602,9 +602,9 @@ export default function SubtitlesPage() {
                   style={{ accentColor: "hsl(var(--primary))" }}
                 />
                 <span className="text-[10px] text-muted-foreground/35 select-none">↑</span>
-                {subtitlePosition !== 35 && (
+                {subtitlePosition !== 22 && (
                   <button
-                    onClick={() => setSubtitlePosition(35)}
+                    onClick={() => setSubtitlePosition(22)}
                     className="text-[10px] text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
                   >reset</button>
                 )}
