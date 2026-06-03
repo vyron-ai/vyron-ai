@@ -73,7 +73,30 @@ const ASS_PRESET = {
   },
 };
 
-function buildWordText(words, activeIdx, p) {
+// Base font sizes (inactive) and bottom margins at scale=1, positionPct=0
+const ASS_BASE = {
+  viral:       { fs: 22, marginV: 55 },
+  documentary: { fs: 17, marginV: 45 },
+  podcast:     { fs: 17, marginV: 45 },
+};
+
+// Build the ASS Style line with scale and position applied
+function buildAssStyle(preset, scale, positionPct) {
+  const base   = ASS_BASE[preset] ?? ASS_BASE.viral;
+  const fs     = Math.max(8, Math.round(base.fs * scale));
+  // positionPct 0–75 lifts the subtitle from its base position.
+  // At 75% the subtitle is near the top of a 1280px-tall canvas.
+  const marginV = Math.round(base.marginV + (positionPct / 100) * 1280);
+
+  const templates = {
+    viral:       `Arial,${fs},&H80FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,3,1,2,20,20,${marginV},1`,
+    documentary: `Arial,${fs},&H9EFFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,3,1,0,2,20,20,${marginV},1`,
+    podcast:     `Arial,${fs},&H80FFFFFF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,0,0,3,1,0,2,20,20,${marginV},1`,
+  };
+  return templates[preset] ?? templates.viral;
+}
+
+function buildWordText(words, activeIdx, p, scale) {
   return words.map((word, i) => {
     const isActive = i === activeIdx;
     const color  = isActive ? p.activeColor  : p.inactiveColor;
@@ -81,8 +104,12 @@ function buildWordText(words, activeIdx, p) {
 
     let sizeTag = "";
     if (p.activeFs && p.inactiveFs) {
-      sizeTag = isActive ? `\\fs${p.activeFs}` : `\\fs${p.inactiveFs}`;
+      // Scale the explicit font sizes
+      const aFs = Math.max(8, Math.round(p.activeFs   * scale));
+      const iFs = Math.max(8, Math.round(p.inactiveFs * scale));
+      sizeTag = isActive ? `\\fs${aFs}` : `\\fs${iFs}`;
     } else if (p.activeScale) {
+      // Relative scale override (documentary / podcast)
       sizeTag = isActive
         ? `\\fscx${p.activeScale}\\fscy${p.activeScale}`
         : "\\fscx100\\fscy100";
@@ -92,8 +119,9 @@ function buildWordText(words, activeIdx, p) {
   }).join(" ");
 }
 
-function buildAssFile(subtitles, preset) {
-  const p = ASS_PRESET[preset] ?? ASS_PRESET.viral;
+function buildAssFile(subtitles, preset, scale = 1.0, positionPct = 0) {
+  const p       = ASS_PRESET[preset] ?? ASS_PRESET.viral;
+  const styleDef = buildAssStyle(preset, scale, positionPct);
 
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -103,7 +131,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${p.styleDef}
+Style: Default,${styleDef}
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
@@ -115,8 +143,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
     if (words.length === 0) continue;
 
     if (words.length === 1) {
-      // Single word — highlight for the whole segment duration
-      const text = buildWordText(words, 0, p);
+      const text = buildWordText(words, 0, p, scale);
       events.push(
         `Dialogue: 0,${msToAssTime(seg.start)},${msToAssTime(seg.end)},Default,,0,0,0,,${text}`
       );
@@ -124,16 +151,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
     }
 
     // Mirror getActiveWordIndex: evenly divide segment duration across words
-    const dur = Math.max(seg.end - seg.start, 300);
+    const dur   = Math.max(seg.end - seg.start, 300);
     const slotMs = dur / words.length;
 
     for (let i = 0; i < words.length; i++) {
       const slotStart = seg.start + i * slotMs;
       const slotEnd   = i < words.length - 1
         ? seg.start + (i + 1) * slotMs
-        : seg.end;  // last slot ends exactly at seg.end
+        : seg.end;
 
-      const text = buildWordText(words, i, p);
+      const text = buildWordText(words, i, p, scale);
       events.push(
         `Dialogue: 0,${msToAssTime(slotStart)},${msToAssTime(slotEnd)},Default,,0,0,0,,${text}`
       );
@@ -145,7 +172,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
 
 // ── POST /api/export/mp4 ──────────────────────────────────────────────────────
 app.post("/api/export/mp4", async (req, res) => {
-  const { videoUrl, subtitles, preset = "viral" } = req.body ?? {};
+  const { videoUrl, subtitles, preset = "viral", subtitleScale = 1.0, subtitlePosition = 0 } = req.body ?? {};
 
   if (!FFMPEG) {
     return res.status(500).json({
@@ -179,7 +206,7 @@ app.post("/api/export/mp4", async (req, res) => {
     await pipeline(Readable.fromWeb(videoRes.body), createWriteStream(inputPath));
 
     // 2. Write ASS subtitle file
-    writeFileSync(assPath, buildAssFile(subtitles, preset), "utf-8");
+    writeFileSync(assPath, buildAssFile(subtitles, preset, Number(subtitleScale) || 1.0, Number(subtitlePosition) || 0), "utf-8");
 
     // 3. FFmpeg — burn subtitles, re-encode video, copy audio
     await execFileAsync(

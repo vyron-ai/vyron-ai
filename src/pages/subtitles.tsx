@@ -190,10 +190,14 @@ function SubtitleOverlay({
   segment,
   currentMs,
   preset,
+  scale = 1,
+  positionPct = 0,
 }: {
   segment: SubtitleSegment | undefined;
   currentMs: number;
   preset: SubtitlePreset;
+  scale?: number;
+  positionPct?: number;
 }) {
   if (!segment) return null;
 
@@ -211,7 +215,9 @@ function SubtitleOverlay({
         justifyContent: "center",
         paddingLeft: isViral ? 0 : 14,
         paddingRight: isViral ? 0 : 14,
-        paddingBottom: isViral ? 0 : 50,
+        paddingBottom: isViral
+          ? `${positionPct}%`
+          : `calc(${positionPct}% + 50px)`,
       }}
     >
       <style>{CINEMATIC_STYLES}</style>
@@ -223,6 +229,8 @@ function SubtitleOverlay({
           width: isViral ? "100%" : undefined,
           maxWidth: isViral ? undefined : "100%",
           lineHeight: 1.42,
+          transform: scale !== 1 ? `scale(${scale})` : undefined,
+          transformOrigin: "center bottom",
         }}
       >
         {words.map((word, i) => {
@@ -371,6 +379,8 @@ export default function SubtitlesPage() {
   const [preset, setPreset] = useState<SubtitlePreset>("viral");
   const [exportState, setExportState] = useState<"idle"|"preparing"|"rendering"|"done"|"failed">("idle");
   const [exportError, setExportError] = useState("");
+  const [subtitleScale, setSubtitleScale] = useState(1.0);
+  const [subtitlePosition, setSubtitlePosition] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -474,7 +484,7 @@ export default function SubtitlesPage() {
       const res = await fetch("/api/export/mp4", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoUrl: videoUrl.trim(), subtitles, preset }),
+        body: JSON.stringify({ videoUrl: videoUrl.trim(), subtitles, preset, subtitleScale, subtitlePosition }),
       });
 
       const contentType = res.headers.get("content-type") ?? "";
@@ -549,6 +559,58 @@ export default function SubtitlesPage() {
             {/* Preset selector */}
             <PresetSelector value={preset} onChange={setPreset} />
 
+            {/* ── Caption Appearance controls ── */}
+            <div className="glass border border-border rounded-xl p-3 w-full max-w-[400px] mx-auto flex flex-col gap-2.5">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.12em] px-0.5">
+                Caption Appearance
+              </span>
+
+              {/* Size row */}
+              <div className="flex items-center gap-2.5">
+                <span className="text-xs text-muted-foreground/70 w-14 shrink-0">Size</span>
+                <button
+                  onClick={() => setSubtitleScale(s => Math.max(0.5, parseFloat((s - 0.1).toFixed(1))))}
+                  className="w-7 h-7 rounded-lg border border-border/60 bg-card/40 flex items-center justify-center text-base leading-none text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors select-none"
+                >−</button>
+                <span className="flex-1 text-center text-xs font-mono tabular-nums text-foreground">
+                  {subtitleScale.toFixed(1)}×
+                </span>
+                <button
+                  onClick={() => setSubtitleScale(s => Math.min(2.0, parseFloat((s + 0.1).toFixed(1))))}
+                  className="w-7 h-7 rounded-lg border border-border/60 bg-card/40 flex items-center justify-center text-base leading-none text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors select-none"
+                >+</button>
+                {subtitleScale !== 1.0 && (
+                  <button
+                    onClick={() => setSubtitleScale(1.0)}
+                    className="text-[10px] text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
+                  >reset</button>
+                )}
+              </div>
+
+              {/* Position row */}
+              <div className="flex items-center gap-2.5">
+                <span className="text-xs text-muted-foreground/70 w-14 shrink-0">Position</span>
+                <span className="text-[10px] text-muted-foreground/35 select-none">↓</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={75}
+                  step={1}
+                  value={subtitlePosition}
+                  onChange={e => setSubtitlePosition(Number(e.target.value))}
+                  className="flex-1 accent-primary cursor-pointer"
+                  style={{ accentColor: "hsl(var(--primary))" }}
+                />
+                <span className="text-[10px] text-muted-foreground/35 select-none">↑</span>
+                {subtitlePosition !== 0 && (
+                  <button
+                    onClick={() => setSubtitlePosition(0)}
+                    className="text-[10px] text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
+                  >reset</button>
+                )}
+              </div>
+            </div>
+
             {/* Phone-frame preview */}
             <div
               className="relative mx-auto w-full max-w-[360px] lg:max-w-[310px] overflow-hidden bg-black"
@@ -590,6 +652,8 @@ export default function SubtitlesPage() {
                 segment={currentSegment}
                 currentMs={currentMs}
                 preset={preset}
+                scale={subtitleScale}
+                positionPct={subtitlePosition}
               />
             </div>
 
