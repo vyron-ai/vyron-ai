@@ -6,19 +6,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Loader2, Zap, CalendarDays, Sparkles,
+  Loader2, Zap, CalendarDays, Sparkles, Target, MessageSquare,
 } from "lucide-react";
 
 type Frequency = "daily" | "5x_week" | "3x_week" | "2x_week";
 type Duration  = 7 | 30 | 60 | 90;
 type HookType  = "curiosity" | "pain" | "story" | "authority" | "mistake" | "opportunity" | "viral";
+type Intensity = "soft" | "medium" | "aggressive";
 
 interface CalendarEntry {
   day:         number;
   contentType: string;
   hookType:    HookType;
+  intensity:   Intensity;
   title:       string;
   objective:   string;
+  cta:         string;
 }
 
 interface CalendarResult {
@@ -26,14 +29,16 @@ interface CalendarResult {
   total:    number;
   duration: number;
   niche:    string;
+  product:  string;
+  audience: string;
 }
 
 // ── Pill selector ──────────────────────────────────────────────────────────────
 function PillSelector<T extends string>({
   options, value, onChange,
 }: {
-  options: { value: T; label: string }[];
-  value:   T;
+  options:  { value: T; label: string }[];
+  value:    T;
   onChange: (v: T) => void;
 }) {
   return (
@@ -55,7 +60,7 @@ function PillSelector<T extends string>({
   );
 }
 
-// ── Hook type badge colour ─────────────────────────────────────────────────────
+// ── Colour maps ────────────────────────────────────────────────────────────────
 const HOOK_COLORS: Record<HookType, string> = {
   curiosity:   "bg-blue-500/15 text-blue-400 border-blue-500/30",
   pain:        "bg-red-500/15 text-red-400 border-red-500/30",
@@ -76,7 +81,18 @@ const HOOK_LABEL: Record<HookType, string> = {
   viral:       "🔥 Viral Trend",
 };
 
-// ── Content type badge colour (cycles through a palette) ───────────────────────
+const INTENSITY_COLORS: Record<Intensity, string> = {
+  soft:       "bg-sky-500/15 text-sky-400 border-sky-500/30",
+  medium:     "bg-violet-500/15 text-violet-400 border-violet-500/30",
+  aggressive: "bg-rose-500/15 text-rose-400 border-rose-500/30",
+};
+
+const INTENSITY_LABEL: Record<Intensity, string> = {
+  soft:       "🌊 Soft",
+  medium:     "⚡ Medium",
+  aggressive: "🔥 Aggressive",
+};
+
 const CONTENT_PALETTE = [
   "bg-sky-500/15 text-sky-400 border-sky-500/30",
   "bg-violet-500/15 text-violet-400 border-violet-500/30",
@@ -102,27 +118,27 @@ function contentColor(type: string) {
 
 // ── Day card ───────────────────────────────────────────────────────────────────
 function DayCard({
-  entry, niche, onGenerateScript,
+  entry, onGenerateScript,
 }: {
-  entry: CalendarEntry;
-  niche: string;
-  onGenerateScript: (e: CalendarEntry) => void;
+  entry:             CalendarEntry;
+  onGenerateScript:  (e: CalendarEntry) => void;
 }) {
   return (
     <div className="glass border border-border rounded-xl p-4 flex flex-col gap-3 hover:border-primary/30 transition-colors">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="shrink-0 w-12 h-12 rounded-lg bg-primary/10 border border-primary/20 flex flex-col items-center justify-center">
-            <span className="text-[10px] text-muted-foreground font-medium leading-none">DAY</span>
-            <span className="text-lg font-bold text-primary leading-none mt-0.5">{entry.day}</span>
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-foreground leading-snug line-clamp-2">{entry.title}</p>
-            <p className="text-xs text-muted-foreground mt-1">{entry.objective}</p>
-          </div>
+
+      {/* Top row — day number + content topic */}
+      <div className="flex items-start gap-3">
+        <div className="shrink-0 w-12 h-12 rounded-lg bg-primary/10 border border-primary/20 flex flex-col items-center justify-center">
+          <span className="text-[10px] text-muted-foreground font-medium leading-none">DAY</span>
+          <span className="text-lg font-bold text-primary leading-none mt-0.5">{entry.day}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-0.5">Content Topic</p>
+          <p className="text-sm font-semibold text-foreground leading-snug">{entry.title}</p>
         </div>
       </div>
 
+      {/* Badges row */}
       <div className="flex flex-wrap gap-2">
         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${contentColor(entry.contentType)}`}>
           {entry.contentType}
@@ -130,8 +146,30 @@ function DayCard({
         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${HOOK_COLORS[entry.hookType]}`}>
           {HOOK_LABEL[entry.hookType]}
         </span>
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${INTENSITY_COLORS[entry.intensity]}`}>
+          {INTENSITY_LABEL[entry.intensity]}
+        </span>
       </div>
 
+      {/* Objective */}
+      <div className="flex items-start gap-2">
+        <Target size={12} className="text-muted-foreground mt-0.5 shrink-0" />
+        <div>
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Objective</p>
+          <p className="text-xs text-foreground/80">{entry.objective}</p>
+        </div>
+      </div>
+
+      {/* Suggested CTA */}
+      <div className="flex items-start gap-2">
+        <MessageSquare size={12} className="text-muted-foreground mt-0.5 shrink-0" />
+        <div>
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Suggested CTA</p>
+          <p className="text-xs text-foreground/80">{entry.cta}</p>
+        </div>
+      </div>
+
+      {/* Generate Script button */}
       <Button
         size="sm"
         variant="outline"
@@ -161,23 +199,25 @@ const DUR_OPTIONS: { value: Duration; label: string }[] = [
 ];
 
 const GOAL_OPTIONS = [
-  { value: "brand_awareness",  label: "Brand Awareness" },
-  { value: "lead_generation",  label: "Lead Generation" },
-  { value: "sales",            label: "Sales" },
-  { value: "engagement",       label: "Engagement" },
-  { value: "community",        label: "Community Building" },
+  { value: "brand_awareness", label: "Brand Awareness" },
+  { value: "lead_generation", label: "Lead Generation" },
+  { value: "sales",           label: "Sales" },
+  { value: "engagement",      label: "Engagement" },
+  { value: "community",       label: "Community Building" },
 ];
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function ContentPlannerPage() {
   const [niche,     setNiche]     = useState("");
+  const [product,   setProduct]   = useState("");
+  const [audience,  setAudience]  = useState("");
   const [goal,      setGoal]      = useState("brand_awareness");
   const [frequency, setFrequency] = useState<Frequency>("3x_week");
   const [duration,  setDuration]  = useState<Duration>(30);
   const [loading,   setLoading]   = useState(false);
   const [result,    setResult]    = useState<CalendarResult | null>(null);
   const [, navigate] = useLocation();
-  const { toast } = useToast();
+  const { toast }    = useToast();
 
   const canGenerate = niche.trim().length > 0;
 
@@ -191,6 +231,8 @@ export default function ContentPlannerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           niche:            niche.trim(),
+          product:          product.trim(),
+          audience:         audience.trim(),
           goal,
           postingFrequency: frequency,
           duration,
@@ -207,9 +249,12 @@ export default function ContentPlannerPage() {
 
   const handleGenerateScript = (entry: CalendarEntry) => {
     const params = new URLSearchParams({
-      niche:    niche.trim(),
-      hookType: entry.hookType,
-      topic:    entry.title,
+      niche:     niche.trim(),
+      product:   product.trim(),
+      audience:  audience.trim(),
+      hookType:  entry.hookType,
+      intensity: entry.intensity,
+      topic:     entry.title,
     });
     navigate(`/script-engine?${params.toString()}`);
   };
@@ -225,12 +270,13 @@ export default function ContentPlannerPage() {
             Content Planner
           </h2>
           <p className="text-muted-foreground text-sm">
-            Generate a balanced content calendar with hooks, titles and objectives for each posting day.
+            Generate a balanced content calendar — click any day to open Script Engine pre-filled and ready.
           </p>
         </div>
 
         {/* Form */}
         <div className="glass border border-border rounded-xl p-4 md:p-6 space-y-5">
+
           <div className="space-y-2">
             <Label htmlFor="niche">Niche</Label>
             <Input
@@ -238,6 +284,28 @@ export default function ContentPlannerPage() {
               placeholder="e.g. fitness, personal finance, skincare…"
               value={niche}
               onChange={(e) => setNiche(e.target.value)}
+              className="bg-background/50 border-border focus-visible:ring-primary/50"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="product">Product / Service</Label>
+            <Input
+              id="product"
+              placeholder="e.g. online coaching, Notion template, SaaS app…"
+              value={product}
+              onChange={(e) => setProduct(e.target.value)}
+              className="bg-background/50 border-border focus-visible:ring-primary/50"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="audience">Target Audience</Label>
+            <Input
+              id="audience"
+              placeholder="e.g. busy moms, college students, small business owners…"
+              value={audience}
+              onChange={(e) => setAudience(e.target.value)}
               className="bg-background/50 border-border focus-visible:ring-primary/50"
             />
           </div>
@@ -286,11 +354,15 @@ export default function ContentPlannerPage() {
         {/* Results */}
         {result && (
           <div className="space-y-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-300">
+
             {/* Stats bar */}
             <div className="glass border border-primary/25 rounded-xl px-4 py-3 flex items-center justify-between bg-primary/5">
               <div className="flex items-center gap-2">
                 <CalendarDays size={16} className="text-primary" />
                 <span className="text-sm font-semibold text-foreground">{result.niche}</span>
+                {result.product && (
+                  <span className="text-xs text-muted-foreground">· {result.product}</span>
+                )}
               </div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
                 <span><span className="text-foreground font-bold">{result.total}</span> posts</span>
@@ -299,7 +371,7 @@ export default function ContentPlannerPage() {
               </div>
             </div>
 
-            {/* Hook type distribution legend */}
+            {/* Hook distribution legend */}
             <div className="flex flex-wrap gap-1.5 px-1">
               {(Object.keys(HOOK_LABEL) as HookType[]).map((h) => {
                 const count = result.entries.filter((e) => e.hookType === h).length;
@@ -318,7 +390,6 @@ export default function ContentPlannerPage() {
                 <DayCard
                   key={i}
                   entry={entry}
-                  niche={niche}
                   onGenerateScript={handleGenerateScript}
                 />
               ))}

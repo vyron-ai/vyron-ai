@@ -186,6 +186,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
 app.post("/api/content-planner/generate", (req, res) => {
   const {
     niche = "",
+    product = "",
+    audience = "",
     goal = "brand_awareness",
     postingFrequency = "daily",
     duration = 30,
@@ -193,6 +195,8 @@ app.post("/api/content-planner/generate", (req, res) => {
   if (!niche.trim()) return res.status(400).json({ error: "niche is required" });
 
   const n   = niche.trim();
+  const pr  = product.trim();
+  const au  = audience.trim();
   const dur = Math.min(Math.max(parseInt(duration) || 30, 7), 90);
 
   const freqMap  = { daily: 7, "5x_week": 5, "3x_week": 3, "2x_week": 2 };
@@ -259,6 +263,18 @@ app.post("/api/content-planner/generate", (req, res) => {
     community:        ["Deepen audience relationship", "Foster two-way conversation", "Build brand advocates", "Encourage participation"],
   };
 
+  const ctaTemplates = {
+    curiosity:   ["Comment 'HOW' and I'll send the full breakdown", "Follow for the answer in part 2", "Save this before it disappears"],
+    pain:        ["Comment 'STUCK' if this is you right now", "DM me — I'll show you the first step", "Link in bio if you're ready to fix this"],
+    story:       ["Comment 'ME TOO' if you've been here", "Follow for the next chapter", "Share this with someone who needs it"],
+    authority:   ["Save this framework for later", "Follow if you want the full breakdown", "Comment 'FRAMEWORK' for the PDF version"],
+    mistake:     ["Comment 'GUILTY' if you've done this", "Follow — I share the fix every week", "Save this before you make the same mistake"],
+    opportunity: ["Comment 'IN' if you want the details", "Link in bio — the window won't stay open", "Follow to catch the next opportunity early"],
+    viral:       ["Share this with one creator who needs it", "Follow for what's working right now", "Duet or stitch this — let me know your take"],
+  };
+
+  const intensityCycle = ["medium", "aggressive", "soft", "medium", "aggressive", "medium", "soft"];
+
   const goalKey    = (goal || "").toLowerCase().replace(/[\s-]+/g, "_");
   const objectives = objectiveMap[goalKey] ?? objectiveMap.brand_awareness;
 
@@ -268,16 +284,20 @@ app.post("/api/content-planner/generate", (req, res) => {
     const hookType    = hookTypes[i % hookTypes.length];
     const contentType = contentTypes[i % contentTypes.length];
     const titles      = titleTemplates[hookType] ?? titleTemplates.curiosity;
+    const ctas        = ctaTemplates[hookType]   ?? ctaTemplates.curiosity;
+    const intensity   = intensityCycle[i % intensityCycle.length];
     entries.push({
       day:         dayNum,
       contentType,
       hookType,
+      intensity,
       title:       titles[i % titles.length],
       objective:   objectives[i % objectives.length],
+      cta:         ctas[i % ctas.length],
     });
   }
 
-  res.json({ entries, total, duration: dur, niche: n });
+  res.json({ entries, total, duration: dur, niche: n, product: pr, audience: au });
 });
 
 // ── Context Intelligence Layer ────────────────────────────────────────────────

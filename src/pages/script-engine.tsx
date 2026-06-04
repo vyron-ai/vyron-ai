@@ -159,15 +159,23 @@ export default function ScriptEnginePage() {
   const [result,    setResult]    = useState<ScriptResult | null>(null);
   const { toast } = useToast();
 
-  // Pre-populate from Content Planner deep-link (?niche=…&hookType=…&topic=…)
+  const [topic, setTopic] = useState("");
+
+  // Pre-populate from Content Planner deep-link
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const n = params.get("niche");
-    const h = params.get("hookType") as HookType | null;
-    const t = params.get("topic");
-    if (n) setNiche(n);
-    if (h && HOOK_TYPES.some((x) => x.value === h)) setHookType(h);
-    if (t) setProduct(t);
+    const params   = new URLSearchParams(window.location.search);
+    const n  = params.get("niche");
+    const pr = params.get("product");
+    const au = params.get("audience");
+    const h  = params.get("hookType") as HookType | null;
+    const it = params.get("intensity") as Intensity | null;
+    const t  = params.get("topic");
+    if (n)  setNiche(n);
+    if (pr) setProduct(pr);
+    if (au) setAudience(au);
+    if (h  && HOOK_TYPES.some((x) => x.value === h))   setHookType(h);
+    if (it && INTENSITIES.some((x) => x.value === it)) setIntensity(it);
+    if (t)  setTopic(t);
   }, []);
 
   const canGenerate = niche.trim() && product.trim() && audience.trim();
@@ -211,6 +219,17 @@ export default function ScriptEnginePage() {
             Context-intelligent scripts built around audience psychology, not just niche keywords.
           </p>
         </div>
+
+        {/* Content Topic chip — shown when arriving from Content Planner */}
+        {topic && (
+          <div className="flex items-start gap-2 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3">
+            <Zap size={14} className="text-primary shrink-0 mt-0.5" />
+            <div>
+              <p className="text-[10px] font-bold text-primary uppercase tracking-wider">Content Topic</p>
+              <p className="text-sm text-foreground/90 font-medium leading-snug mt-0.5">{topic}</p>
+            </div>
+          </div>
+        )}
 
         {/* Neuro Hook Engine */}
         <div className="glass border border-primary/30 rounded-xl p-4 md:p-5 space-y-5 bg-primary/5">
