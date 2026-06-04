@@ -116,12 +116,24 @@ export default function SalesDiagnosticPage() {
   const [responseTime,   setResponseTime]   = useState("2");
   const [diagnosed,      setDiagnosed]      = useState(false);
 
+  const revVal     = parseFloat(monthlyRevenue);
+  const leadsVal   = parseFloat(monthlyLeads);
+  const closedVal  = parseFloat(closedClients);
+
+  const closedExceedsLeads =
+    closedClients.trim() !== "" &&
+    monthlyLeads.trim()  !== "" &&
+    !isNaN(closedVal) && !isNaN(leadsVal) &&
+    closedVal > leadsVal;
+
   const canDiagnose =
     monthlyRevenue.trim() !== "" &&
     monthlyLeads.trim()   !== "" &&
     closedClients.trim()  !== "" &&
-    parseFloat(monthlyLeads)  > 0 &&
-    parseFloat(closedClients) >= 0;
+    !isNaN(revVal)   && revVal   >= 0 &&
+    !isNaN(leadsVal) && leadsVal  > 0 &&
+    !isNaN(closedVal) && closedVal >= 0 &&
+    !closedExceedsLeads;
 
   // ── Core calculations ────────────────────────────────────────────────────────
   const revenue     = Math.max(0, parseFloat(monthlyRevenue)  || 0);
@@ -256,16 +268,28 @@ export default function SalesDiagnosticPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="closed">Closed Clients / Month</Label>
+              <Label htmlFor="closed" className={closedExceedsLeads ? "text-red-400" : ""}>
+                Closed Clients / Month
+              </Label>
               <Input
                 id="closed"
                 type="number"
                 min="0"
                 placeholder="e.g. 18"
                 value={closedClients}
-                onChange={(e) => setClosedClients(e.target.value)}
-                className="bg-background/50 border-border focus-visible:ring-primary/50"
+                onChange={(e) => { setClosedClients(e.target.value); setDiagnosed(false); }}
+                className={
+                  closedExceedsLeads
+                    ? "bg-red-500/10 border-red-500 focus-visible:ring-red-500/50 text-red-400"
+                    : "bg-background/50 border-border focus-visible:ring-primary/50"
+                }
               />
+              {closedExceedsLeads && (
+                <div className="flex items-center gap-1.5 text-red-400 text-xs font-medium pt-0.5">
+                  <AlertTriangle size={12} className="shrink-0" />
+                  Closed clients cannot be greater than monthly leads.
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="rt">Avg Response Time to Leads</Label>
