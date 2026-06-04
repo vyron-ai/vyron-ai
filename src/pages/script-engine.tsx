@@ -5,21 +5,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Loader2, Copy, Check, Zap, Hash, Type, Mic, MessageSquare,
-  Brain, AlertTriangle, TrendingUp,
+  Loader2, Copy, Check, Zap, Hash, Type, MessageSquare,
+  Brain, AlertTriangle, TrendingUp, Heart, ShieldAlert,
+  Frown, Sparkles, Users,
 } from "lucide-react";
 
 type HookType = "curiosity" | "pain" | "story" | "authority" | "mistake" | "opportunity" | "viral";
 type Intensity = "soft" | "medium" | "aggressive";
 
 interface ScriptResult {
-  sarTrigger: string;
-  painTrigger: string;
+  // Audience Intelligence
+  desires:          string;
+  fears:            string;
+  pains:            string;
+  transformation:   string;
+  // Neuro Triggers
+  sarTrigger:       string;
+  painTrigger:      string;
   curiosityTrigger: string;
-  script: string;
-  cta: string;
-  title: string;
-  hashtags: string;
+  // Script & Output
+  script:           string;
+  cta:              string;
+  title:            string;
+  hashtags:         string;
 }
 
 // ── Copy button ────────────────────────────────────────────────────────────────
@@ -47,48 +55,60 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-// ── Result card ────────────────────────────────────────────────────────────────
+// ── Script result card ─────────────────────────────────────────────────────────
 function ResultCard({
   icon, label, content, accent = false, mono = false,
 }: {
-  icon: React.ReactNode;
-  label: string;
+  icon:    React.ReactNode;
+  label:   string;
   content: string;
   accent?: boolean;
-  mono?: boolean;
+  mono?:   boolean;
 }) {
   return (
-    <div
-      className={`glass rounded-xl p-4 space-y-3 border ${
-        accent ? "border-primary/40 bg-primary/5" : "border-border"
-      }`}
-    >
+    <div className={`glass rounded-xl p-4 space-y-3 border ${accent ? "border-primary/40 bg-primary/5" : "border-border"}`}>
       <div className="flex items-center justify-between">
-        <div className={`flex items-center gap-2 text-sm font-semibold ${accent ? "text-primary" : "text-primary"}`}>
+        <div className="flex items-center gap-2 text-sm font-semibold text-primary">
           {icon}
           {label}
         </div>
         <CopyButton text={content} />
       </div>
-      <p
-        className={`text-sm text-foreground/90 leading-relaxed whitespace-pre-line ${
-          mono ? "font-mono text-xs tracking-wide" : ""
-        }`}
-      >
+      <p className={`text-sm text-foreground/90 leading-relaxed whitespace-pre-line ${mono ? "font-mono text-xs tracking-wide" : ""}`}>
         {content}
       </p>
     </div>
   );
 }
 
+// ── Intelligence card (amber tint) ─────────────────────────────────────────────
+function IntelCard({
+  icon, label, content,
+}: {
+  icon:    React.ReactNode;
+  label:   string;
+  content: string;
+}) {
+  return (
+    <div className="rounded-xl p-4 space-y-2 border border-amber-500/25 bg-amber-500/5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider">
+          {icon}
+          {label}
+        </div>
+        <CopyButton text={content} />
+      </div>
+      <p className="text-sm text-foreground/85 leading-relaxed">{content}</p>
+    </div>
+  );
+}
+
 // ── Pill selector ──────────────────────────────────────────────────────────────
 function PillSelector<T extends string>({
-  options,
-  value,
-  onChange,
+  options, value, onChange,
 }: {
-  options: { value: T; label: string; emoji?: string }[];
-  value: T;
+  options:  { value: T; label: string; emoji?: string }[];
+  value:    T;
   onChange: (v: T) => void;
 }) {
   return (
@@ -113,13 +133,13 @@ function PillSelector<T extends string>({
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const HOOK_TYPES: { value: HookType; label: string; emoji: string }[] = [
-  { value: "curiosity",    label: "Curiosity",    emoji: "🔍" },
-  { value: "pain",         label: "Pain",         emoji: "⚡" },
-  { value: "story",        label: "Story",        emoji: "📖" },
-  { value: "authority",    label: "Authority",    emoji: "🏆" },
-  { value: "mistake",      label: "Mistake",      emoji: "❌" },
-  { value: "opportunity",  label: "Opportunity",  emoji: "🚀" },
-  { value: "viral",        label: "Viral Trend",  emoji: "🔥" },
+  { value: "curiosity",   label: "Curiosity",   emoji: "🔍" },
+  { value: "pain",        label: "Pain",        emoji: "⚡" },
+  { value: "story",       label: "Story",       emoji: "📖" },
+  { value: "authority",   label: "Authority",   emoji: "🏆" },
+  { value: "mistake",     label: "Mistake",     emoji: "❌" },
+  { value: "opportunity", label: "Opportunity", emoji: "🚀" },
+  { value: "viral",       label: "Viral Trend", emoji: "🔥" },
 ];
 
 const INTENSITIES: { value: Intensity; label: string; emoji: string }[] = [
@@ -135,6 +155,9 @@ export default function ScriptEnginePage() {
   const [audience,  setAudience]  = useState("");
   const [hookType,  setHookType]  = useState<HookType>("curiosity");
   const [intensity, setIntensity] = useState<Intensity>("medium");
+  const [loading,   setLoading]   = useState(false);
+  const [result,    setResult]    = useState<ScriptResult | null>(null);
+  const { toast } = useToast();
 
   // Pre-populate from Content Planner deep-link (?niche=…&hookType=…&topic=…)
   useEffect(() => {
@@ -146,9 +169,6 @@ export default function ScriptEnginePage() {
     if (h && HOOK_TYPES.some((x) => x.value === h)) setHookType(h);
     if (t) setProduct(t);
   }, []);
-  const [loading,   setLoading]   = useState(false);
-  const [result,    setResult]    = useState<ScriptResult | null>(null);
-  const { toast } = useToast();
 
   const canGenerate = niche.trim() && product.trim() && audience.trim();
 
@@ -158,12 +178,12 @@ export default function ScriptEnginePage() {
     setResult(null);
     try {
       const res = await fetch("/api/script/generate", {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          niche:     niche.trim(),
-          product:   product.trim(),
-          audience:  audience.trim(),
+          niche:    niche.trim(),
+          product:  product.trim(),
+          audience: audience.trim(),
           hookType,
           intensity,
         }),
@@ -185,10 +205,10 @@ export default function ScriptEnginePage() {
         <div className="space-y-1">
           <h2 className="text-2xl font-bold">
             Script Engine
-            <span className="text-primary ml-2">v2</span>
+            <span className="text-primary ml-2">v3</span>
           </h2>
           <p className="text-muted-foreground text-sm">
-            Neuro-engineered hooks, triggers, and full scripts for short-form video.
+            Context-intelligent scripts built around audience psychology, not just niche keywords.
           </p>
         </div>
 
@@ -198,12 +218,10 @@ export default function ScriptEnginePage() {
             <Brain size={16} className="text-primary" />
             <span className="text-sm font-bold text-primary uppercase tracking-wider">Neuro Hook Engine</span>
           </div>
-
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground uppercase tracking-wider">Hook Type</Label>
             <PillSelector options={HOOK_TYPES} value={hookType} onChange={setHookType} />
           </div>
-
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground uppercase tracking-wider">Hook Intensity</Label>
             <PillSelector options={INTENSITIES} value={intensity} onChange={setIntensity} />
@@ -222,7 +240,6 @@ export default function ScriptEnginePage() {
               className="bg-background/50 border-border focus-visible:ring-primary/50"
             />
           </div>
-
           <div className="space-y-2">
             <Label htmlFor="product">Product / Service</Label>
             <Input
@@ -233,7 +250,6 @@ export default function ScriptEnginePage() {
               className="bg-background/50 border-border focus-visible:ring-primary/50"
             />
           </div>
-
           <div className="space-y-2">
             <Label htmlFor="audience">Target Audience</Label>
             <Input
@@ -244,17 +260,15 @@ export default function ScriptEnginePage() {
               className="bg-background/50 border-border focus-visible:ring-primary/50"
             />
           </div>
-
           <Button
             onClick={handleGenerate}
             disabled={!canGenerate || loading}
             className="w-full electric-glow font-semibold"
           >
-            {loading ? (
-              <><Loader2 size={16} className="animate-spin mr-2" />Generating…</>
-            ) : (
-              <><Zap size={16} className="mr-2" />Generate Script</>
-            )}
+            {loading
+              ? <><Loader2 size={16} className="animate-spin mr-2" />Generating…</>
+              : <><Zap size={16} className="mr-2" />Generate Script</>
+            }
           </Button>
         </div>
 
@@ -262,12 +276,40 @@ export default function ScriptEnginePage() {
         {result && (
           <div className="space-y-3 animate-in fade-in-0 slide-in-from-bottom-4 duration-300">
 
-            <div className="px-1 pb-1">
-              <span className="text-xs font-bold text-primary uppercase tracking-wider">
-                — Neuro Triggers
-              </span>
+            {/* ── Audience Intelligence ─────────────────────────────── */}
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <Users size={15} className="text-amber-400" />
+                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">Audience Intelligence</span>
+              </div>
+              <div className="space-y-3">
+                <IntelCard
+                  icon={<Heart size={12} />}
+                  label="Desire Analysis"
+                  content={result.desires}
+                />
+                <IntelCard
+                  icon={<ShieldAlert size={12} />}
+                  label="Fear Analysis"
+                  content={result.fears}
+                />
+                <IntelCard
+                  icon={<Frown size={12} />}
+                  label="Pain Analysis"
+                  content={result.pains}
+                />
+                <IntelCard
+                  icon={<Sparkles size={12} />}
+                  label="Transformation Analysis"
+                  content={result.transformation}
+                />
+              </div>
             </div>
 
+            {/* ── Neuro Triggers ────────────────────────────────────── */}
+            <div className="px-1 pt-2 pb-1">
+              <span className="text-xs font-bold text-primary uppercase tracking-wider">— Neuro Triggers</span>
+            </div>
             <ResultCard
               icon={<Brain size={14} />}
               label="SAR Trigger"
@@ -285,12 +327,10 @@ export default function ScriptEnginePage() {
               content={result.curiosityTrigger}
             />
 
+            {/* ── Script & Output ───────────────────────────────────── */}
             <div className="px-1 pt-2 pb-1">
-              <span className="text-xs font-bold text-primary uppercase tracking-wider">
-                — Script & Output
-              </span>
+              <span className="text-xs font-bold text-primary uppercase tracking-wider">— Script & Output</span>
             </div>
-
             <ResultCard
               icon={<MessageSquare size={14} />}
               label="Main Script"

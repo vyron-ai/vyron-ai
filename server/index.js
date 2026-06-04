@@ -280,6 +280,46 @@ app.post("/api/content-planner/generate", (req, res) => {
   res.json({ entries, total, duration: dur, niche: n });
 });
 
+// ── Context Intelligence Layer ────────────────────────────────────────────────
+function buildAudienceIntelligence(n, au, au1, pr, hookType, intensity) {
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  const desireVariants = [
+    `${au} want more than better ${n} results — they want the identity shift that comes with having it handled. The real desire is confidence: knowing they have a system that works, knowing it compounds, and not having to second-guess every move. They want to become someone who has ${n} figured out, not someone who is still trying to figure it out. That distinction matters enormously to them.`,
+    `What drives ${au} in ${n} isn't just the outcome — it's predictability. They want a process that produces results reliably, regardless of motivation or conditions. Underneath that is a deeper desire: to feel like a competent, credible person in their space. They want ${n} to be a source of confidence, not a constant reminder of what they haven't cracked yet.`,
+    `At the core of what ${au} are chasing in ${n} is visible, measurable progress — the kind they can point to and say "this is working." They're not just pursuing results. They're pursuing the story they get to tell about themselves once those results arrive. They want to be the ${au1} who figured out ${n} while everyone else was still struggling with it.`,
+    `${au} are chasing a specific feeling: the moment when ${n} stops being something they have to push through and starts being something that runs on its own. They want the compounding effect. They want momentum that doesn't require heroic effort to sustain. And quietly, they want to feel like they made the right decision before it became obvious to everyone else.`,
+  ];
+
+  const fearVariants = [
+    `The deepest fear for ${au} isn't failure in isolation — it's wasted time followed by the realization that they were working on the wrong things in ${n} the entire time. Close behind that is the fear of being seen as naive: the person who followed advice that more experienced ${au} already knew didn't work. They want to avoid being that story.`,
+    `${au} are quietly afraid of two things converging at once: that they're missing something fundamental about ${n} that everyone else already understands, and that their window to get ahead is closing while they're still in the learning phase. The thought of starting over — of abandoning invested effort — sits in the background of every decision they make.`,
+    `The fear that keeps ${au} in place is the fear of committing visibly to a ${n} approach and failing publicly. They'd rather wait until they're certain, which means they often wait too long. Underneath that hesitation is a more personal fear: that their specific situation is somehow an exception, and that what works for other ${au} simply won't work for them.`,
+    `What ${au} most want to avoid in ${n} is the feeling of being stuck while watching others move. They fear the version of events where they look back in a year and see that the opportunity was there, the knowledge was accessible, and they still didn't act on it in time. That future regret is more motivating — and more paralyzing — than the present challenge.`,
+  ];
+
+  const painVariants = [
+    `Right now, ${au} are experiencing a specific and exhausting friction: they have access to more ${n} information than ever before, and less clarity on what to actually do. Every new resource adds a decision. Every piece of advice contradicts something they read last week. They're not stuck because they don't know enough — they're stuck because they know too much and can't filter it into action.`,
+    `The frustration ${au} live with in ${n} right now is inconsistency that they can't explain or fix. They have good days and bad days, and no reliable understanding of why. Results seem to depend on variables they can't identify or control. They've tried multiple approaches, and none of them has stuck long enough to actually compound. The effort is real. The return isn't matching it.`,
+    `What ${au} deal with daily in ${n} is the gap between what they know they should be doing and what they're actually executing on. They can describe the right approach. They've read about it. But when it comes to consistent implementation, something breaks down — motivation, clarity, structure, or all three. That execution gap is the real pain, and almost nobody names it directly.`,
+    `The current situation for most ${au} in ${n} is one of invisible inefficiency. They're busy, they're producing effort, and they genuinely believe they're making progress — but the scoreboard doesn't reflect it. The frustration isn't just about results. It's about the disconnect between the work they're putting in and the outcome that should logically follow from it.`,
+  ];
+
+  const transformationVariants = [
+    `The transformation ${au} are looking for isn't just better ${n} results — it's a different relationship with ${n} entirely. On the other side of that transformation, ${n} feels light. The process is clear. Progress is consistent and visible. The version of themselves they're working toward doesn't have to think hard about ${n} — it just works, reliably, because the system underneath it is solid.`,
+    `If ${pr} delivers what ${au} actually need, they end up in a version of their life where ${n} is no longer a source of stress or uncertainty. The transformation they want is one where results come predictably, where they know exactly what to do when they sit down, and where the momentum is always moving forward — not restarting from zero every few weeks.`,
+    `The desired end state for ${au} in ${n} is deceptively simple: they want to wake up and know their approach is working. Not sometimes. Not when conditions are perfect. Working as a baseline — consistently, quietly, without requiring heroic effort or constant course-correction. ${pr} is the bridge between the version of ${n} they're living now and that version.`,
+    `What ${au} are really trying to buy when they invest in ${n} is time back and certainty forward. The transformation they want frees them from the constant loop of questioning whether they're doing the right things. They want to move from "I think this is working" to "I know this is working" — and from there, to the compounding results that follow from that clarity.`,
+  ];
+
+  return {
+    desires:        pick(desireVariants),
+    fears:          pick(fearVariants),
+    pains:          pick(painVariants),
+    transformation: pick(transformationVariants),
+  };
+}
+
 // ── POST /api/script/generate ─────────────────────────────────────────────────
 app.post("/api/script/generate", (req, res) => {
   const {
@@ -293,102 +333,105 @@ app.post("/api/script/generate", (req, res) => {
     return res.status(400).json({ error: "niche, product, and audience are required" });
   }
 
-  const n  = niche.trim();
-  const pr = product.trim();
-  const au = audience.trim();
-  const au1 = au.replace(/s$/i, ""); // singular form best-effort
+  const n   = niche.trim();
+  const pr  = product.trim();
+  const au  = audience.trim();
+  const au1 = au.replace(/s$/i, "");
 
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-  // ── SAR Triggers (Stop · Agitate · Resolve) — unique per hook type ──────────
+  // Build audience intelligence first — everything downstream uses it
+  const intel = buildAudienceIntelligence(n, au, au1, pr, hookType, intensity);
+
+  // ── SAR Triggers — intelligence-aware, hook-type-driven ──────────────────────
   const sarMap = {
     curiosity: [
-      `STOP — you're about to scroll past the one ${n} insight that's been hiding in plain sight for ${au}.\nAGITATE — you've tried the popular methods. They worked for someone else. Not for you.\nRESOLVE — ${pr} gives you the exact framework built for how ${au} actually think and work.`,
-      `STOP — before you try another ${n} tactic, ask yourself: why hasn't anything stuck yet?\nAGITATE — it's not your effort. It's that nobody's shown you what actually works for ${au}.\nRESOLVE — ${pr} closes that gap with a system built specifically for your situation.`,
+      `STOP — you're about to scroll past the insight that answers why ${n} hasn't clicked for you yet.\nAGITATE — you already know more about ${n} than most ${au}. That's not the problem. The problem is that knowing and doing are completely different things, and the gap between them is exactly where ${au} stay stuck.\nRESOLVE — ${pr} closes that gap. Not with more information — with a system built for the way ${au} actually execute.`,
+      `STOP — the next ${n} tactic you try will probably fail. Not because you'll execute it wrong, but because it wasn't built for someone in your situation.\nAGITATE — ${au} spend months cycling through approaches that work in theory and fall apart in practice. Every failed attempt makes the next one harder to commit to.\nRESOLVE — ${pr} breaks that cycle by starting with what's actually true about how ${au} operate — then building the system from there.`,
     ],
     pain: [
-      `STOP — if you're a ${au1} stuck in the same ${n} loop, this is your pattern-break moment.\nAGITATE — you're putting in the work. You're watching the videos. Nothing is changing.\nRESOLVE — ${pr} replaces the guesswork with a repeatable system that moves the needle.`,
-      `STOP — ${au} are burning hours on ${n} and getting nowhere. That ends today.\nAGITATE — the problem isn't your niche. It's that you're missing the core mechanism.\nRESOLVE — ${pr} installs that mechanism in under 30 minutes.`,
+      `STOP — if you're a ${au1} putting real effort into ${n} and still not seeing the results that should follow, this is the conversation that reframes why.\nAGITATE — you're not lacking motivation. You're not lacking information. You're lacking a system that accounts for the specific way ${au} experience ${n} — the friction, the inconsistency, the gap between knowing and doing.\nRESOLVE — ${pr} is built around that gap. Not around the ${n} problem in theory — around the one ${au} actually live with.`,
+      `STOP — the ${n} loop that ${au} stay stuck in has a specific name: effort without compounding. You work. Nothing builds. You restart.\nAGITATE — that loop persists because the approach doesn't fit the person. Most ${n} systems were built for someone else's life, someone else's constraints, someone else's version of the problem.\nRESOLVE — ${pr} was built for yours. Here's what that changes.`,
     ],
     story: [
-      `STOP — I was exactly where you are 6 months ago — a ${au1} drowning in ${n} advice.\nAGITATE — I tried everything. Courses, coaches, YouTube rabbit holes. Nothing clicked.\nRESOLVE — then I built ${pr}, and everything changed. Here's the short version.`,
-      `STOP — three months ago I was ready to quit ${n} entirely. This is what saved it.\nAGITATE — the thing nobody tells ${au}: the advice online is built for someone else.\nRESOLVE — ${pr} is built for people exactly like you. This is what I wish I had.`,
+      `STOP — six months ago I was a ${au1} who had consumed every piece of ${n} content available and still couldn't make it work consistently.\nAGITATE — the frustration isn't that the information doesn't exist. It's that all of it is built around a version of you that doesn't have your specific constraints, your specific goals, or your specific relationship with the problem.\nRESOLVE — building ${pr} was how I solved that for myself. Then I realized it solved it for other ${au} too.`,
+      `STOP — the moment my ${n} results changed wasn't when I learned something new. It was when I stopped doing something that felt productive but wasn't.\nAGITATE — most ${au} are doing a version of that same thing right now — something that looks like progress and isn't. It's incredibly hard to see from the inside.\nRESOLVE — ${pr} makes it visible. And once it's visible, everything shifts.`,
     ],
     authority: [
-      `STOP — after working in ${n} for years, I can tell you most of what ${au} believe is wrong.\nAGITATE — the standard playbook was built for a different era. It's costing you time and money.\nRESOLVE — ${pr} is built on what actually works in ${n} right now. Let me show you.`,
-      `STOP — I've seen hundreds of ${au} fail at ${n} for the same preventable reasons.\nAGITATE — it's not about trying harder. It's about using the right leverage points.\nRESOLVE — ${pr} puts those leverage points directly in your hands.`,
+      `STOP — after working deeply in ${n}, one pattern repeats itself with almost every group of ${au}: they fail not because they lack drive, but because the playbook they're following was built for someone else.\nAGITATE — the mainstream ${n} approach assumes a set of conditions that don't apply to most ${au}. Following it produces inconsistent results and a growing sense that the problem is somehow personal.\nRESOLVE — ${pr} is built on what actually works when you strip away the assumptions. The results are different because the starting point is accurate.`,
+      `STOP — I've watched ${au} fail at ${n} for the same preventable reason so many times that it stopped feeling like coincidence.\nAGITATE — the gap isn't capability. It's that the tools and frameworks available were designed around a general audience — not around the specific realities that define how ${au} operate in ${n}.\nRESOLVE — ${pr} is built around those realities. That's the difference.`,
     ],
     mistake: [
-      `STOP — ${au} make this ${n} mistake constantly and it's quietly killing their results.\nAGITATE — you've probably made it too. And nobody in your space is talking about it.\nRESOLVE — ${pr} is designed to eliminate this mistake at the root. Not patch it.`,
-      `STOP — there are 3 ${n} mistakes that keep ${au} stuck for months. You're likely making at least one.\nAGITATE — the frustrating part is that they feel like the right moves when you're making them.\nRESOLVE — ${pr} shows you exactly what to stop, and what to do instead.`,
+      `STOP — ${au} are making a specific ${n} mistake right now that looks like the right move from the inside.\nAGITATE — it's not the obvious mistake. It's subtler: optimizing for the metric that's easy to track instead of the one that actually drives the result they want. It feels like progress. The scoreboard disagrees.\nRESOLVE — ${pr} starts by surfacing that mistake, because fixing it changes the entire trajectory of your ${n} results.`,
+      `STOP — there's a ${n} behavior that ${au} do consistently, that consistently undercuts their results, that almost nobody talks about directly.\nAGITATE — it's not laziness. It's not lack of knowledge. It's a structural misalignment between the action and the outcome — and it compounds quietly until the results make it impossible to ignore.\nRESOLVE — ${pr} is built to catch it early. Before months of effort go in the wrong direction.`,
     ],
     opportunity: [
-      `STOP — right now there's a specific window in ${n} that ${au} are completely missing.\nAGITATE — by the time everyone talks about it, it'll be too competitive. That's how it always works.\nRESOLVE — ${pr} puts you in position to take advantage before the window closes.`,
-      `STOP — ${n} has shifted. What worked for ${au} 12 months ago is fading — and a new lane just opened.\nAGITATE — most people are still using the old playbook. That's your edge.\nRESOLVE — ${pr} maps out exactly how to enter this opportunity and own it.`,
+      `STOP — there's a specific shift happening in ${n} right now that most ${au} are positioned to benefit from — and almost none of them know it yet.\nAGITATE — by the time this shift is obvious, the window will be crowded. That's how it always works. The ${au} who move now are the ones who look prescient in 12 months.\nRESOLVE — ${pr} maps exactly how to enter this window before it closes. This is the timing.`,
+      `STOP — the ${n} landscape has changed in a way that creates a real, specific advantage for ${au} who are paying attention.\nAGITATE — most ${au} are still using the playbook from 18 months ago. That playbook is saturating. The new lane is wide open — but only for a limited window.\nRESOLVE — ${pr} puts you in that lane with a clear path. Here's what that looks like.`,
     ],
     viral: [
-      `STOP — everyone's copying the same ${n} content format. And it's all starting to blur together.\nAGITATE — ${au} are scrolling past it because they've seen it a hundred times.\nRESOLVE — ${pr} gives you a content system that actually stands out in a saturated feed.`,
-      `STOP — the trending ${n} formula is already dead. Here's what's replacing it for ${au}.\nAGITATE — if you're still doing what went viral 90 days ago, you're already late.\nRESOLVE — ${pr} keeps you on the front edge of what works right now.`,
+      `STOP — the ${n} content format that ${au} are still using was performing 90 days ago. The algorithm has moved on.\nAGITATE — what's working now looks structurally different. It's built on different signals, different patterns, different viewer behavior. Copying the old format is actively working against you at this point.\nRESOLVE — ${pr} is built around what's working in ${n} right now — not what worked before, and not what everyone else is still copying.`,
+      `STOP — the reason some ${au} in ${n} are getting results that seem disproportionate to their effort isn't luck. There's a specific structural pattern behind it.\nAGITATE — most ${au} can see that something is working for others in ${n} but can't reverse-engineer why. That gap between observation and understanding is where the opportunity is sitting.\nRESOLVE — ${pr} maps that pattern into something ${au} can actually replicate. Here's the structure.`,
     ],
   };
 
-  // ── Pain Triggers — intensity-scaled ────────────────────────────────────────
+  // ── Pain Triggers — grounded in the pain analysis, intensity-scaled ──────────
   const painMap = {
     soft: [
-      `${au} often feel like they're doing all the right things in ${n}, but the results just aren't showing up yet. That gap is frustrating — and it's more common than you think.`,
-      `If you've been trying to figure out ${n} and still feel stuck, it's not a lack of effort. Most ${au} are missing one specific piece that changes everything.`,
+      `Most ${au} in ${n} are doing everything they know to do — and still feeling like something isn't quite landing. That feeling is real, and it usually points to a gap in the system rather than a gap in the person. The effort isn't the problem. The structure around it is.`,
+      `There's a specific moment that most ${au} in ${n} recognize: you put in real work, you follow real advice, and the results are still inconsistent in a way you can't fully explain. That inconsistency isn't random. It has a cause — and it's usually not the one that gets talked about.`,
     ],
     medium: [
-      `You're a ${au1} who's been putting real effort into ${n} — and you still don't have the results to show for it. That's not a motivation problem. That's a system problem.`,
-      `${au} spend months — sometimes years — circling the same ${n} problems. The content is out there. The tools exist. So what's actually blocking you?`,
+      `You're a ${au1} who's been putting genuine effort into ${n} — and the results don't reflect that effort in the way they should. That's not a motivation problem or a knowledge problem. It's a structural problem. The approach you're using was built for someone else's version of this situation.`,
+      `${au} spend months circling the same friction in ${n}: effort that doesn't compound, strategies that work until they don't, and results that are never quite consistent enough to build on. The content exists. The tools exist. Something is still missing — and it's not what most people think it is.`,
     ],
     aggressive: [
-      `${au} are getting left behind in ${n} while they wait for the right moment. There is no right moment. Every day you wait is a day someone else pulls ahead.`,
-      `Let's be honest: if your ${n} results were working, you wouldn't be here. You're stuck, and the approach you're using is the reason why.`,
+      `Here's what's actually happening for ${au} in ${n} right now: the approach isn't working, and every week that passes is a week someone else uses to pull further ahead. There's no version of this where waiting produces a different result. The gap doesn't close on its own.`,
+      `If your ${n} results were where they should be, you wouldn't be watching this. You're stuck — and the specific kind of stuck that ${au} experience in ${n} doesn't fix itself. It requires a different approach, not more effort on the same one.`,
     ],
   };
 
-  // ── Curiosity Triggers — unique per hook type ────────────────────────────────
+  // ── Curiosity Triggers — grounded in desire and transformation ────────────────
   const curiosityMap = {
     curiosity: [
-      `What if the one thing you haven't tried in ${n} is the exact thing that works best for ${au}? Most people skip it because it sounds too simple.`,
-      `There's a pattern in ${n} that high-performing ${au} share — and it's almost never what gets talked about in the popular content.`,
+      `What if the reason ${n} hasn't worked the way you expected it to is something completely different from what you've been trying to fix? Most ${au} are solving the visible problem. The actual problem is one layer underneath it.`,
+      `There's a pattern that separates ${au} who get consistent ${n} results from those who stay stuck — and it has almost nothing to do with the tactics they're using. The variable that actually matters is one almost nobody talks about directly.`,
     ],
     pain: [
-      `The reason ${au} stay stuck in ${n} longer than they should isn't a secret. It's just something nobody wants to say out loud.`,
-      `What's the real cost of another 6 months of the same ${n} results? For ${au}, it's not just time — it's confidence, momentum, and opportunity.`,
+      `The real cost of another 6 months of the same ${n} results isn't just time. For ${au}, it's the compounding effect of momentum not building — of confidence eroding quietly in the background while the effort continues at the front.`,
+      `What if the thing keeping ${au} stuck in ${n} isn't a missing piece of information, but a specific structural decision they made early on that's been shaping everything since? That's what nobody wants to say out loud — because fixing it means acknowledging it first.`,
     ],
     story: [
-      `I kept this ${n} approach to myself for months because I wasn't sure it would work for other ${au}. Then five people tried it. Same result every time.`,
-      `The moment my ${n} results changed wasn't when I found a better strategy. It was when I stopped doing this one thing that most ${au} still do.`,
+      `The shift in my ${n} results didn't happen when I found a better strategy. It happened when I stopped doing something that felt like the right move but was quietly preventing everything else from working. I kept that to myself for months before I realized most ${au} were doing the exact same thing.`,
+      `I've had this conversation with dozens of ${au} who are stuck in ${n} — and the thing that surprises them every time isn't the solution. It's realizing that the problem wasn't what they thought it was. That reframe alone changes everything.`,
     ],
     authority: [
-      `Most ${n} advice is built on assumptions that don't hold for ${au}. Here's what the data actually shows when you strip away the noise.`,
-      `I've tracked ${n} outcomes across dozens of ${au} and the pattern is undeniable — the ones who win all do one thing differently.`,
+      `Most ${n} frameworks are built around assumptions that don't apply to ${au} — and the people who built them don't know it, because they've never operated inside the specific constraints that define your situation. That's the data point that changes how everything else lands.`,
+      `I've tracked ${n} outcomes across enough ${au} to see a pattern that doesn't show up in any of the popular advice: the ones who win aren't doing more. They're doing one specific thing differently that makes everything else more efficient. That thing is almost never what they credit publicly.`,
     ],
     mistake: [
-      `The most damaging ${n} mistake isn't the obvious one. It's the one that feels productive while it's quietly costing you.`,
-      `${au} who make this ${n} mistake don't know they're making it. It looks like good strategy from the inside.`,
+      `The most expensive ${n} mistake ${au} make isn't the obvious one. It's the one that looks like discipline, looks like consistency, looks like the right move — and is actively preventing the result they're working toward.`,
+      `${au} who are stuck in ${n} typically have one thing in common: a decision they made early that made sense at the time and has been quietly compounding in the wrong direction ever since. Seeing it is the hardest part. After that, fixing it is straightforward.`,
     ],
     opportunity: [
-      `Most ${au} will look back in 12 months and realize this was the exact moment the ${n} landscape shifted — and they missed it.`,
-      `There's a specific gap in ${n} right now that ${au} with the right approach can walk straight into. It won't stay open long.`,
+      `The specific window that just opened in ${n} is the kind that only makes sense in retrospect — when the people who moved early are talking about why they did it, and everyone else is wishing they'd paid closer attention when it mattered.`,
+      `There's a gap in ${n} right now that ${au} with the right approach can step into before it gets crowded. The reason most won't is not that they can't see it — it's that acting before it's obvious requires a different relationship with uncertainty than most people have built.`,
     ],
     viral: [
-      `The ${n} content format that's dominating right now has a shelf life — and a replacement is already outperforming it for ${au}.`,
-      `Why are some ${au} in ${n} getting 10x the reach with half the effort? It's not luck. There's a replicable structure behind it.`,
+      `The ${n} content pattern that's replacing the old formula is already outperforming it consistently — and most ${au} haven't reverse-engineered why yet. The gap between those who see it and those who don't is exactly where the advantage currently sits.`,
+      `Why are some ${au} in ${n} generating results that seem disproportionate to their effort or their following? The answer isn't a secret. It's a structural pattern that looks obvious once someone shows it to you — and invisible until they do.`,
     ],
   };
 
-  // ── Main Script — hook-type-driven body ──────────────────────────────────────
+  // ── Main Script — intelligence-grounded, hook-type-driven ─────────────────────
   const scriptMap = {
-    curiosity: `Here's something that most ${n} content never covers:\n\n${au} who consistently get results aren't using more complex strategies — they're using simpler ones, applied more precisely.\n\nThe curiosity gap in ${n} isn't about what you don't know. It's about what you're not yet doing with what you already know.\n\n${pr} is built on that principle. It takes your inputs and turns them into a clear, repeatable process — no guesswork, no content rabbit holes.\n\nThe results aren't magic. They're just the result of doing the right things in the right order.`,
-    pain: `If you're a ${au1} who's been putting effort into ${n} without the results to match — the problem isn't your work ethic.\n\nThe ${n} space is full of generic advice that isn't built for how ${au} actually operate. And following it keeps you stuck in cycles that feel productive but aren't moving you forward.\n\n${pr} was built specifically to break that pattern. It replaces the cycle with a direct path — one that's been refined for the exact problems ${au} face in ${n}.\n\nYou don't need to work harder. You need to work on the right things.`,
-    story: `Six months ago, I was a ${au1} with no clear path forward in ${n}.\n\nI'd consumed more content than I can count. I had the theory. What I didn't have was a system that worked for someone in my situation.\n\nI built ${pr} out of frustration — and then kept using it because it actually worked.\n\nNow I share it with ${au} who are where I was: capable, informed, and stuck. If that's you, here's the short version of what changed everything for me.`,
-    authority: `After deep experience in ${n}, one pattern is impossible to ignore:\n\n${au} who fail aren't failing because they lack information. They're failing because the information they have wasn't designed for them.\n\nThe mainstream ${n} playbook is built for a general audience. ${au} have specific constraints, specific goals, and a specific context that most strategies ignore.\n\n${pr} applies a framework that accounts for all of that. It's not another set of generic tips — it's a system that actually fits.`,
-    mistake: `The most common ${n} mistake among ${au} is this: optimizing the wrong metric.\n\nYou track what's easy to measure and ignore what actually drives results. It feels productive. It isn't.\n\nHere's how it plays out: you put effort into visibility, consistency, or volume — and none of it compounds. Because the foundation isn't set.\n\n${pr} starts at the foundation. It diagnoses what's actually blocking your ${n} results before suggesting any action.`,
-    opportunity: `Right now, ${n} is in a transition. The old playbook is saturating. A new approach is outperforming it — and most ${au} haven't made the shift yet.\n\nThat gap is the opportunity. It won't stay open forever.\n\n${pr} is built for this moment. It puts ${au} on the right side of the shift before the window closes and the new approach becomes the new crowded lane.\n\nTiming matters in ${n}. This is the timing.`,
-    viral: `The ${n} content formats that dominated 6 months ago are losing their edge. ${au} are scrolling past them without stopping.\n\nWhat's working now looks different. It's built on pattern interrupts, niche specificity, and a structure that creates a genuine reason to keep watching.\n\n${pr} is built around what's working right now for ${au} in ${n} — not what worked before, and not what everyone else is still copying.\n\nIf you want reach, you need to be where the algorithm is paying attention today.`,
+    curiosity: `Here's something that almost never gets said directly about ${n}:\n\nThe ${au} who get consistent results aren't doing more — they're doing less of the wrong things. The curiosity gap in ${n} isn't between those who know more and those who know less. It's between those who've found the one structural piece that makes everything else efficient, and those who are still solving around it.\n\nWhat ${au} actually want — and what most ${n} advice never gives them — is a process that compounds without requiring heroic effort to sustain. Not a new tactic. A system where the effort they're already putting in actually lands.\n\n${pr} is built around that. It takes what you're already doing in ${n} and restructures it around the variable that actually drives results for ${au} in your situation.`,
+    pain: `If you're a ${au1} who's been putting real effort into ${n} and the results still don't reflect that effort — the problem isn't you.\n\nThe ${n} space is filled with frameworks and systems that work for someone. Just not for ${au} with your specific constraints, your specific goals, and the specific version of ${n} you're trying to make work.\n\nWhat that creates is the worst kind of stuck: the kind where you're doing the right things in theory, and the scoreboard still doesn't move. The effort is real. The approach just isn't calibrated for your situation.\n\n${pr} was built to fix that calibration. Not by adding more to your process — by aligning what you're already doing with what actually moves the needle for ${au} like you.`,
+    story: `Six months ago I was a ${au1} who had the knowledge, the effort, and the tools — and still couldn't make ${n} produce consistent results.\n\nThe thing I eventually figured out wasn't a new strategy. It was that the strategies I was using were built around a set of assumptions that didn't apply to my situation. Once I saw that, I rebuilt the approach from scratch — around the actual constraints of someone who operates the way I do.\n\nThat's what became ${pr}. And what surprised me was that when I showed it to other ${au}, it worked for them too. Because the structural issue wasn't unique to me. It was the same gap that most ${au} hit in ${n} — and almost nobody names directly.\n\nIf the description of where I was sounds familiar, here's what changed.`,
+    authority: `After working deeply in ${n}, one thing becomes impossible to ignore:\n\n${au} who struggle aren't struggling because they lack drive or information. They're struggling because the frameworks they're using were built for a generalized version of the problem — not for the specific constraints, goals, and conditions that define how ${au} actually experience ${n}.\n\nThat mismatch is invisible until you see it. And once you see it, every piece of generic ${n} advice starts to read differently.\n\n${pr} is built from the ground up around what ${au} actually need — not what a general audience needs. The difference in results isn't because the underlying ${n} principles are different. It's because they're being applied accurately, to the right version of the problem, in the right sequence.`,
+    mistake: `The most common ${n} mistake among ${au} isn't the obvious one.\n\nIt's subtler: optimizing consistently for the metric that's easy to track, while the metric that actually drives the result you want quietly stays flat. It feels like progress because you're producing output. But output and outcome are different — and in ${n}, conflating them is what keeps ${au} in the same position month after month.\n\nHere's how it compounds: you get better at the visible metric. You feel like things are improving. The underlying result doesn't change. Eventually the disconnect becomes undeniable — and then you restart.\n\n${pr} starts by surfacing which metric is actually moving your ${n} results, and which one is just making the effort feel worthwhile. That distinction alone changes the direction of everything that follows.`,
+    opportunity: `Right now there's a structural shift happening in ${n} that most ${au} are positioned to benefit from — and most of them don't know it yet.\n\nThe playbook that worked 12 to 18 months ago is saturating. The returns are compressing. And in the space that's opening up, the advantage goes to ${au} who move before the opportunity is obvious — before it gets competitive, before it gets crowded, before the window shrinks to a fraction of what it is right now.\n\nThis is that moment. Not in theory. Specifically, right now.\n\n${pr} maps the exact path into this window for ${au} in ${n} — what to do, in what order, and why the timing makes it work.`,
+    viral: `The ${n} content formula that ${au} are still using was the right one — 90 days ago.\n\nThe algorithm has moved on. Viewer behavior has moved on. What's producing results now looks structurally different from what used to work, and the ${au} who've made the shift are getting results that look disproportionate to their size or effort.\n\nIt's not disproportionate. It's just that they're working with the current model while everyone else is still running the last one.\n\n${pr} is built around the current model. Not the theory of what might work in ${n} — the structure of what's actually producing results for ${au} right now. Here's what that looks like in practice.`,
   };
 
   // ── CTA — intensity-scaled ────────────────────────────────────────────────────
@@ -451,13 +494,20 @@ app.post("/api/script/generate", (req, res) => {
   ];
 
   res.json({
-    sarTrigger:      pick(sarMap[hookType]    ?? sarMap.curiosity),
-    painTrigger:     pick(painMap[intensity]  ?? painMap.medium),
+    // Audience intelligence
+    desires:          intel.desires,
+    fears:            intel.fears,
+    pains:            intel.pains,
+    transformation:   intel.transformation,
+    // Neuro triggers
+    sarTrigger:       pick(sarMap[hookType]       ?? sarMap.curiosity),
+    painTrigger:      pick(painMap[intensity]     ?? painMap.medium),
     curiosityTrigger: pick(curiosityMap[hookType] ?? curiosityMap.curiosity),
-    script:          scriptMap[hookType]      ?? scriptMap.curiosity,
-    cta:             pick(ctaMap[intensity]   ?? ctaMap.medium),
-    title:           pick(titleMap[hookType]  ?? titleMap.curiosity),
-    hashtags:        pick(hashtagSets),
+    // Script & output
+    script:           scriptMap[hookType]         ?? scriptMap.curiosity,
+    cta:              pick(ctaMap[intensity]      ?? ctaMap.medium),
+    title:            pick(titleMap[hookType]     ?? titleMap.curiosity),
+    hashtags:         pick(hashtagSets),
   });
 });
 
