@@ -763,6 +763,146 @@ app.post("/api/content-strategy/generate", (req, res) => {
   });
 });
 
+// ── Video enhancement helpers ─────────────────────────────────────────────────
+const ENHANCE_EQ = {
+  clean_boost:  { brightness: 0.03,  contrast: 1.10, saturation: 1.15, gamma: 1.0  },
+  cinematic:    { brightness: -0.02, contrast: 1.15, saturation: 0.82, gamma: 1.05 },
+  social_sharp: { brightness: 0.05,  contrast: 1.20, saturation: 1.30, gamma: 1.0  },
+  low_light:    { brightness: 0.12,  contrast: 1.10, saturation: 1.10, gamma: 1.30 },
+  audio_cleaner:null,
+};
+
+function buildEnhanceFilters(preset, toggles) {
+  if (preset === "audio_cleaner") return [];
+  const eq = ENHANCE_EQ[preset] ?? ENHANCE_EQ.clean_boost;
+  const filters = [];
+
+  // EQ
+  const eqParts = [];
+  if (toggles.brightness)      eqParts.push(`brightness=${eq.brightness}`);
+  if (toggles.contrast)        eqParts.push(`contrast=${eq.contrast}`);
+  if (toggles.colorCorrection) {
+    eqParts.push(`saturation=${eq.saturation}`);
+    if (eq.gamma !== 1.0) eqParts.push(`gamma=${eq.gamma}`);
+  }
+  if (eqParts.length) filters.push(`eq=${eqParts.join(":")}`);
+
+  // Sharpness
+  if (toggles.sharpness) {
+    const amt = preset === "social_sharp" ? 1.3 : 0.8;
+    filters.push(`unsharp=5:5:${amt}:5:5:0`);
+  }
+
+  // Noise reduction
+  if (toggles.noiseReduction) {
+    const str = preset === "low_light" ? "2:2:8:8" : "1.5:1.5:6:6";
+    filters.push(`hqdn3d=${str}`);
+  }
+
+  // Cinematic vignette
+  if (preset === "cinematic") filters.push("vignette");
+
+  return filters;
+}
+
+// ── POST /api/enhance/video ───────────────────────────────────────────────────
+app.post(
+  "/api/enhance/video",
+  express.raw({ type: "*/*", limit: "500mb" }),
+  async (req, res) => {
+    if (!FFMPEG) {
+      return res.status(500).json({ error: "FFmpeg not available on this server." });
+    }
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: "No video data received." });
+    }
+
+    const {
+      preset         = "clean_boost",
+      colorCorrection = "true",
+      brightness     = "true",
+      contrast       = "true",
+      sharpness      = "false",
+      noiseReduction = "false",
+      audioCleanup   = "false",
+    } = req.query ?? {};
+
+    const toggles = {
+      colorCorrection: colorCorrection !== "false",
+      brightness:      brightness      !== "false",
+      contrast:        contrast        !== "false",
+      sharpness:       sharpness       === "true",
+      noiseReduction:  noiseReduction  === "true",
+      audioCleanup:    audioCleanup    === "true",
+    };
+
+    const id         = randomBytes(8).toString("hex");
+    const inputPath  = join(tmpdir(), `vyron-enh-in-${id}.mp4`);
+    const outputPath = join(tmpdir(), `vyron-enh-out-${id}.mp4`);
+
+    const cleanup = () => {
+      for (const p of [inputPath, outputPath]) {
+        try { if (existsSync(p)) unlinkSync(p); } catch {}
+      }
+    };
+
+    try {
+      writeFileSync(inputPath, req.body);
+
+      const vFilters = buildEnhanceFilters(preset, toggles);
+      const args = ["-y", "-i", inputPath];
+
+      // Map streams — make audio optional so it works on silent videos
+      args.push("-map", "0:v:0", "-map", "0:a:0?");
+
+      // Video
+      if (vFilters.length > 0) {
+        args.push("-vf", vFilters.join(","));
+        args.push("-c:v", "libx264", "-crf", "20", "-preset", "fast");
+      } else {
+        args.push("-c:v", "copy");
+      }
+
+      // Audio
+      if (toggles.audioCleanup) {
+        args.push("-af", "loudnorm=I=-14:TP=-1:LRA=11");
+        args.push("-c:a", "aac", "-b:a", "192k");
+      } else {
+        args.push("-c:a", "copy");
+      }
+
+      args.push("-movflags", "+faststart", outputPath);
+
+      await execFileAsync(FFMPEG, args, {
+        maxBuffer: 100 * 1024 * 1024,
+        timeout:   360_000,
+      });
+
+      const today = new Date();
+      const ymd =
+        today.getFullYear().toString() +
+        String(today.getMonth() + 1).padStart(2, "0") +
+        String(today.getDate()).padStart(2, "0");
+
+      res.setHeader("Content-Type", "video/mp4");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="vyron-enhanced-${ymd}.mp4"`
+      );
+
+      const stream = createReadStream(outputPath);
+      stream.on("end", cleanup);
+      stream.on("error", cleanup);
+      stream.pipe(res);
+    } catch (err) {
+      cleanup();
+      if (!res.headersSent) {
+        res.status(500).json({ error: err?.message ?? "Enhancement failed" });
+      }
+    }
+  }
+);
+
 // ── POST /api/export/mp4 ──────────────────────────────────────────────────────
 app.post("/api/export/mp4", async (req, res) => {
   const { videoUrl, subtitles, preset = "viral", subtitleScale = 1.0, subtitlePosition = 0 } = req.body ?? {};

@@ -19,6 +19,7 @@ import ContentPlannerPage from "@/pages/content-planner";
 import ContentStrategyPage from "@/pages/content-strategy";
 import SalesDiagnosticPage from "@/pages/sales-diagnostic";
 import LeadRecoveryPage from "@/pages/lead-recovery";
+import VideoEnhancementPage from "@/pages/video-enhancement";
 
 const queryClient = new QueryClient();
 
@@ -92,6 +93,9 @@ function Router() {
       </Route>
       <Route path="/lead-recovery">
         <ProtectedRoute component={LeadRecoveryPage} />
+      </Route>
+      <Route path="/video-enhancement">
+        <ProtectedRoute component={VideoEnhancementPage} />
       </Route>
       <Route component={NotFound} />
     </Switch>

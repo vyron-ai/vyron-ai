@@ -3,7 +3,7 @@ import { useState, ReactNode } from "react";
 import {
   LayoutDashboard, FolderKanban, Video, Subtitles, Layers,
   BarChart3, Workflow, Settings, Bell, Search, Menu, HardDrive,
-  LogOut, Loader2, FlaskConical, ScrollText, CalendarDays, Activity, RefreshCw,
+  LogOut, Loader2, FlaskConical, ScrollText, CalendarDays, Activity, RefreshCw, Wand2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
 
   const aiTools = [
     { icon: <Video size={18} />, label: "Video AI", href: "/upload" },
+    { icon: <Wand2 size={18} />, label: "AI Video Enhancement", href: "/video-enhancement" },
     { icon: <Subtitles size={18} />, label: "Subtitles", href: "/subtitles" },
     { icon: <ScrollText size={18} />, label: "Script Engine", href: "/script-engine" },
     { icon: <CalendarDays size={18} />, label: "Content Planner", href: "/content-planner" },
