@@ -15,6 +15,7 @@ import SubtitlesPage from "@/pages/subtitles";
 import SettingsPage from "@/pages/settings";
 import StoragePage from "@/pages/storage";
 import ScriptEnginePage from "@/pages/script-engine";
+import ContentPlannerPage from "@/pages/content-planner";
 
 const queryClient = new QueryClient();
 
@@ -76,6 +77,9 @@ function Router() {
       </Route>
       <Route path="/script-engine">
         <ProtectedRoute component={ScriptEnginePage} />
+      </Route>
+      <Route path="/content-planner">
+        <ProtectedRoute component={ContentPlannerPage} />
       </Route>
       <Route component={NotFound} />
     </Switch>

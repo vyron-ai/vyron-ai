@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,6 +135,17 @@ export default function ScriptEnginePage() {
   const [audience,  setAudience]  = useState("");
   const [hookType,  setHookType]  = useState<HookType>("curiosity");
   const [intensity, setIntensity] = useState<Intensity>("medium");
+
+  // Pre-populate from Content Planner deep-link (?niche=…&hookType=…&topic=…)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const n = params.get("niche");
+    const h = params.get("hookType") as HookType | null;
+    const t = params.get("topic");
+    if (n) setNiche(n);
+    if (h && HOOK_TYPES.some((x) => x.value === h)) setHookType(h);
+    if (t) setProduct(t);
+  }, []);
   const [loading,   setLoading]   = useState(false);
   const [result,    setResult]    = useState<ScriptResult | null>(null);
   const { toast } = useToast();

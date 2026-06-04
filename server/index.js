@@ -182,6 +182,104 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
   return header + "\n" + events.join("\n") + "\n";
 }
 
+// ── POST /api/content-planner/generate ───────────────────────────────────────
+app.post("/api/content-planner/generate", (req, res) => {
+  const {
+    niche = "",
+    goal = "brand_awareness",
+    postingFrequency = "daily",
+    duration = 30,
+  } = req.body ?? {};
+  if (!niche.trim()) return res.status(400).json({ error: "niche is required" });
+
+  const n   = niche.trim();
+  const dur = Math.min(Math.max(parseInt(duration) || 30, 7), 90);
+
+  const freqMap  = { daily: 7, "5x_week": 5, "3x_week": 3, "2x_week": 2 };
+  const ppw      = freqMap[postingFrequency] ?? 7;
+  const total    = Math.min(Math.ceil(dur * ppw / 7), 90);
+
+  const contentTypes = [
+    "Educational", "Listicle", "Behind the Scenes", "Social Proof",
+    "Product Demo", "Q&A", "Trending", "Story", "Challenge", "Hot Take",
+  ];
+
+  const hookTypes = ["curiosity", "pain", "story", "authority", "mistake", "opportunity", "viral"];
+
+  const titleTemplates = {
+    curiosity: [
+      `The ${n} secret high performers never share`,
+      `What nobody tells you about ${n}`,
+      `The hidden side of ${n} that changes everything`,
+      `Why most ${n} advice is missing this one thing`,
+    ],
+    pain: [
+      `Why your ${n} results keep disappointing you`,
+      `The real reason ${n} feels so hard right now`,
+      `Struggling with ${n}? Here's the honest answer`,
+      `The ${n} problem nobody wants to admit`,
+    ],
+    story: [
+      `How I rebuilt my ${n} from scratch`,
+      `What ${n} taught me that no course ever could`,
+      `The ${n} turning point I didn't see coming`,
+      `My biggest ${n} failure — and what came after`,
+    ],
+    authority: [
+      `The ${n} framework that actually holds up`,
+      `What the data shows about ${n}`,
+      `${n} done right: what separates the best`,
+      `The non-negotiables of a strong ${n} strategy`,
+    ],
+    mistake: [
+      `The #1 ${n} mistake you're probably making right now`,
+      `Stop doing this in your ${n} immediately`,
+      `3 ${n} habits that are quietly costing you`,
+      `This common ${n} move is making things worse`,
+    ],
+    opportunity: [
+      `The ${n} opportunity most people are sleeping on`,
+      `There's a gap in ${n} right now — use it`,
+      `Why right now is the best time to go all-in on ${n}`,
+      `The untapped ${n} angle your competitors haven't found`,
+    ],
+    viral: [
+      `The ${n} format blowing up right now (and why)`,
+      `Why this ${n} trend is replacing everything else`,
+      `Everyone's talking about this in ${n} — here's the truth`,
+      `The ${n} shift that caught everyone off guard`,
+    ],
+  };
+
+  const objectiveMap = {
+    brand_awareness:  ["Reach new audience", "Grow organic followers", "Build niche authority", "Increase brand recall"],
+    lead_generation:  ["Drive link-in-bio clicks", "Generate DM inquiries", "Capture email subscribers", "Build prospect list"],
+    sales:            ["Drive offer conversions", "Present product value", "Overcome objections", "Move warm leads to action"],
+    engagement:       ["Maximize comments", "Encourage saves & shares", "Build community conversation", "Boost interaction rate"],
+    community:        ["Deepen audience relationship", "Foster two-way conversation", "Build brand advocates", "Encourage participation"],
+  };
+
+  const goalKey    = (goal || "").toLowerCase().replace(/[\s-]+/g, "_");
+  const objectives = objectiveMap[goalKey] ?? objectiveMap.brand_awareness;
+
+  const entries = [];
+  for (let i = 0; i < total; i++) {
+    const dayNum      = total === 1 ? 1 : Math.round((i / (total - 1)) * (dur - 1)) + 1;
+    const hookType    = hookTypes[i % hookTypes.length];
+    const contentType = contentTypes[i % contentTypes.length];
+    const titles      = titleTemplates[hookType] ?? titleTemplates.curiosity;
+    entries.push({
+      day:         dayNum,
+      contentType,
+      hookType,
+      title:       titles[i % titles.length],
+      objective:   objectives[i % objectives.length],
+    });
+  }
+
+  res.json({ entries, total, duration: dur, niche: n });
+});
+
 // ── POST /api/script/generate ─────────────────────────────────────────────────
 app.post("/api/script/generate", (req, res) => {
   const {
