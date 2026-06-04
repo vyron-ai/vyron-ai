@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
   Wand2, Upload, Download, Play, Loader2,
-  CheckCircle2, AlertCircle, RefreshCw, X,
+  CheckCircle2, AlertCircle, RefreshCw, X, VideoOff,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -121,9 +121,18 @@ function VideoCard({
 }: {
   label: string; badge?: string; badgeColor?: string; src: string | null; isLoading?: boolean;
 }) {
+  const [hasError, setHasError] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Reset error when src changes so a new URL always gets a fresh attempt
+  useEffect(() => { setHasError(false); }, [src]);
+
+  const handleError = () => setHasError(true);
+
   return (
-    <div className="glass border border-border rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border/50">
+    <div className="glass border border-border rounded-xl overflow-hidden flex flex-col">
+      {/* Card header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border/50 shrink-0">
         <p className="text-xs font-semibold text-foreground">{label}</p>
         {badge && (
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeColor}`}>
@@ -131,22 +140,41 @@ function VideoCard({
           </span>
         )}
       </div>
-      <div className="aspect-video bg-black flex items-center justify-center">
+
+      {/*
+        ── Video well ──
+        Use padding-top trick so the container always has a resolved pixel height
+        (56.25% = 16:9). position:relative + absolute inset-0 fills it reliably
+        regardless of parent flex/grid context — this is the key fix.
+      */}
+      <div className="relative w-full bg-black" style={{ paddingTop: "56.25%" }}>
         {isLoading ? (
-          <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
             <Loader2 size={28} className="animate-spin text-primary" />
             <p className="text-xs">Processing…</p>
           </div>
-        ) : src ? (
+        ) : src && !hasError ? (
           <video
+            ref={videoRef}
             key={src}
             src={src}
             controls
-            className="w-full h-full object-contain"
+            preload="metadata"
             playsInline
+            className="absolute inset-0 w-full h-full"
+            style={{ objectFit: "contain", background: "#000" }}
+            onError={handleError}
           />
+        ) : hasError ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-red-400/70">
+            <VideoOff size={28} />
+            <p className="text-xs font-medium">Preview unavailable</p>
+            <p className="text-[11px] text-muted-foreground/60 text-center px-4">
+              The video could not be loaded. Download it to play locally.
+            </p>
+          </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 text-muted-foreground/40">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground/30">
             <Play size={28} />
             <p className="text-xs">No preview</p>
           </div>
