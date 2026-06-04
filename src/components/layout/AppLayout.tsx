@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useState, ReactNode } from "react";
 import {
   LayoutDashboard, FolderKanban, Video, Subtitles, Layers,
-  LineChart, Workflow, Settings, Bell, Search, Menu, HardDrive,
+  BarChart3, Workflow, Settings, Bell, Search, Menu, HardDrive,
   LogOut, Loader2, FlaskConical, ScrollText, CalendarDays,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -46,7 +46,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
     { icon: <ScrollText size={18} />, label: "Script Engine", href: "/script-engine" },
     { icon: <CalendarDays size={18} />, label: "Content Planner", href: "/content-planner" },
     { icon: <Layers size={18} />, label: "Content", href: "/content" },
-    { icon: <LineChart size={18} />, label: "Strategy", href: "/strategy" },
+    { icon: <BarChart3 size={18} />, label: "Content Strategy", href: "/content-strategy" },
   ];
 
   const systemTools = [

@@ -531,6 +531,238 @@ app.post("/api/script/generate", (req, res) => {
   });
 });
 
+// ── POST /api/content-strategy/generate ──────────────────────────────────────
+app.post("/api/content-strategy/generate", (req, res) => {
+  const {
+    niche    = "",
+    product  = "",
+    audience = "",
+    goal     = "sales",
+  } = req.body ?? {};
+  if (!niche.trim()) return res.status(400).json({ error: "niche is required" });
+
+  const n   = niche.trim();
+  const pr  = product.trim();
+  const au  = audience.trim();
+  const au1 = au.replace(/s$/i, "");
+  const g   = goal.toLowerCase().replace(/[\s-]+/g, "_");
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  // ── 1. Content mix ────────────────────────────────────────────────────────
+  const mixMap = {
+    sales: [
+      { type: "pain",        pct: 30 },
+      { type: "authority",   pct: 25 },
+      { type: "opportunity", pct: 20 },
+      { type: "story",       pct: 15 },
+      { type: "curiosity",   pct: 10 },
+    ],
+    leads: [
+      { type: "curiosity",   pct: 30 },
+      { type: "pain",        pct: 25 },
+      { type: "authority",   pct: 20 },
+      { type: "story",       pct: 15 },
+      { type: "opportunity", pct: 10 },
+    ],
+    brand_awareness: [
+      { type: "viral",       pct: 25 },
+      { type: "curiosity",   pct: 25 },
+      { type: "story",       pct: 20 },
+      { type: "authority",   pct: 15 },
+      { type: "opportunity", pct: 15 },
+    ],
+    authority: [
+      { type: "authority",   pct: 35 },
+      { type: "story",       pct: 25 },
+      { type: "curiosity",   pct: 20 },
+      { type: "mistake",     pct: 15 },
+      { type: "pain",        pct: 5  },
+    ],
+    engagement: [
+      { type: "viral",       pct: 30 },
+      { type: "story",       pct: 25 },
+      { type: "curiosity",   pct: 20 },
+      { type: "mistake",     pct: 15 },
+      { type: "opportunity", pct: 10 },
+    ],
+  };
+  const contentMix = mixMap[g] ?? mixMap.sales;
+
+  // ── 2. Weekly schedule ────────────────────────────────────────────────────
+  const weeklyMap = {
+    sales: [
+      { day: "Monday",    hookType: "pain",        contentType: "Educational",       note: `Surface the core problem ${au || "your audience"} hasn't fully named yet — problem awareness unlocks purchase intent.` },
+      { day: "Tuesday",   hookType: "authority",   contentType: "Social Proof",      note: "Establish credibility before the mid-week high-intent window with proof-driven content." },
+      { day: "Wednesday", hookType: "opportunity", contentType: "Product Demo",      note: `Mid-week captures peak purchase intent — present ${pr || "your offer"} directly and clearly.` },
+      { day: "Thursday",  hookType: "story",       contentType: "Story",             note: "Human narrative after direct sales content maintains trust and reduces resistance." },
+      { day: "Friday",    hookType: "pain",        contentType: "Listicle",          note: "End-of-week pain reinforcement with a clear, low-friction CTA." },
+      { day: "Saturday",  hookType: "curiosity",   contentType: "Q&A",              note: "Curiosity-driven community content keeps algorithm engagement warm over the weekend." },
+      { day: "Sunday",    hookType: "authority",   contentType: "Educational",       note: `Pre-week authority content primes ${au || "your audience"} before Monday's peak intent window.` },
+    ],
+    leads: [
+      { day: "Monday",    hookType: "curiosity",   contentType: "Educational",       note: `Open the week with an insight gap — ${au || "your audience"} in a learning mindset is most likely to follow a link.` },
+      { day: "Tuesday",   hookType: "pain",        contentType: "Listicle",          note: "Name the specific pain before offering the solution. Problem-aware leads are the easiest to convert." },
+      { day: "Wednesday", hookType: "authority",   contentType: "Social Proof",      note: "Proof mid-week reduces friction for link-in-bio clicks and DM inquiries." },
+      { day: "Thursday",  hookType: "story",       contentType: "Story",             note: "Story builds emotional trust — Thursday is the strongest day for DM inquiries and opt-ins." },
+      { day: "Friday",    hookType: "curiosity",   contentType: "Q&A",              note: "Engage the audience with an unresolved question that your lead magnet answers." },
+      { day: "Saturday",  hookType: "opportunity", contentType: "Trending",          note: "Weekend trend content expands reach to cold audiences who haven't found you yet." },
+      { day: "Sunday",    hookType: "pain",        contentType: "Educational",       note: "Sunday reflection content connects with problem-aware audiences planning their next move." },
+    ],
+    brand_awareness: [
+      { day: "Monday",    hookType: "story",       contentType: "Behind the Scenes", note: "Start the week with authenticity — behind-the-scenes content builds long-term connection." },
+      { day: "Tuesday",   hookType: "curiosity",   contentType: "Educational",       note: "Curiosity-driven value content earns shares from new audiences who didn't follow you yet." },
+      { day: "Wednesday", hookType: "viral",       contentType: "Trending",          note: "Mid-week trend content maximizes algorithmic reach — peak sharing day for most niches." },
+      { day: "Thursday",  hookType: "authority",   contentType: "Listicle",          note: `Establish ${n} credibility before the weekend engagement window with shareable frameworks.` },
+      { day: "Friday",    hookType: "story",       contentType: "Challenge",         note: "Interactive challenge content drives community participation and profile visits." },
+      { day: "Saturday",  hookType: "viral",       contentType: "Hot Take",          note: "Weekend hot takes generate comments and shares from audiences who don't follow you yet." },
+      { day: "Sunday",    hookType: "curiosity",   contentType: "Q&A",              note: "Community Q&A deepens connection with existing followers and improves retention." },
+    ],
+    authority: [
+      { day: "Monday",    hookType: "authority",   contentType: "Educational",       note: `Lead with expertise — Monday audiences are in a learning mindset and reward genuine ${n} insight.` },
+      { day: "Tuesday",   hookType: "mistake",     contentType: "Listicle",          note: "Mistake content signals deep domain knowledge. Creates saves — the highest-trust engagement signal." },
+      { day: "Wednesday", hookType: "story",       contentType: "Story",             note: "Personal narrative humanizes your expertise and creates emotional trust alongside intellectual credibility." },
+      { day: "Thursday",  hookType: "authority",   contentType: "Social Proof",      note: "Case studies and outcome content on Thursday reinforce the credibility established earlier in the week." },
+      { day: "Friday",    hookType: "curiosity",   contentType: "Educational",       note: "End-of-week insight creates anticipation and positions you as the go-to source before the weekend." },
+      { day: "Saturday",  hookType: "mistake",     contentType: "Hot Take",          note: "Contrarian weekend content drives discussion and introduces your perspective to new audiences." },
+      { day: "Sunday",    hookType: "story",       contentType: "Behind the Scenes", note: "Behind-the-scenes content builds relationship depth with your core authority audience." },
+    ],
+    engagement: [
+      { day: "Monday",    hookType: "curiosity",   contentType: "Q&A",              note: `Start with a question — Monday audiences respond strongly to participation-driven content.` },
+      { day: "Tuesday",   hookType: "mistake",     contentType: "Hot Take",          note: "Mistake content generates comments from people who've experienced the same situation." },
+      { day: "Wednesday", hookType: "viral",       contentType: "Challenge",         note: "Mid-week challenges drive the highest participation rates of any content format." },
+      { day: "Thursday",  hookType: "story",       contentType: "Story",             note: "Story content builds the emotional equity that drives saves, shares, and DMs." },
+      { day: "Friday",    hookType: "viral",       contentType: "Trending",          note: "Trending content on Friday captures weekend sharing behavior at its peak." },
+      { day: "Saturday",  hookType: "curiosity",   contentType: "Behind the Scenes", note: "Saturday audiences engage more deeply with authentic, unpolished content." },
+      { day: "Sunday",    hookType: "story",       contentType: "Q&A",              note: "Community conversation on Sunday builds anticipation and strengthens following loyalty." },
+    ],
+  };
+  const weeklySchedule = weeklyMap[g] ?? weeklyMap.sales;
+
+  // ── 3. Strategic reasoning ────────────────────────────────────────────────
+  const whyMixWorks = {
+    sales: [
+      `A sales-oriented ${n} strategy front-loads pain content because purchase decisions are driven by problem awareness, not feature lists. ${au || "Your audience"} won't buy ${pr || "your offer"} until they've fully recognized the cost of their current situation. Pain content does that work. Authority content then creates the credibility required to make the solution believable. Opportunity content closes the loop by making the timing feel urgent and specific rather than abstract.`,
+      `For ${n} creators focused on sales, the most common mistake is leading with product content before the audience is problem-aware. This mix corrects that: pain content creates the problem frame, authority content establishes trust in the solution, and story content makes the transformation feel achievable for ${au || "your specific audience"}.`,
+    ],
+    leads: [
+      `Lead generation in ${n} depends on creating an information gap that only your lead magnet can close. Curiosity content is the engine — it creates the sense that you have answers ${au || "your audience"} hasn't found yet. Pain content identifies the specific problem your lead magnet solves. Authority content makes the opt-in feel like a low-risk decision rather than a commitment.`,
+      `The most effective lead generation strategy for ${n} builds a sequential trust journey: curiosity hooks new audiences, pain content qualifies them as problem-aware, and story content makes them feel understood before the ask. This mix prioritizes that sequence over raw reach, producing leads that are significantly more likely to convert.`,
+    ],
+    brand_awareness: [
+      `Brand awareness in ${n} is built through shareability and distinctiveness, not through consistency alone. Viral and curiosity content earns distribution from audiences who don't follow you yet — the algorithm rewards content that creates discovery behavior. Story content builds the emotional texture that makes your brand memorable once someone finds you.`,
+      `For a brand awareness goal in ${n}, the mix prioritizes content that travels — viral formats, curiosity gaps, and story-driven content that ${au || "your audience"} wants to share or save. Authority content provides credibility for those who discover you through the viral pieces and want to understand who you are before following.`,
+    ],
+    authority: [
+      `Authority in ${n} is built through a specific combination: deep expertise demonstrated consistently, mistake content that signals nuanced understanding of where ${au || "your audience"} struggles, and story content that humanizes the expertise. A pure authority approach without story becomes academic. Without mistake content, it lacks the specificity that signals genuine depth.`,
+      `Building authority in ${n} requires content that demonstrates knowledge, not just states it. Mistake content is particularly powerful because it signals that you understand the terrain well enough to see where others get it wrong. Story content builds the parasocial trust that makes ${au || "your audience"} treat your authority as personally relevant rather than generically impressive.`,
+    ],
+    engagement: [
+      `Engagement-focused ${n} content works through emotional resonance and participation design. Viral formats create sharing behavior, but they don't build community on their own. Story and mistake content generate the comments that signal genuine connection — the algorithm treats comment velocity as a stronger quality signal than likes or views for most content formats.`,
+      `The engagement mix prioritizes content that invites a response: challenges, hot takes, Q&As, and stories that people recognize themselves in. For ${n} audiences, mistake content consistently outperforms educational content on engagement metrics because it creates the "that's me" reaction that makes people want to comment, share, and save.`,
+    ],
+  };
+
+  const audiencePsychology = {
+    sales: [
+      `${au || "This audience"} moves through a predictable psychological sequence before purchasing in ${n}: problem recognition, solution awareness, trust formation, and urgency. Most ${n} creators skip straight to solution awareness, but ${au || "your audience"} won't move past it without first feeling that their problem has been fully seen. Pain content does the heavy lifting on problem recognition. Without it, even strong offers land flat.`,
+      `The psychology of ${au || "this audience"} in ${n} is shaped by previous failed attempts. They've likely tried other approaches. What they're evaluating isn't just whether ${pr || "your product"} works — it's whether it works for someone in their specific situation. Authority and story content answers that question by making the transformation feel real and specific, not theoretical.`,
+    ],
+    leads: [
+      `${au || "Your audience"} becomes a lead when they feel understood before they feel sold to. In ${n}, the curiosity-to-pain sequence works because curiosity attracts, but pain qualifies. Someone who watches a curiosity video about ${n} is interested. Someone who watches a pain video and feels it personally is a potential customer. The opt-in ask performs best after that emotional recognition moment.`,
+      `Lead generation psychology for ${n} is rooted in reciprocity: ${au || "your audience"} will give you their contact information when they believe the value on the other side is real and specific. The content that creates that belief most effectively isn't the most polished — it's the most accurate. Content that correctly names the specific experience of being a ${au1 || "person in this audience"} creates an instant credibility signal that makes the opt-in feel obvious.`,
+    ],
+    brand_awareness: [
+      `${au || "Your audience"} discovers new ${n} creators through two mechanisms: algorithmic push (trending and viral content) and peer sharing (story and curiosity content that people want to send to someone they know). Building brand awareness requires showing up in both channels. Viral content earns algorithmic distribution. Story and curiosity content earns the personal share that introduces you to a trusted friend's network.`,
+      `For brand awareness in ${n}, the psychological driver is identity: ${au || "your audience"} shares content that reflects how they see themselves or how they want to be seen. Content that captures the specific experience of being a ${au1 || "person in this space"} gets shared as a form of self-expression. This is why niche specificity outperforms broad appeal for brand awareness — the more exactly right it is, the more strongly it activates sharing behavior.`,
+    ],
+    authority: [
+      `${au || "Your audience"} in ${n} extends trust to authority figures through a specific mechanism: they need to feel that you've been where they are and understand what it costs. Pure credential-based authority is weaker in short-form video than experiential authority. Mistake content earns trust by demonstrating that you understand the exact shape of where people get stuck — which can only come from genuine expertise or direct experience.`,
+      `The psychology of authority in ${n} is built on pattern recognition: ${au || "your audience"} is constantly evaluating whether you actually know what it's like to operate in their world. Authority content that uses the right language, names the right problems, and demonstrates the right level of specificity creates an instant recognition signal. Story content then adds the personal layer that makes expertise feel safe to trust rather than intimidating to engage with.`,
+    ],
+    engagement: [
+      `${au || "Your audience"} engages most actively with content that creates the "that's exactly me" reaction. In ${n}, this means naming situations and feelings with enough specificity that people feel personally seen. Broad educational content informs but doesn't activate engagement. Specific mistake content, personal stories, and participation-designed formats (challenges, Q&As, hot takes) all work because they require the audience to place themselves in the scenario.`,
+      `Engagement psychology in ${n} is driven by the need for community recognition — ${au || "your audience"} comments when they feel part of a shared experience. Viral content introduces them to the community. Story and mistake content makes them feel understood within it. Challenge content makes participation feel low-risk and socially rewarding. The mix is designed to activate each of these mechanisms in sequence throughout the week.`,
+    ],
+  };
+
+  const contentDominant = {
+    sales:           `Pain content should dominate your ${n} feed at 30%. It's the mechanism that makes everything else convert. Without it, even your strongest authority and opportunity content will generate passive engagement rather than purchase intent. Every pain post is doing pre-sales work that your product content can't do alone.`,
+    leads:           `Curiosity content at 30% should lead your ${n} strategy. It creates the information gap that makes ${au || "your audience"} want what's behind your link. Every curiosity post is a lead generation mechanism — it builds a pipeline of people who believe you have answers they haven't found yet.`,
+    brand_awareness: `Viral and curiosity content should dominate equally at 25% each. Viral earns reach from people who don't know you. Curiosity earns follows from people who just found you. Together they create a consistent flow of new audience exposure — which is the only mechanism that makes brand awareness scale.`,
+    authority:       `Authority content at 35% should define your ${n} presence. Every educational post, framework, and insight is compounding your perceived expertise. ${au || "Your audience"} needs to encounter your depth multiple times before the trust required for authority status forms. Consistency in this category is the non-negotiable variable.`,
+    engagement:      `Viral content at 30% sets the algorithmic baseline for your ${n} presence. Without consistent reach-driving content, even your best story and community posts reach a shrinking audience. Viral content is infrastructure — it keeps the distribution alive so that your higher-connection content actually reaches the people it's designed for.`,
+  };
+
+  // ── 4. Posting recommendation ─────────────────────────────────────────────
+  const postingMap = {
+    sales:           { recommended: "5x_week", reason: `Sales conversion requires consistent presence in the feed across the purchase decision window. 5x/week maintains visibility without overwhelming — ${au || "your audience"} needs 5–7 exposures to a solution before taking action.` },
+    leads:           { recommended: "5x_week", reason: `Lead generation is a volume and consistency game. 5x/week gives you enough touchpoints to move ${au || "your audience"} from problem-aware to opt-in ready within a single week cycle.` },
+    brand_awareness: { recommended: "daily",   reason: `Brand awareness scales with frequency. Daily posting in ${n} maximizes algorithmic surface area and creates the repetition that turns passive viewers into active followers.` },
+    authority:       { recommended: "3x_week", reason: `Authority is built on depth, not volume. 3x/week gives you the production time to create content that genuinely demonstrates expertise — which is more valuable than daily shallow content for ${n} authority positioning.` },
+    engagement:      { recommended: "daily",   reason: `Engagement compounds with frequency. Daily content gives ${au || "your audience"} more opportunities to participate, and the algorithm rewards engagement velocity, which requires consistent touchpoints.` },
+  };
+  const postingRec = postingMap[g] ?? postingMap.sales;
+
+  // ── 5. CTA recommendations ────────────────────────────────────────────────
+  const ctaNicheMap = {
+    sales: [
+      `Comment "${n.toUpperCase()}" below and I'll send you the breakdown — no pitch, just the information.`,
+      `Save this post. When you're ready to stop guessing in ${n}, the link in bio is where you start.`,
+      `DM me "${n}" — I'll show ${au || "you"} the exact first step based on where you are right now.`,
+    ],
+    leads: [
+      `Follow + comment "SEND IT" — I'll DM you the free ${n} framework I use with every ${au1 || "client"}.`,
+      `The full ${n} guide is in my bio. It's free. ${au || "Your audience"} who grab it move faster than those who don't.`,
+      `Comment "GUIDE" and I'll send you the ${n} resource that most ${au} spend months trying to find on their own.`,
+    ],
+    brand_awareness: [
+      `If this landed, follow — I post ${n} content like this every week.`,
+      `Share this with one ${au1 || "person"} who needs to hear it right now.`,
+      `Save this for the next time you're stuck in ${n}. You'll thank yourself.`,
+    ],
+    authority: [
+      `Follow if you want the kind of ${n} insight that most people charge for.`,
+      `Save this framework — it took me years to figure out and 30 seconds to share.`,
+      `Comment "FRAMEWORK" and I'll send you the full version — goes deeper than I could fit in this video.`,
+    ],
+    engagement: [
+      `Comment your answer below — I read every single one and reply to the real ones.`,
+      `Tag someone who needs to see this. Let's see who you're thinking of.`,
+      `Agree or disagree? Comment your take — I'm genuinely curious where ${au || "this audience"} lands on this.`,
+    ],
+  };
+
+  const ctaLeadGen = [
+    `Comment "${n.toUpperCase()} GUIDE" and I'll DM you the free resource that covers this in full.`,
+    `Follow + comment "SEND IT" and I'll send you the exact framework I use — free, no strings.`,
+    `The free ${n} toolkit is linked in my bio. Grab it before I start charging for it.`,
+    `DM me "START" and I'll walk you through the first step based on exactly where ${au || "you"} are right now.`,
+  ];
+
+  const ctaSales = [
+    `${pr || "The full system"} is open right now. Link in bio — 2 minutes to get started, results within a week.`,
+    `If you're ready to stop circling this problem in ${n}, ${pr || "the solution"} is in my bio. Link is there.`,
+    `Comment "READY" if you're done with the slow version of ${n}. I'll send you the direct link.`,
+    `${pr || "It"} closes ${["soon", "this week", "in 48 hours"][Math.floor(Math.random() * 3)]}. Link in bio if ${au || "you"}'re serious about the result.`,
+  ];
+
+  res.json({
+    contentMix,
+    weeklySchedule,
+    reasoning: {
+      whyMixWorks:       pick(whyMixWorks[g]      ?? whyMixWorks.sales),
+      audiencePsychology: pick(audiencePsychology[g] ?? audiencePsychology.sales),
+      contentDominant:   contentDominant[g]        ?? contentDominant.sales,
+    },
+    posting: postingRec,
+    ctas: {
+      nicheSpecific: pick(ctaNicheMap[g] ?? ctaNicheMap.sales),
+      leadGen:       pick(ctaLeadGen),
+      sales:         pick(ctaSales),
+    },
+  });
+});
+
 // ── POST /api/export/mp4 ──────────────────────────────────────────────────────
 app.post("/api/export/mp4", async (req, res) => {
   const { videoUrl, subtitles, preset = "viral", subtitleScale = 1.0, subtitlePosition = 0 } = req.body ?? {};

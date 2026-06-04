@@ -16,6 +16,7 @@ import SettingsPage from "@/pages/settings";
 import StoragePage from "@/pages/storage";
 import ScriptEnginePage from "@/pages/script-engine";
 import ContentPlannerPage from "@/pages/content-planner";
+import ContentStrategyPage from "@/pages/content-strategy";
 
 const queryClient = new QueryClient();
 
@@ -80,6 +81,9 @@ function Router() {
       </Route>
       <Route path="/content-planner">
         <ProtectedRoute component={ContentPlannerPage} />
+      </Route>
+      <Route path="/content-strategy">
+        <ProtectedRoute component={ContentStrategyPage} />
       </Route>
       <Route component={NotFound} />
     </Switch>
