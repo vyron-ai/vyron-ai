@@ -3,7 +3,7 @@ import { useState, ReactNode } from "react";
 import {
   LayoutDashboard, FolderKanban, Video, Subtitles, Layers,
   BarChart3, Workflow, Settings, Bell, Search, Menu, HardDrive,
-  LogOut, Loader2, FlaskConical, ScrollText, CalendarDays, Activity,
+  LogOut, Loader2, FlaskConical, ScrollText, CalendarDays, Activity, RefreshCw,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,7 @@ export function AppLayout({ children, title }: AppLayoutProps) {
     { icon: <Layers size={18} />, label: "Content", href: "/content" },
     { icon: <BarChart3 size={18} />, label: "Content Strategy", href: "/content-strategy" },
     { icon: <Activity size={18} />, label: "Sales Diagnostic", href: "/sales-diagnostic" },
+    { icon: <RefreshCw size={18} />, label: "Lead Recovery", href: "/lead-recovery" },
   ];
 
   const systemTools = [

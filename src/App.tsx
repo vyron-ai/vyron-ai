@@ -18,6 +18,7 @@ import ScriptEnginePage from "@/pages/script-engine";
 import ContentPlannerPage from "@/pages/content-planner";
 import ContentStrategyPage from "@/pages/content-strategy";
 import SalesDiagnosticPage from "@/pages/sales-diagnostic";
+import LeadRecoveryPage from "@/pages/lead-recovery";
 
 const queryClient = new QueryClient();
 
@@ -88,6 +89,9 @@ function Router() {
       </Route>
       <Route path="/sales-diagnostic">
         <ProtectedRoute component={SalesDiagnosticPage} />
+      </Route>
+      <Route path="/lead-recovery">
+        <ProtectedRoute component={LeadRecoveryPage} />
       </Route>
       <Route component={NotFound} />
     </Switch>
