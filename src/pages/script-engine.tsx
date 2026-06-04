@@ -3,22 +3,29 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Copy, Check, Zap, Hash, Type, Mic, MessageSquare } from "lucide-react";
+import {
+  Loader2, Copy, Check, Zap, Hash, Type, Mic, MessageSquare,
+  Brain, AlertTriangle, TrendingUp,
+} from "lucide-react";
+
+type HookType = "curiosity" | "pain" | "story" | "authority" | "mistake" | "opportunity" | "viral";
+type Intensity = "soft" | "medium" | "aggressive";
 
 interface ScriptResult {
-  hook: string;
+  sarTrigger: string;
+  painTrigger: string;
+  curiosityTrigger: string;
   script: string;
   cta: string;
   title: string;
   hashtags: string;
 }
 
+// ── Copy button ────────────────────────────────────────────────────────────────
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
-
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(text);
@@ -29,7 +36,6 @@ function CopyButton({ text }: { text: string }) {
       toast({ description: "Failed to copy", variant: "destructive" });
     }
   };
-
   return (
     <button
       onClick={handleCopy}
@@ -41,21 +47,24 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+// ── Result card ────────────────────────────────────────────────────────────────
 function ResultCard({
-  icon,
-  label,
-  content,
-  mono = false,
+  icon, label, content, accent = false, mono = false,
 }: {
   icon: React.ReactNode;
   label: string;
   content: string;
+  accent?: boolean;
   mono?: boolean;
 }) {
   return (
-    <div className="glass border border-border rounded-xl p-4 space-y-3">
+    <div
+      className={`glass rounded-xl p-4 space-y-3 border ${
+        accent ? "border-primary/40 bg-primary/5" : "border-border"
+      }`}
+    >
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-primary text-sm font-semibold">
+        <div className={`flex items-center gap-2 text-sm font-semibold ${accent ? "text-primary" : "text-primary"}`}>
           {icon}
           {label}
         </div>
@@ -72,12 +81,62 @@ function ResultCard({
   );
 }
 
+// ── Pill selector ──────────────────────────────────────────────────────────────
+function PillSelector<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string; emoji?: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-150 ${
+            value === opt.value
+              ? "bg-primary text-primary-foreground border-primary electric-glow"
+              : "bg-background/40 text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+          }`}
+        >
+          {opt.emoji && <span className="mr-1">{opt.emoji}</span>}
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Constants ──────────────────────────────────────────────────────────────────
+const HOOK_TYPES: { value: HookType; label: string; emoji: string }[] = [
+  { value: "curiosity",    label: "Curiosity",    emoji: "🔍" },
+  { value: "pain",         label: "Pain",         emoji: "⚡" },
+  { value: "story",        label: "Story",        emoji: "📖" },
+  { value: "authority",    label: "Authority",    emoji: "🏆" },
+  { value: "mistake",      label: "Mistake",      emoji: "❌" },
+  { value: "opportunity",  label: "Opportunity",  emoji: "🚀" },
+  { value: "viral",        label: "Viral Trend",  emoji: "🔥" },
+];
+
+const INTENSITIES: { value: Intensity; label: string; emoji: string }[] = [
+  { value: "soft",       label: "Soft",       emoji: "🌊" },
+  { value: "medium",     label: "Medium",     emoji: "⚡" },
+  { value: "aggressive", label: "Aggressive", emoji: "🔥" },
+];
+
+// ── Main page ──────────────────────────────────────────────────────────────────
 export default function ScriptEnginePage() {
-  const [niche, setNiche] = useState("");
-  const [product, setProduct] = useState("");
-  const [audience, setAudience] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<ScriptResult | null>(null);
+  const [niche,     setNiche]     = useState("");
+  const [product,   setProduct]   = useState("");
+  const [audience,  setAudience]  = useState("");
+  const [hookType,  setHookType]  = useState<HookType>("curiosity");
+  const [intensity, setIntensity] = useState<Intensity>("medium");
+  const [loading,   setLoading]   = useState(false);
+  const [result,    setResult]    = useState<ScriptResult | null>(null);
   const { toast } = useToast();
 
   const canGenerate = niche.trim() && product.trim() && audience.trim();
@@ -91,14 +150,15 @@ export default function ScriptEnginePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          niche: niche.trim(),
-          product: product.trim(),
-          audience: audience.trim(),
+          niche:     niche.trim(),
+          product:   product.trim(),
+          audience:  audience.trim(),
+          hookType,
+          intensity,
         }),
       });
       if (!res.ok) throw new Error("Server error");
-      const data = await res.json();
-      setResult(data);
+      setResult(await res.json());
     } catch {
       toast({ description: "Failed to generate script. Please try again.", variant: "destructive" });
     } finally {
@@ -109,14 +169,34 @@ export default function ScriptEnginePage() {
   return (
     <AppLayout title="Script Engine">
       <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6">
+
+        {/* Header */}
         <div className="space-y-1">
           <h2 className="text-2xl font-bold">
             Script Engine
-            <span className="text-primary ml-2">v1</span>
+            <span className="text-primary ml-2">v2</span>
           </h2>
           <p className="text-muted-foreground text-sm">
-            Generate hooks, scripts, CTAs, titles and hashtags for your short-form videos.
+            Neuro-engineered hooks, triggers, and full scripts for short-form video.
           </p>
+        </div>
+
+        {/* Neuro Hook Engine */}
+        <div className="glass border border-primary/30 rounded-xl p-4 md:p-5 space-y-5 bg-primary/5">
+          <div className="flex items-center gap-2">
+            <Brain size={16} className="text-primary" />
+            <span className="text-sm font-bold text-primary uppercase tracking-wider">Neuro Hook Engine</span>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Hook Type</Label>
+            <PillSelector options={HOOK_TYPES} value={hookType} onChange={setHookType} />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Hook Intensity</Label>
+            <PillSelector options={INTENSITIES} value={intensity} onChange={setIntensity} />
+          </div>
         </div>
 
         {/* Input form */}
@@ -160,15 +240,9 @@ export default function ScriptEnginePage() {
             className="w-full electric-glow font-semibold"
           >
             {loading ? (
-              <>
-                <Loader2 size={16} className="animate-spin mr-2" />
-                Generating…
-              </>
+              <><Loader2 size={16} className="animate-spin mr-2" />Generating…</>
             ) : (
-              <>
-                <Zap size={16} className="mr-2" />
-                Generate Script
-              </>
+              <><Zap size={16} className="mr-2" />Generate Script</>
             )}
           </Button>
         </div>
@@ -176,14 +250,39 @@ export default function ScriptEnginePage() {
         {/* Results */}
         {result && (
           <div className="space-y-3 animate-in fade-in-0 slide-in-from-bottom-4 duration-300">
+
+            <div className="px-1 pb-1">
+              <span className="text-xs font-bold text-primary uppercase tracking-wider">
+                — Neuro Triggers
+              </span>
+            </div>
+
             <ResultCard
-              icon={<Mic size={14} />}
-              label="Hook"
-              content={result.hook}
+              icon={<Brain size={14} />}
+              label="SAR Trigger"
+              content={result.sarTrigger}
+              accent
             />
             <ResultCard
+              icon={<AlertTriangle size={14} />}
+              label="Pain Trigger"
+              content={result.painTrigger}
+            />
+            <ResultCard
+              icon={<TrendingUp size={14} />}
+              label="Curiosity Trigger"
+              content={result.curiosityTrigger}
+            />
+
+            <div className="px-1 pt-2 pb-1">
+              <span className="text-xs font-bold text-primary uppercase tracking-wider">
+                — Script & Output
+              </span>
+            </div>
+
+            <ResultCard
               icon={<MessageSquare size={14} />}
-              label="Short Script"
+              label="Main Script"
               content={result.script}
             />
             <ResultCard
@@ -209,11 +308,10 @@ export default function ScriptEnginePage() {
               onClick={handleGenerate}
               disabled={loading}
             >
-              {loading ? (
-                <Loader2 size={14} className="animate-spin mr-2" />
-              ) : (
-                <Zap size={14} className="mr-2" />
-              )}
+              {loading
+                ? <Loader2 size={14} className="animate-spin mr-2" />
+                : <Zap size={14} className="mr-2" />
+              }
               Regenerate
             </Button>
           </div>

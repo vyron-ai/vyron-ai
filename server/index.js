@@ -184,59 +184,182 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
 
 // ── POST /api/script/generate ─────────────────────────────────────────────────
 app.post("/api/script/generate", (req, res) => {
-  const { niche = "", product = "", audience = "" } = req.body ?? {};
+  const {
+    niche = "",
+    product = "",
+    audience = "",
+    hookType = "curiosity",
+    intensity = "medium",
+  } = req.body ?? {};
   if (!niche.trim() || !product.trim() || !audience.trim()) {
     return res.status(400).json({ error: "niche, product, and audience are required" });
   }
 
-  const n = niche.trim();
+  const n  = niche.trim();
   const pr = product.trim();
   const au = audience.trim();
-
-  const hooks = [
-    `Nobody talks about this ${n} hack — but ${au} are using it to transform their results.`,
-    `Stop scrolling. If you're a ${au.replace(/s$/, "")} struggling with ${n}, this changes everything.`,
-    `I tried every ${n} strategy out there. Only this one actually worked for ${au}.`,
-    `The ${n} secret that ${au} wish they knew sooner — no fluff, just results.`,
-    `POV: You finally figured out the real way to win at ${n}.`,
-  ];
-
-  const scripts = [
-    `Here's the truth about ${n} that most people overlook.\n\nIf you're a ${au.replace(/s$/, "")} trying to grow, the old way isn't working anymore.\n\nThat's exactly why I built ${pr} — a focused tool designed specifically for ${au} who are serious about their ${n} results.\n\nThe best part? You can get started today without any guesswork.`,
-    `Most ${au} spend weeks figuring out ${n} on their own.\n\nI did too — until I stopped doing it the hard way.\n\n${pr} gives you a clear path forward, built for ${au} like you.\n\nYou don't need more information. You need the right system.`,
-    `Here's a simple formula that's working for ${au} right now in ${n}:\n\nStep 1 — Focus on what actually moves the needle.\nStep 2 — Cut everything that wastes your time.\nStep 3 — Use tools like ${pr} to stay consistent.\n\nConsistency plus the right system equals real results.`,
-  ];
-
-  const ctas = [
-    `Drop a "YES" in the comments if you want my free ${n} guide.`,
-    `Follow for more ${n} tips built for ${au} — I post daily.`,
-    `Link in bio to get started with ${pr} today. Zero risk.`,
-    `Save this for later and share it with a ${au.replace(/s$/, "")} who needs this.`,
-    `Comment "${n.toUpperCase()}" and I'll send you the full breakdown.`,
-  ];
-
-  const titles = [
-    `The ${n} strategy every ${au.replace(/s$/, "")} needs to know in 2025`,
-    `Why ${au} are switching to ${pr} for ${n}`,
-    `${n} tips that actually work for ${au} (no fluff)`,
-    `How I changed my ${n} results using ${pr}`,
-    `The #1 ${n} mistake ${au} keep making`,
-  ];
-
-  const hashtagSets = [
-    `#${n.replace(/\s+/g, "")} #${pr.replace(/\s+/g, "")} #${au.replace(/\s+/g, "")} #contentcreator #tiktokmarketing #viral2025 #shortsvideo #growthhacks`,
-    `#${n.replace(/\s+/g, "")}tips #${au.replace(/\s+/g, "")}life #${pr.replace(/\s+/g, "")} #reels #tiktoktips #fyp #smallbusiness #creatoreconomy`,
-    `#${n.replace(/\s+/g, "")}hacks #${au.replace(/\s+/g, "")} #contentmarketing #${pr.replace(/\s+/g, "")} #foryoupage #viral #shorts #businesstips`,
-  ];
+  const au1 = au.replace(/s$/i, ""); // singular form best-effort
 
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
+  // ── SAR Triggers (Stop · Agitate · Resolve) — unique per hook type ──────────
+  const sarMap = {
+    curiosity: [
+      `STOP — you're about to scroll past the one ${n} insight that's been hiding in plain sight for ${au}.\nAGITATE — you've tried the popular methods. They worked for someone else. Not for you.\nRESOLVE — ${pr} gives you the exact framework built for how ${au} actually think and work.`,
+      `STOP — before you try another ${n} tactic, ask yourself: why hasn't anything stuck yet?\nAGITATE — it's not your effort. It's that nobody's shown you what actually works for ${au}.\nRESOLVE — ${pr} closes that gap with a system built specifically for your situation.`,
+    ],
+    pain: [
+      `STOP — if you're a ${au1} stuck in the same ${n} loop, this is your pattern-break moment.\nAGITATE — you're putting in the work. You're watching the videos. Nothing is changing.\nRESOLVE — ${pr} replaces the guesswork with a repeatable system that moves the needle.`,
+      `STOP — ${au} are burning hours on ${n} and getting nowhere. That ends today.\nAGITATE — the problem isn't your niche. It's that you're missing the core mechanism.\nRESOLVE — ${pr} installs that mechanism in under 30 minutes.`,
+    ],
+    story: [
+      `STOP — I was exactly where you are 6 months ago — a ${au1} drowning in ${n} advice.\nAGITATE — I tried everything. Courses, coaches, YouTube rabbit holes. Nothing clicked.\nRESOLVE — then I built ${pr}, and everything changed. Here's the short version.`,
+      `STOP — three months ago I was ready to quit ${n} entirely. This is what saved it.\nAGITATE — the thing nobody tells ${au}: the advice online is built for someone else.\nRESOLVE — ${pr} is built for people exactly like you. This is what I wish I had.`,
+    ],
+    authority: [
+      `STOP — after working in ${n} for years, I can tell you most of what ${au} believe is wrong.\nAGITATE — the standard playbook was built for a different era. It's costing you time and money.\nRESOLVE — ${pr} is built on what actually works in ${n} right now. Let me show you.`,
+      `STOP — I've seen hundreds of ${au} fail at ${n} for the same preventable reasons.\nAGITATE — it's not about trying harder. It's about using the right leverage points.\nRESOLVE — ${pr} puts those leverage points directly in your hands.`,
+    ],
+    mistake: [
+      `STOP — ${au} make this ${n} mistake constantly and it's quietly killing their results.\nAGITATE — you've probably made it too. And nobody in your space is talking about it.\nRESOLVE — ${pr} is designed to eliminate this mistake at the root. Not patch it.`,
+      `STOP — there are 3 ${n} mistakes that keep ${au} stuck for months. You're likely making at least one.\nAGITATE — the frustrating part is that they feel like the right moves when you're making them.\nRESOLVE — ${pr} shows you exactly what to stop, and what to do instead.`,
+    ],
+    opportunity: [
+      `STOP — right now there's a specific window in ${n} that ${au} are completely missing.\nAGITATE — by the time everyone talks about it, it'll be too competitive. That's how it always works.\nRESOLVE — ${pr} puts you in position to take advantage before the window closes.`,
+      `STOP — ${n} has shifted. What worked for ${au} 12 months ago is fading — and a new lane just opened.\nAGITATE — most people are still using the old playbook. That's your edge.\nRESOLVE — ${pr} maps out exactly how to enter this opportunity and own it.`,
+    ],
+    viral: [
+      `STOP — everyone's copying the same ${n} content format. And it's all starting to blur together.\nAGITATE — ${au} are scrolling past it because they've seen it a hundred times.\nRESOLVE — ${pr} gives you a content system that actually stands out in a saturated feed.`,
+      `STOP — the trending ${n} formula is already dead. Here's what's replacing it for ${au}.\nAGITATE — if you're still doing what went viral 90 days ago, you're already late.\nRESOLVE — ${pr} keeps you on the front edge of what works right now.`,
+    ],
+  };
+
+  // ── Pain Triggers — intensity-scaled ────────────────────────────────────────
+  const painMap = {
+    soft: [
+      `${au} often feel like they're doing all the right things in ${n}, but the results just aren't showing up yet. That gap is frustrating — and it's more common than you think.`,
+      `If you've been trying to figure out ${n} and still feel stuck, it's not a lack of effort. Most ${au} are missing one specific piece that changes everything.`,
+    ],
+    medium: [
+      `You're a ${au1} who's been putting real effort into ${n} — and you still don't have the results to show for it. That's not a motivation problem. That's a system problem.`,
+      `${au} spend months — sometimes years — circling the same ${n} problems. The content is out there. The tools exist. So what's actually blocking you?`,
+    ],
+    aggressive: [
+      `${au} are getting left behind in ${n} while they wait for the right moment. There is no right moment. Every day you wait is a day someone else pulls ahead.`,
+      `Let's be honest: if your ${n} results were working, you wouldn't be here. You're stuck, and the approach you're using is the reason why.`,
+    ],
+  };
+
+  // ── Curiosity Triggers — unique per hook type ────────────────────────────────
+  const curiosityMap = {
+    curiosity: [
+      `What if the one thing you haven't tried in ${n} is the exact thing that works best for ${au}? Most people skip it because it sounds too simple.`,
+      `There's a pattern in ${n} that high-performing ${au} share — and it's almost never what gets talked about in the popular content.`,
+    ],
+    pain: [
+      `The reason ${au} stay stuck in ${n} longer than they should isn't a secret. It's just something nobody wants to say out loud.`,
+      `What's the real cost of another 6 months of the same ${n} results? For ${au}, it's not just time — it's confidence, momentum, and opportunity.`,
+    ],
+    story: [
+      `I kept this ${n} approach to myself for months because I wasn't sure it would work for other ${au}. Then five people tried it. Same result every time.`,
+      `The moment my ${n} results changed wasn't when I found a better strategy. It was when I stopped doing this one thing that most ${au} still do.`,
+    ],
+    authority: [
+      `Most ${n} advice is built on assumptions that don't hold for ${au}. Here's what the data actually shows when you strip away the noise.`,
+      `I've tracked ${n} outcomes across dozens of ${au} and the pattern is undeniable — the ones who win all do one thing differently.`,
+    ],
+    mistake: [
+      `The most damaging ${n} mistake isn't the obvious one. It's the one that feels productive while it's quietly costing you.`,
+      `${au} who make this ${n} mistake don't know they're making it. It looks like good strategy from the inside.`,
+    ],
+    opportunity: [
+      `Most ${au} will look back in 12 months and realize this was the exact moment the ${n} landscape shifted — and they missed it.`,
+      `There's a specific gap in ${n} right now that ${au} with the right approach can walk straight into. It won't stay open long.`,
+    ],
+    viral: [
+      `The ${n} content format that's dominating right now has a shelf life — and a replacement is already outperforming it for ${au}.`,
+      `Why are some ${au} in ${n} getting 10x the reach with half the effort? It's not luck. There's a replicable structure behind it.`,
+    ],
+  };
+
+  // ── Main Script — hook-type-driven body ──────────────────────────────────────
+  const scriptMap = {
+    curiosity: `Here's something that most ${n} content never covers:\n\n${au} who consistently get results aren't using more complex strategies — they're using simpler ones, applied more precisely.\n\nThe curiosity gap in ${n} isn't about what you don't know. It's about what you're not yet doing with what you already know.\n\n${pr} is built on that principle. It takes your inputs and turns them into a clear, repeatable process — no guesswork, no content rabbit holes.\n\nThe results aren't magic. They're just the result of doing the right things in the right order.`,
+    pain: `If you're a ${au1} who's been putting effort into ${n} without the results to match — the problem isn't your work ethic.\n\nThe ${n} space is full of generic advice that isn't built for how ${au} actually operate. And following it keeps you stuck in cycles that feel productive but aren't moving you forward.\n\n${pr} was built specifically to break that pattern. It replaces the cycle with a direct path — one that's been refined for the exact problems ${au} face in ${n}.\n\nYou don't need to work harder. You need to work on the right things.`,
+    story: `Six months ago, I was a ${au1} with no clear path forward in ${n}.\n\nI'd consumed more content than I can count. I had the theory. What I didn't have was a system that worked for someone in my situation.\n\nI built ${pr} out of frustration — and then kept using it because it actually worked.\n\nNow I share it with ${au} who are where I was: capable, informed, and stuck. If that's you, here's the short version of what changed everything for me.`,
+    authority: `After deep experience in ${n}, one pattern is impossible to ignore:\n\n${au} who fail aren't failing because they lack information. They're failing because the information they have wasn't designed for them.\n\nThe mainstream ${n} playbook is built for a general audience. ${au} have specific constraints, specific goals, and a specific context that most strategies ignore.\n\n${pr} applies a framework that accounts for all of that. It's not another set of generic tips — it's a system that actually fits.`,
+    mistake: `The most common ${n} mistake among ${au} is this: optimizing the wrong metric.\n\nYou track what's easy to measure and ignore what actually drives results. It feels productive. It isn't.\n\nHere's how it plays out: you put effort into visibility, consistency, or volume — and none of it compounds. Because the foundation isn't set.\n\n${pr} starts at the foundation. It diagnoses what's actually blocking your ${n} results before suggesting any action.`,
+    opportunity: `Right now, ${n} is in a transition. The old playbook is saturating. A new approach is outperforming it — and most ${au} haven't made the shift yet.\n\nThat gap is the opportunity. It won't stay open forever.\n\n${pr} is built for this moment. It puts ${au} on the right side of the shift before the window closes and the new approach becomes the new crowded lane.\n\nTiming matters in ${n}. This is the timing.`,
+    viral: `The ${n} content formats that dominated 6 months ago are losing their edge. ${au} are scrolling past them without stopping.\n\nWhat's working now looks different. It's built on pattern interrupts, niche specificity, and a structure that creates a genuine reason to keep watching.\n\n${pr} is built around what's working right now for ${au} in ${n} — not what worked before, and not what everyone else is still copying.\n\nIf you want reach, you need to be where the algorithm is paying attention today.`,
+  };
+
+  // ── CTA — intensity-scaled ────────────────────────────────────────────────────
+  const ctaMap = {
+    soft: [
+      `If this resonated, follow for more ${n} content built specifically for ${au}. New posts every week.`,
+      `Save this if you're a ${au1} working on your ${n} approach — you'll want to come back to it.`,
+      `Try ${pr} and see if it's the right fit for your ${n} goals. Link in bio.`,
+    ],
+    medium: [
+      `Comment "${n.toUpperCase()}" below and I'll send you the full breakdown — free.`,
+      `Follow if you're a ${au1} who's serious about ${n} results. I don't post filler.`,
+      `${pr} is open right now. Link in bio — takes less than 2 minutes to get started.`,
+    ],
+    aggressive: [
+      `${au} who act on this today will be in a completely different position in 90 days. Link in bio. Don't overthink it.`,
+      `Stop watching. Start doing. ${pr} — link in bio. This is the system.`,
+      `Comment "READY" if you're done letting ${n} stay stuck. I'll send you the first step right now.`,
+    ],
+  };
+
+  // ── Titles — hook-type-driven ─────────────────────────────────────────────────
+  const titleMap = {
+    curiosity: [
+      `The ${n} method ${au} keep overlooking (it's not what you think)`,
+      `Why everything you know about ${n} might be working against you`,
+    ],
+    pain: [
+      `Why ${au} stay stuck in ${n} — and the exact fix`,
+      `The real reason your ${n} results aren't moving (honest answer)`,
+    ],
+    story: [
+      `How I went from lost ${au1} to consistent ${n} results using ${pr}`,
+      `What changed my ${n} results after months of going nowhere`,
+    ],
+    authority: [
+      `What ${n} experts know that ${au} don't (real talk)`,
+      `The ${n} framework that actually holds up when you look at the data`,
+    ],
+    mistake: [
+      `The #1 ${n} mistake ${au} make (and how to stop immediately)`,
+      `You're probably making this ${n} mistake right now — here's the fix`,
+    ],
+    opportunity: [
+      `The ${n} opportunity ${au} are sleeping on right now`,
+      `There's a gap in ${n} that ${au} can still enter — here's how`,
+    ],
+    viral: [
+      `The ${n} content shift that's already happening (most ${au} are late)`,
+      `Why the old ${n} formula stopped working for ${au} — new approach inside`,
+    ],
+  };
+
+  // ── Hashtags ──────────────────────────────────────────────────────────────────
+  const tag  = (s) => "#" + s.replace(/\s+/g, "").toLowerCase();
+  const hashtagSets = [
+    `${tag(n)} ${tag(pr)} ${tag(au)} #contentcreator #${hookType}marketing #viral2025 #shortsvideo #fyp`,
+    `${tag(n)}tips ${tag(au)}life ${tag(pr)} #reels #tiktoktips #fyp #creatoreconomy #${intensity}hook`,
+    `${tag(n)}hacks ${tag(au)} #contentmarketing ${tag(pr)} #foryoupage #viral #shorts #neurohook`,
+  ];
+
   res.json({
-    hook: pick(hooks),
-    script: pick(scripts),
-    cta: pick(ctas),
-    title: pick(titles),
-    hashtags: pick(hashtagSets),
+    sarTrigger:      pick(sarMap[hookType]    ?? sarMap.curiosity),
+    painTrigger:     pick(painMap[intensity]  ?? painMap.medium),
+    curiosityTrigger: pick(curiosityMap[hookType] ?? curiosityMap.curiosity),
+    script:          scriptMap[hookType]      ?? scriptMap.curiosity,
+    cta:             pick(ctaMap[intensity]   ?? ctaMap.medium),
+    title:           pick(titleMap[hookType]  ?? titleMap.curiosity),
+    hashtags:        pick(hashtagSets),
   });
 });
 
