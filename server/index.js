@@ -805,6 +805,60 @@ function buildEnhanceFilters(preset, toggles) {
   return filters;
 }
 
+// ── POST /api/preview/video — transcode any input to browser-safe H.264 ───────
+app.post(
+  "/api/preview/video",
+  express.raw({ type: "*/*", limit: "500mb" }),
+  async (req, res) => {
+    if (!FFMPEG) {
+      return res.status(500).json({ error: "FFmpeg not available on this server." });
+    }
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: "No video data received." });
+    }
+
+    const id         = randomBytes(8).toString("hex");
+    const inputPath  = join(tmpdir(), `vyron-prev-in-${id}`);
+    const outputPath = join(tmpdir(), `vyron-prev-out-${id}.mp4`);
+
+    const cleanup = () => {
+      for (const p of [inputPath, outputPath]) {
+        try { if (existsSync(p)) unlinkSync(p); } catch {}
+      }
+    };
+
+    try {
+      writeFileSync(inputPath, req.body);
+
+      await execFileAsync(FFMPEG, [
+        "-y", "-i", inputPath,
+        "-map", "0:v:0", "-map", "0:a:0?",
+        "-c:v",       "libx264",
+        "-crf",       "23",
+        "-preset",    "fast",
+        "-pix_fmt",   "yuv420p",
+        "-profile:v", "baseline",
+        "-level",     "3.0",
+        "-c:a",       "aac",
+        "-b:a",       "128k",
+        "-movflags",  "+faststart",
+        outputPath,
+      ], { maxBuffer: 100 * 1024 * 1024, timeout: 300_000 });
+
+      res.setHeader("Content-Type", "video/mp4");
+      const stream = createReadStream(outputPath);
+      stream.on("end", cleanup);
+      stream.on("error", cleanup);
+      stream.pipe(res);
+    } catch (err) {
+      cleanup();
+      if (!res.headersSent) {
+        res.status(500).json({ error: err?.message ?? "Preview conversion failed" });
+      }
+    }
+  }
+);
+
 // ── POST /api/enhance/video ───────────────────────────────────────────────────
 app.post(
   "/api/enhance/video",
@@ -860,7 +914,14 @@ app.post(
         args.push("-vf", vFilters.join(","));
       }
       // libx264 + yuv420p is required for in-browser playback across all browsers
-      args.push("-c:v", "libx264", "-crf", "20", "-preset", "fast", "-pix_fmt", "yuv420p");
+      args.push(
+        "-c:v",       "libx264",
+        "-crf",       "20",
+        "-preset",    "fast",
+        "-pix_fmt",   "yuv420p",
+        "-profile:v", "baseline",
+        "-level",     "3.0"
+      );
 
       // Audio
       if (toggles.audioCleanup) {

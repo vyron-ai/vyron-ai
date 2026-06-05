@@ -244,6 +244,7 @@ export default function VideoEnhancementPage() {
   const [origVideoError,  setOrigVideoError]  = useState<string | null>(null);
   const [enhVideoError,   setEnhVideoError]   = useState<string | null>(null);
   const [canPlayMp4,      setCanPlayMp4]      = useState<string>("");
+  const [origConverting,  setOrigConverting]  = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const xhrRef   = useRef<XMLHttpRequest | null>(null);
   const { toast } = useToast();
@@ -261,23 +262,69 @@ export default function VideoEnhancementPage() {
     };
   }, []); // eslint-disable-line
 
-  const applyFile = (f: File) => {
-    if (!f.type.startsWith("video/")) {
+  const applyFile = async (f: File) => {
+    // Allow any video/* or files with no type (some formats report empty type)
+    if (f.type && !f.type.startsWith("video/")) {
       toast({ description: "Please upload a video file.", variant: "destructive" });
       return;
     }
-    if (originalUrl) URL.revokeObjectURL(originalUrl);
-    if (enhancedUrl) URL.revokeObjectURL(enhancedUrl);
+    // Reset all state for new file
     setFile(f);
-    setOriginalUrl(URL.createObjectURL(f));
+    setOriginalUrl(null);
     setEnhancedUrl(null);
     setStatus("idle");
     setErrorMsg("");
+    setOrigVideoError(null);
+    setEnhVideoError(null);
+    setEnhancedBlobSize(0);
+    setOrigConverting(true);
+
+    try {
+      // Always transcode to H.264/baseline/yuv420p — never preview raw file directly
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/preview/video");
+      xhr.setRequestHeader("Content-Type", f.type || "application/octet-stream");
+      xhr.responseType = "blob";
+
+      const rawBlob: Blob = await new Promise((resolve, reject) => {
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(xhr.response as Blob);
+          } else {
+            // Try to read the error message
+            const reader = new FileReader();
+            reader.onload = () => {
+              try {
+                const json = JSON.parse(reader.result as string);
+                reject(new Error(json.error ?? `HTTP ${xhr.status}`));
+              } catch {
+                reject(new Error(`Preview conversion failed: HTTP ${xhr.status}`));
+              }
+            };
+            reader.readAsText(xhr.response as Blob);
+          }
+        });
+        xhr.addEventListener("error", () => reject(new Error("Network error during preview conversion")));
+        xhr.send(f);
+      });
+
+      const typed = new Blob([rawBlob], { type: "video/mp4" });
+      const url   = URL.createObjectURL(typed);
+      console.log("[VYRON preview] original preview ready:", url, "size:", typed.size);
+      setOriginalUrl(url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Preview conversion failed";
+      console.error("[VYRON preview] conversion failed:", msg);
+      setOrigVideoError(msg);
+      toast({ description: "Could not prepare preview — try a different format.", variant: "destructive" });
+    } finally {
+      setOrigConverting(false);
+    }
   };
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) applyFile(f);
+    if (f) void applyFile(f);
     e.target.value = "";
   };
 
@@ -285,7 +332,8 @@ export default function VideoEnhancementPage() {
     e.preventDefault();
     setDragging(false);
     const f = e.dataTransfer.files?.[0];
-    if (f) applyFile(f);
+    if (f) void applyFile(f);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onPresetSelect = (id: PresetId) => {
@@ -614,7 +662,7 @@ export default function VideoEnhancementPage() {
             ) : (
               <Button
                 onClick={handleEnhance}
-                disabled={!file}
+                disabled={!file || origConverting}
                 className="w-full electric-glow font-semibold"
               >
                 <Wand2 size={16} className="mr-2" />
@@ -633,15 +681,16 @@ export default function VideoEnhancementPage() {
         )}
 
         {/* Before / After previews */}
-        {(originalUrl || enhancedUrl || isProcessing) && (
+        {(originalUrl || enhancedUrl || isProcessing || origConverting) && (
           <div className="space-y-3">
             <SectionHeader label="Before / After" />
             <div className={`grid gap-4 ${enhancedUrl || isProcessing ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
               <VideoCard
                 label="Original"
-                badge="Original"
-                badgeColor="border-border text-muted-foreground"
+                badge={origConverting ? "Preparing…" : "Original"}
+                badgeColor={origConverting ? "border-primary/30 text-primary" : "border-border text-muted-foreground"}
                 src={originalUrl}
+                isLoading={origConverting}
                 onVideoError={(code) => setOrigVideoError(code)}
               />
               {(enhancedUrl || isProcessing) && (
