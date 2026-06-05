@@ -764,29 +764,6 @@ export default function VideoEnhancementPage() {
                   ["enhanced blob size",          enhancedBlobSize > 0 ? fmtBytes(enhancedBlobSize) : "—", enhancedBlobSize > 0 ? "ok" : "info"],
                   ["enhanced video error",        enhVideoError ?? "none",          enhVideoError ? "err" : "ok"],
 
-                  ["─── source file info ───",    "",                               "info"],
-                  ...(sourceProbe
-                    ? [
-                        ["container",              sourceProbe.container,            "ok"]  as [string,string,string],
-                        ["video codec",            sourceProbe.videoCodec,           sourceProbe.videoCodec === "h264" ? "ok" : "err"]  as [string,string,string],
-                        ["video profile",          sourceProbe.videoProfile,         sourceProbe.videoProfile === "Baseline" ? "ok" : sourceProbe.videoProfile === "—" ? "info" : "warn"] as [string,string,string],
-                        ["pixel format",           sourceProbe.pixFmt,               sourceProbe.pixFmt === "yuv420p" ? "ok" : "err"]   as [string,string,string],
-                        ["audio codec",            sourceProbe.audioCodec,           sourceProbe.audioCodec === "aac" ? "ok" : "warn"]  as [string,string,string],
-                      ]
-                    : [["(upload a file to see info)", "", "info"]] as [string,string,string][]
-                  ),
-
-                  ["─── output file info ───",    "",                               "info"],
-                  ...(outputProbe
-                    ? [
-                        ["container",              outputProbe.container,            "ok"]  as [string,string,string],
-                        ["video codec",            outputProbe.videoCodec,           outputProbe.videoCodec === "h264" ? "ok" : "err"]  as [string,string,string],
-                        ["video profile",          outputProbe.videoProfile,         outputProbe.videoProfile === "Baseline" ? "ok" : outputProbe.videoProfile === "—" ? "info" : "warn"] as [string,string,string],
-                        ["pixel format",           outputProbe.pixFmt,               outputProbe.pixFmt === "yuv420p" ? "ok" : "err"]   as [string,string,string],
-                        ["audio codec",            outputProbe.audioCodec,           outputProbe.audioCodec === "aac" ? "ok" : "warn"]  as [string,string,string],
-                      ]
-                    : [["(enhance a video to see info)", "", "info"]] as [string,string,string][]
-                  ),
                 ];
 
                 const colourFor = (s: "ok"|"err"|"warn"|"info") =>
@@ -795,25 +772,82 @@ export default function VideoEnhancementPage() {
                   : s === "warn" ? "text-yellow-400"
                   : "text-muted-foreground/40";
 
+                const pc = (val: string, good: string) =>
+                  !val || val === "—" ? "text-muted-foreground/40"
+                  : val === good ? "text-green-400"
+                  : "text-red-400";
+
+                const probeRows = (p: typeof sourceProbe) => p ? [
+                  ["container",    p.container,    "text-white/70"],
+                  ["video codec",  p.videoCodec,   pc(p.videoCodec,  "h264")],
+                  ["video profile",p.videoProfile, p.videoProfile === "Baseline" ? "text-green-400" : p.videoProfile === "—" ? "text-muted-foreground/40" : "text-yellow-400"],
+                  ["pixel format", p.pixFmt,       pc(p.pixFmt,      "yuv420p")],
+                  ["audio codec",  p.audioCodec,   p.audioCodec === "aac" ? "text-green-400" : p.audioCodec === "none" ? "text-muted-foreground/40" : "text-yellow-400"],
+                ] as [string, string, string][] : null;
+
                 return (
-                  <table className="w-full">
-                    <tbody>
-                      {rows.map(([label, value, state], i) =>
-                        label.startsWith("─") ? (
-                          <tr key={i} className="border-t border-border/30">
-                            <td colSpan={2} className="px-3 py-1 text-muted-foreground/30 text-[10px] uppercase tracking-widest">
-                              {label}
-                            </td>
-                          </tr>
-                        ) : (
-                          <tr key={i} className="border-t border-border/20 hover:bg-white/[0.02]">
-                            <td className="px-3 py-1.5 text-muted-foreground/60 w-1/2">{label}</td>
-                            <td className={`px-3 py-1.5 font-semibold ${colourFor(state)}`}>{value}</td>
-                          </tr>
-                        )
+                  <div>
+                    <table className="w-full">
+                      <tbody>
+                        {rows.map(([label, value, state], i) =>
+                          label.startsWith("─") ? (
+                            <tr key={i} className="border-t border-border/30">
+                              <td colSpan={2} className="px-3 py-1 text-muted-foreground/30 text-[10px] uppercase tracking-widest">
+                                {label}
+                              </td>
+                            </tr>
+                          ) : (
+                            <tr key={i} className="border-t border-border/20 hover:bg-white/[0.02]">
+                              <td className="px-3 py-1.5 text-muted-foreground/60 w-1/2">{label}</td>
+                              <td className={`px-3 py-1.5 font-semibold ${colourFor(state)}`}>{value}</td>
+                            </tr>
+                          )
+                        )}
+                      </tbody>
+                    </table>
+
+                    {/* ── SOURCE FILE INFO ── */}
+                    <div className="border-t border-yellow-400/30 mt-1">
+                      <div className="px-3 pt-2 pb-1 text-yellow-400 text-[10px] font-bold uppercase tracking-widest">
+                        Source File Info
+                      </div>
+                      {probeRows(sourceProbe) ? (
+                        <table className="w-full">
+                          <tbody>
+                            {probeRows(sourceProbe)!.map(([label, value, cls], i) => (
+                              <tr key={i} className="border-t border-border/20">
+                                <td className="px-3 py-1.5 text-muted-foreground/60 w-1/2">{label}</td>
+                                <td className={`px-3 py-1.5 font-semibold ${cls}`}>{value}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <p className="px-3 py-1.5 text-muted-foreground/40 italic text-[11px]">upload a file to see codec info</p>
                       )}
-                    </tbody>
-                  </table>
+                    </div>
+
+                    {/* ── OUTPUT FILE INFO ── */}
+                    <div className="border-t border-yellow-400/30 mt-1">
+                      <div className="px-3 pt-2 pb-1 text-yellow-400 text-[10px] font-bold uppercase tracking-widest">
+                        Output File Info
+                      </div>
+                      {probeRows(outputProbe) ? (
+                        <table className="w-full">
+                          <tbody>
+                            {probeRows(outputProbe)!.map(([label, value, cls], i) => (
+                              <tr key={i} className="border-t border-border/20">
+                                <td className="px-3 py-1.5 text-muted-foreground/60 w-1/2">{label}</td>
+                                <td className={`px-3 py-1.5 font-semibold ${cls}`}>{value}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <p className="px-3 py-1.5 text-muted-foreground/40 italic text-[11px]">enhance a video to see codec info</p>
+                      )}
+                    </div>
+                  </div>
                 );
               })()}
             </div>
