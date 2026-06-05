@@ -939,6 +939,47 @@ app.post(
   }
 );
 
+// ── POST /api/thumbnail/video — extract a JPEG frame for preview fallback ─────
+app.post(
+  "/api/thumbnail/video",
+  express.raw({ type: "*/*", limit: "500mb" }),
+  async (req, res) => {
+    if (!FFMPEG) return res.status(500).json({ error: "FFmpeg not available." });
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0)
+      return res.status(400).json({ error: "No video data received." });
+
+    const id         = randomBytes(8).toString("hex");
+    const inputPath  = join(tmpdir(), `vyron-thumb-in-${id}`);
+    const outputPath = join(tmpdir(), `vyron-thumb-${id}.jpg`);
+    const cleanup    = () => {
+      for (const p of [inputPath, outputPath]) try { if (existsSync(p)) unlinkSync(p); } catch {}
+    };
+
+    try {
+      writeFileSync(inputPath, req.body);
+      await execFileAsync(FFMPEG, [
+        "-y",
+        "-ss", "1",             // fast-seek to 1 s (avoids black frames at start)
+        "-i", inputPath,
+        "-frames:v", "1",       // extract exactly one frame
+        "-vf", "scale=640:-2",  // max 640 px wide, even height
+        "-f", "image2",
+        "-q:v", "3",            // good JPEG quality
+        outputPath,
+      ], { maxBuffer: 10 * 1024 * 1024, timeout: 60_000 });
+
+      res.setHeader("Content-Type", "image/jpeg");
+      const stream = createReadStream(outputPath);
+      stream.on("end",   cleanup);
+      stream.on("error", cleanup);
+      stream.pipe(res);
+    } catch {
+      cleanup();
+      if (!res.headersSent) res.status(500).json({ error: "Thumbnail extraction failed." });
+    }
+  }
+);
+
 // ── POST /api/enhance/video ───────────────────────────────────────────────────
 app.post(
   "/api/enhance/video",
@@ -1000,17 +1041,18 @@ app.post(
         "-preset",    "fast",
         "-pix_fmt",   "yuv420p",
         "-profile:v", "baseline",
-        "-level",     "3.0"
+        "-level",     "4.1"      // was 3.0 — too restrictive for HD content
       );
+      // Ensure even pixel dimensions (required for yuv420p baseline)
+      if (vFilters.length === 0) {
+        args.push("-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2");
+      }
 
-      // Audio
+      // Audio — always normalise to stereo 44.1 kHz AAC
       if (toggles.audioCleanup) {
         args.push("-af", "loudnorm=I=-14:TP=-1:LRA=11");
-        args.push("-c:a", "aac", "-b:a", "192k");
-      } else {
-        // Re-encode audio to AAC for broad browser compatibility
-        args.push("-c:a", "aac", "-b:a", "192k");
       }
+      args.push("-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2");
 
       args.push("-movflags", "+faststart", "-f", "mp4", outputPath);
 

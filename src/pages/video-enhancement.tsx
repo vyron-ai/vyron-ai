@@ -124,7 +124,7 @@ const MEDIA_ERR: Record<number, string> = {
 };
 
 function VideoCard({
-  label, badge, badgeColor, src, isLoading, onVideoError,
+  label, badge, badgeColor, src, isLoading, onVideoError, thumbUrl, thumbLoading,
 }: {
   label: string;
   badge?: string;
@@ -132,6 +132,8 @@ function VideoCard({
   src: string | null;
   isLoading?: boolean;
   onVideoError?: (code: string) => void;
+  thumbUrl?: string | null;
+  thumbLoading?: boolean;
 }) {
   const [hasError, setHasError] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -201,13 +203,32 @@ function VideoCard({
             onLoadedMetadata={handleLoadedMetadata}
             onError={handleError}
           />
+        ) : hasError && thumbUrl ? (
+          /* Thumbnail fallback — shown when video codec is unsupported */
+          <div className="absolute inset-0 flex flex-col">
+            <img
+              src={thumbUrl}
+              alt={`${label} frame preview`}
+              className="w-full h-full object-contain"
+              style={{ background: "#000" }}
+            />
+            <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-3 py-1.5 flex items-center gap-1.5">
+              <VideoOff size={11} className="text-yellow-400/80 shrink-0" />
+              <p className="text-[10px] text-yellow-400/80">Frame preview — video playback unsupported in this browser</p>
+            </div>
+          </div>
+        ) : hasError && thumbLoading ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground/60">
+            <Loader2 size={22} className="animate-spin text-yellow-400/60" />
+            <p className="text-xs text-yellow-400/60">Extracting frame preview…</p>
+          </div>
         ) : hasError ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground/60 px-6">
             <VideoOff size={26} className="text-red-400/60" />
             <div className="text-center space-y-1">
               <p className="text-xs font-semibold text-red-400/80">Preview unavailable</p>
               <p className="text-[11px] text-muted-foreground/50">
-                but download is ready — click Download Enhanced MP4 below.
+                Download is still ready — click Download Enhanced MP4 below.
               </p>
             </div>
           </div>
@@ -250,9 +271,57 @@ export default function VideoEnhancementPage() {
   const [sourceProbe,  setSourceProbe]  = useState<ProbeInfo | null>(null);
   const [previewProbe, setPreviewProbe] = useState<ProbeInfo | null>(null);
   const [outputProbe,  setOutputProbe]  = useState<ProbeInfo | null>(null);
+
+  const [origBlob,        setOrigBlob]        = useState<Blob | null>(null);
+  const [enhBlob,         setEnhBlob]         = useState<Blob | null>(null);
+  const [origThumbUrl,    setOrigThumbUrl]    = useState<string | null>(null);
+  const [enhThumbUrl,     setEnhThumbUrl]     = useState<string | null>(null);
+  const [origThumbLoading, setOrigThumbLoading] = useState(false);
+  const [enhThumbLoading,  setEnhThumbLoading]  = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const xhrRef   = useRef<XMLHttpRequest | null>(null);
   const { toast } = useToast();
+
+  // ── Thumbnail extraction — calls /api/thumbnail/video with a video blob ──────
+  const extractThumbnail = async (blob: Blob): Promise<string | null> => {
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/thumbnail/video");
+      xhr.setRequestHeader("Content-Type", blob.type || "application/octet-stream");
+      xhr.responseType = "blob";
+      const imgBlob: Blob = await new Promise((resolve, reject) => {
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response as Blob);
+          else reject(new Error(`Thumbnail HTTP ${xhr.status}`));
+        });
+        xhr.addEventListener("error", () => reject(new Error("Network error")));
+        xhr.send(blob);
+      });
+      return URL.createObjectURL(new Blob([imgBlob], { type: "image/jpeg" }));
+    } catch {
+      return null;
+    }
+  };
+
+  const handleOrigVideoError = async (code: string) => {
+    setOrigVideoError(code);
+    if (origBlob) {
+      setOrigThumbLoading(true);
+      const url = await extractThumbnail(origBlob);
+      setOrigThumbUrl(url);
+      setOrigThumbLoading(false);
+    }
+  };
+
+  const handleEnhVideoError = async (code: string) => {
+    setEnhVideoError(code);
+    if (enhBlob) {
+      setEnhThumbLoading(true);
+      const url = await extractThumbnail(enhBlob);
+      setEnhThumbUrl(url);
+      setEnhThumbLoading(false);
+    }
+  };
 
   useEffect(() => {
     const v = document.createElement("video");
@@ -331,6 +400,7 @@ export default function VideoEnhancementPage() {
       });
 
       const typed = new Blob([rawBlob], { type: "video/mp4" });
+      setOrigBlob(typed);  // stored for thumbnail fallback
       const url   = URL.createObjectURL(typed);
       console.log("[VYRON preview] original preview ready:", url, "size:", typed.size);
       setOriginalUrl(url);
@@ -422,6 +492,7 @@ export default function VideoEnhancementPage() {
         // MIME type on blob URLs to allow in-page video playback
         const typed = new Blob([xhr.response as Blob], { type: "video/mp4" });
         setEnhancedBlobSize(typed.size);
+        setEnhBlob(typed);  // stored for thumbnail fallback
         const url = URL.createObjectURL(typed);
         console.log("[VYRON enhance] enhanced blob URL ready:", url, "size:", typed.size);
 
@@ -477,11 +548,19 @@ export default function VideoEnhancementPage() {
 
   const resetFile = () => {
     cancelEnhancement();
-    if (originalUrl) URL.revokeObjectURL(originalUrl);
-    if (enhancedUrl) URL.revokeObjectURL(enhancedUrl);
+    if (originalUrl)  URL.revokeObjectURL(originalUrl);
+    if (enhancedUrl)  URL.revokeObjectURL(enhancedUrl);
+    if (origThumbUrl) URL.revokeObjectURL(origThumbUrl);
+    if (enhThumbUrl)  URL.revokeObjectURL(enhThumbUrl);
     setFile(null);
     setOriginalUrl(null);
     setEnhancedUrl(null);
+    setOrigBlob(null);
+    setEnhBlob(null);
+    setOrigThumbUrl(null);
+    setEnhThumbUrl(null);
+    setOrigThumbLoading(false);
+    setEnhThumbLoading(false);
     setStatus("idle");
     setErrorMsg("");
   };
@@ -601,6 +680,17 @@ export default function VideoEnhancementPage() {
               </div>
             </div>
 
+            {/* Preparing preview indicator */}
+            {origConverting && !isProcessing && (
+              <div className="glass border border-primary/20 rounded-xl px-4 py-3 flex items-center gap-3">
+                <Loader2 size={15} className="animate-spin text-primary shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Preparing preview…</p>
+                  <p className="text-xs text-muted-foreground">Transcoding to browser-safe MP4</p>
+                </div>
+              </div>
+            )}
+
             {/* Enhance button / progress */}
             {isProcessing ? (
               <div className="glass border border-border rounded-xl p-5 space-y-4">
@@ -609,7 +699,7 @@ export default function VideoEnhancementPage() {
                     <Loader2 size={18} className="animate-spin text-primary" />
                     <div>
                       <p className="text-sm font-semibold text-foreground">
-                        {status === "uploading" ? `Uploading video…` : "Enhancing video…"}
+                        {status === "uploading" ? `Uploading… ${uploadPct}%` : "Enhancing video…"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {status === "uploading"
@@ -646,11 +736,12 @@ export default function VideoEnhancementPage() {
                 </div>
 
                 {/* Processing steps */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   {[
+                    { label: "Preview",  done: !!originalUrl,                              active: origConverting },
                     { label: "Upload",   done: status !== "uploading" || uploadPct >= 100, active: status === "uploading" },
                     { label: "Enhance",  done: status === "done",                          active: status === "enhancing" },
-                    { label: "Download", done: status === "done",                          active: false },
+                    { label: "Ready",    done: status === "done",                          active: false },
                   ].map((step) => (
                     <div key={step.label}
                       className={`text-center rounded-lg border py-2 text-xs font-semibold transition-all ${
@@ -725,7 +816,9 @@ export default function VideoEnhancementPage() {
                 badgeColor={origConverting ? "border-primary/30 text-primary" : "border-border text-muted-foreground"}
                 src={originalUrl}
                 isLoading={origConverting}
-                onVideoError={(code) => setOrigVideoError(code)}
+                thumbUrl={origThumbUrl}
+                thumbLoading={origThumbLoading}
+                onVideoError={handleOrigVideoError}
               />
               {(enhancedUrl || isProcessing) && (
                 <VideoCard
@@ -734,7 +827,9 @@ export default function VideoEnhancementPage() {
                   badgeColor={status === "done" ? "border-green-500/30 text-green-400" : "border-primary/30 text-primary"}
                   src={enhancedUrl}
                   isLoading={isProcessing}
-                  onVideoError={(code) => setEnhVideoError(code)}
+                  thumbUrl={enhThumbUrl}
+                  thumbLoading={enhThumbLoading}
+                  onVideoError={handleEnhVideoError}
                 />
               )}
             </div>
