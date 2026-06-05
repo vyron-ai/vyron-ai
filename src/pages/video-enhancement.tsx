@@ -127,7 +127,25 @@ function VideoCard({
   // Reset error when src changes so a new URL always gets a fresh attempt
   useEffect(() => { setHasError(false); }, [src]);
 
-  const handleError = () => setHasError(true);
+  const handleError = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const v = e.currentTarget;
+    console.error(`[VYRON video] onError — label="${label}" src="${src}"`, {
+      networkState: v.networkState,
+      readyState:   v.readyState,
+      error:        v.error,
+    });
+    setHasError(true);
+  };
+
+  const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const v = e.currentTarget;
+    console.log(`[VYRON video] onLoadedMetadata — label="${label}"`, {
+      duration: v.duration,
+      width:    v.videoWidth,
+      height:   v.videoHeight,
+      src:      src,
+    });
+  };
 
   return (
     <div className="glass border border-border rounded-xl overflow-hidden flex flex-col">
@@ -143,9 +161,8 @@ function VideoCard({
 
       {/*
         ── Video well ──
-        Use padding-top trick so the container always has a resolved pixel height
-        (56.25% = 16:9). position:relative + absolute inset-0 fills it reliably
-        regardless of parent flex/grid context — this is the key fix.
+        padding-top: 56.25% gives a resolved pixel height (16:9) in any
+        flex/grid context. The video fills it via absolute inset-0.
       */}
       <div className="relative w-full bg-black" style={{ paddingTop: "56.25%" }}>
         {isLoading ? (
@@ -159,19 +176,22 @@ function VideoCard({
             key={src}
             src={src}
             controls
-            preload="metadata"
+            preload="auto"
             playsInline
             className="absolute inset-0 w-full h-full"
             style={{ objectFit: "contain", background: "#000" }}
+            onLoadedMetadata={handleLoadedMetadata}
             onError={handleError}
           />
         ) : hasError ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-red-400/70">
-            <VideoOff size={28} />
-            <p className="text-xs font-medium">Preview unavailable</p>
-            <p className="text-[11px] text-muted-foreground/60 text-center px-4">
-              The video could not be loaded. Download it to play locally.
-            </p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground/60 px-6">
+            <VideoOff size={26} className="text-red-400/60" />
+            <div className="text-center space-y-1">
+              <p className="text-xs font-semibold text-red-400/80">Preview unavailable</p>
+              <p className="text-[11px] text-muted-foreground/50">
+                but download is ready — click Download Enhanced MP4 below.
+              </p>
+            </div>
           </div>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground/30">
@@ -298,7 +318,11 @@ export default function VideoEnhancementPage() {
     xhr.addEventListener("load", () => {
       xhrRef.current = null;
       if (xhr.status >= 200 && xhr.status < 300) {
-        const url = URL.createObjectURL(xhr.response as Blob);
+        // Explicitly type the blob as video/mp4 — browsers require a known
+        // MIME type on blob URLs to allow in-page video playback
+        const typed = new Blob([xhr.response as Blob], { type: "video/mp4" });
+        const url = URL.createObjectURL(typed);
+        console.log("[VYRON enhance] enhanced blob URL ready:", url);
         setEnhancedUrl(url);
         setStatus("done");
       } else {

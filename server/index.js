@@ -855,20 +855,20 @@ app.post(
       // Map streams — make audio optional so it works on silent videos
       args.push("-map", "0:v:0", "-map", "0:a:0?");
 
-      // Video
+      // Video — always re-encode to ensure browser-compatible H.264/yuv420p
       if (vFilters.length > 0) {
         args.push("-vf", vFilters.join(","));
-        args.push("-c:v", "libx264", "-crf", "20", "-preset", "fast");
-      } else {
-        args.push("-c:v", "copy");
       }
+      // libx264 + yuv420p is required for in-browser playback across all browsers
+      args.push("-c:v", "libx264", "-crf", "20", "-preset", "fast", "-pix_fmt", "yuv420p");
 
       // Audio
       if (toggles.audioCleanup) {
         args.push("-af", "loudnorm=I=-14:TP=-1:LRA=11");
         args.push("-c:a", "aac", "-b:a", "192k");
       } else {
-        args.push("-c:a", "copy");
+        // Re-encode audio to AAC for broad browser compatibility
+        args.push("-c:a", "aac", "-b:a", "192k");
       }
 
       args.push("-movflags", "+faststart", outputPath);
