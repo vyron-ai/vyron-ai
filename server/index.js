@@ -868,27 +868,45 @@ app.post(
 
       await execFileAsync(FFMPEG, [
         "-y", "-i", inputPath,
-        "-map", "0:v:0", "-map", "0:a:0?",
+        "-map",       "0:v:0",
+        "-map",       "0:a:0?",
+        // Video — H.264 Baseline Level 4.1 (supports up to 1080p; Level 3.0 is
+        // too restrictive for HD content and causes Android WebView rejection)
         "-c:v",       "libx264",
         "-crf",       "23",
         "-preset",    "fast",
+        "-vf",        "scale=trunc(iw/2)*2:trunc(ih/2)*2",
         "-pix_fmt",   "yuv420p",
         "-profile:v", "baseline",
-        "-level",     "3.0",
+        "-level",     "4.1",
+        // Audio — normalise to stereo 44.1 kHz AAC
         "-c:a",       "aac",
         "-b:a",       "128k",
+        "-ar",        "44100",
+        "-ac",        "2",
+        // Container
         "-movflags",  "+faststart",
+        "-map_metadata", "-1",
         outputPath,
       ], { maxBuffer: 100 * 1024 * 1024, timeout: 300_000 });
 
-      // Probe source BEFORE streaming so we can emit headers
-      const srcProbe = await probeVideo(inputPath);
+      // Probe INPUT (source file info) and OUTPUT (preview MP4 info)
+      const srcProbe     = await probeVideo(inputPath);
+      const previewProbe = await probeVideo(outputPath);
+
       if (srcProbe) {
         res.setHeader("X-Vyron-Src-Container",   srcProbe.container);
         res.setHeader("X-Vyron-Src-Video-Codec", srcProbe.videoCodec);
         res.setHeader("X-Vyron-Src-Profile",     srcProbe.videoProfile);
         res.setHeader("X-Vyron-Src-Pix-Fmt",     srcProbe.pixFmt);
         res.setHeader("X-Vyron-Src-Audio-Codec", srcProbe.audioCodec);
+      }
+      if (previewProbe) {
+        res.setHeader("X-Vyron-Preview-Container",   previewProbe.container);
+        res.setHeader("X-Vyron-Preview-Video-Codec", previewProbe.videoCodec);
+        res.setHeader("X-Vyron-Preview-Profile",     previewProbe.videoProfile);
+        res.setHeader("X-Vyron-Preview-Pix-Fmt",     previewProbe.pixFmt);
+        res.setHeader("X-Vyron-Preview-Audio-Codec", previewProbe.audioCodec);
       }
 
       res.setHeader("Content-Type", "video/mp4");

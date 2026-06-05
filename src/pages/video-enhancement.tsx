@@ -247,8 +247,9 @@ export default function VideoEnhancementPage() {
   const [origConverting,  setOrigConverting]  = useState(false);
 
   interface ProbeInfo { container: string; videoCodec: string; videoProfile: string; pixFmt: string; audioCodec: string; }
-  const [sourceProbe, setSourceProbe] = useState<ProbeInfo | null>(null);
-  const [outputProbe, setOutputProbe] = useState<ProbeInfo | null>(null);
+  const [sourceProbe,  setSourceProbe]  = useState<ProbeInfo | null>(null);
+  const [previewProbe, setPreviewProbe] = useState<ProbeInfo | null>(null);
+  const [outputProbe,  setOutputProbe]  = useState<ProbeInfo | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const xhrRef   = useRef<XMLHttpRequest | null>(null);
   const { toast } = useToast();
@@ -312,7 +313,7 @@ export default function VideoEnhancementPage() {
         xhr.send(f);
       });
 
-      // Read source codec info from response headers
+      // Read source + preview-output codec info from response headers
       const gh = (h: string) => xhr.getResponseHeader(h) ?? "—";
       setSourceProbe({
         container:    gh("X-Vyron-Src-Container"),
@@ -320,6 +321,13 @@ export default function VideoEnhancementPage() {
         videoProfile: gh("X-Vyron-Src-Profile"),
         pixFmt:       gh("X-Vyron-Src-Pix-Fmt"),
         audioCodec:   gh("X-Vyron-Src-Audio-Codec"),
+      });
+      setPreviewProbe({
+        container:    gh("X-Vyron-Preview-Container"),
+        videoCodec:   gh("X-Vyron-Preview-Video-Codec"),
+        videoProfile: gh("X-Vyron-Preview-Profile"),
+        pixFmt:       gh("X-Vyron-Preview-Pix-Fmt"),
+        audioCodec:   gh("X-Vyron-Preview-Audio-Codec"),
       });
 
       const typed = new Blob([rawBlob], { type: "video/mp4" });
@@ -806,47 +814,31 @@ export default function VideoEnhancementPage() {
                       </tbody>
                     </table>
 
-                    {/* ── SOURCE FILE INFO ── */}
-                    <div className="border-t border-yellow-400/30 mt-1">
-                      <div className="px-3 pt-2 pb-1 text-yellow-400 text-[10px] font-bold uppercase tracking-widest">
-                        Source File Info
+                    {[
+                      { title: "SOURCE FILE INFO",    probe: sourceProbe,  placeholder: "upload a file to see codec info" },
+                      { title: "PREVIEW MP4 INFO",    probe: previewProbe, placeholder: "upload a file to see preview codec info" },
+                      { title: "ENHANCED MP4 INFO",   probe: outputProbe,  placeholder: "enhance a video to see output codec info" },
+                    ].map(({ title, probe, placeholder }) => (
+                      <div key={title} className="border-t border-yellow-400/30 mt-1">
+                        <div className="px-3 pt-2 pb-1 text-yellow-400 text-[10px] font-bold uppercase tracking-widest">
+                          {title}
+                        </div>
+                        {probeRows(probe) ? (
+                          <table className="w-full">
+                            <tbody>
+                              {probeRows(probe)!.map(([label, value, cls], i) => (
+                                <tr key={i} className="border-t border-border/20">
+                                  <td className="px-3 py-1.5 text-muted-foreground/60 w-1/2">{label}</td>
+                                  <td className={`px-3 py-1.5 font-semibold ${cls}`}>{value}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <p className="px-3 py-1.5 text-muted-foreground/40 italic text-[11px]">{placeholder}</p>
+                        )}
                       </div>
-                      {probeRows(sourceProbe) ? (
-                        <table className="w-full">
-                          <tbody>
-                            {probeRows(sourceProbe)!.map(([label, value, cls], i) => (
-                              <tr key={i} className="border-t border-border/20">
-                                <td className="px-3 py-1.5 text-muted-foreground/60 w-1/2">{label}</td>
-                                <td className={`px-3 py-1.5 font-semibold ${cls}`}>{value}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      ) : (
-                        <p className="px-3 py-1.5 text-muted-foreground/40 italic text-[11px]">upload a file to see codec info</p>
-                      )}
-                    </div>
-
-                    {/* ── OUTPUT FILE INFO ── */}
-                    <div className="border-t border-yellow-400/30 mt-1">
-                      <div className="px-3 pt-2 pb-1 text-yellow-400 text-[10px] font-bold uppercase tracking-widest">
-                        Output File Info
-                      </div>
-                      {probeRows(outputProbe) ? (
-                        <table className="w-full">
-                          <tbody>
-                            {probeRows(outputProbe)!.map(([label, value, cls], i) => (
-                              <tr key={i} className="border-t border-border/20">
-                                <td className="px-3 py-1.5 text-muted-foreground/60 w-1/2">{label}</td>
-                                <td className={`px-3 py-1.5 font-semibold ${cls}`}>{value}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      ) : (
-                        <p className="px-3 py-1.5 text-muted-foreground/40 italic text-[11px]">enhance a video to see codec info</p>
-                      )}
-                    </div>
+                    ))}
                   </div>
                 );
               })()}
