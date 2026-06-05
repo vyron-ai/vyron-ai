@@ -212,9 +212,11 @@ function VideoCard({
               className="w-full h-full object-contain"
               style={{ background: "#000" }}
             />
-            <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-3 py-1.5 flex items-center gap-1.5">
-              <VideoOff size={11} className="text-yellow-400/80 shrink-0" />
-              <p className="text-[10px] text-yellow-400/80">Frame preview — video playback unsupported in this browser</p>
+            <div className="absolute bottom-0 left-0 right-0 bg-black/80 px-3 py-2">
+              <p className="text-[11px] font-semibold text-white/90">Frame preview active</p>
+              <p className="text-[10px] text-white/50 mt-0.5 leading-tight">
+                Video playback is limited in this browser, but the enhanced MP4 is ready to download.
+              </p>
             </div>
           </div>
         ) : hasError && thumbLoading ? (
@@ -266,6 +268,7 @@ export default function VideoEnhancementPage() {
   const [enhVideoError,   setEnhVideoError]   = useState<string | null>(null);
   const [canPlayMp4,      setCanPlayMp4]      = useState<string>("");
   const [origConverting,  setOrigConverting]  = useState(false);
+  const [showDebug,       setShowDebug]       = useState(false);
 
   interface ProbeInfo { container: string; videoCodec: string; videoProfile: string; pixFmt: string; audioCodec: string; }
   const [sourceProbe,  setSourceProbe]  = useState<ProbeInfo | null>(null);
@@ -836,12 +839,17 @@ export default function VideoEnhancementPage() {
           </div>
         )}
 
-        {/* ── Debug Preview panel — always visible ── */}
+        {/* ── Debug Preview panel — hidden by default ── */}
         {file && (
           <div>
-            <p className="text-xs font-bold text-yellow-400 uppercase tracking-wider px-1 mb-2">
-              🔍 Debug Preview Panel
-            </p>
+            <button
+              onClick={() => setShowDebug(v => !v)}
+              className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors px-1 mb-2 flex items-center gap-1.5"
+            >
+              <span>{showDebug ? "▾" : "▸"}</span>
+              {showDebug ? "Hide debug info" : "Show debug info"}
+            </button>
+            {showDebug && (
             <div className="font-mono text-[11px] bg-black/60 border border-yellow-400/30 rounded-xl overflow-hidden">
               {(() => {
                 const urlType = (u: string | null) => {
@@ -938,6 +946,7 @@ export default function VideoEnhancementPage() {
                 );
               })()}
             </div>
+            )}
           </div>
         )}
 
