@@ -786,7 +786,7 @@ export default function VideoEnhancementPage() {
                   : "text-red-400";
 
                 const probeRows = (p: typeof sourceProbe) => p ? [
-                  ["container",    p.container,    "text-white/70"],
+                  ["container",    p.container,    p.container === "mp4" ? "text-green-400" : "text-red-400"],
                   ["video codec",  p.videoCodec,   pc(p.videoCodec,  "h264")],
                   ["video profile",p.videoProfile, p.videoProfile === "Baseline" ? "text-green-400" : p.videoProfile === "—" ? "text-muted-foreground/40" : "text-yellow-400"],
                   ["pixel format", p.pixFmt,       pc(p.pixFmt,      "yuv420p")],

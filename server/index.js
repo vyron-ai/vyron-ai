@@ -1,7 +1,7 @@
 import express from "express";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, extname } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
@@ -50,8 +50,15 @@ async function probeVideo(filePath) {
   const pixFmtMatch  = vidStr.match(/\b(yuv\w+|rgb\w*|bgr\w*|gray\w*|nv\d+)\b/);
   const audioMatch   = audStr.match(/^(\S+)/);
 
+  // FFmpeg always reports QuickTime/MP4 family as "mov,mp4,m4a,..." regardless
+  // of whether the actual file is MOV or MP4. Use the file extension — which
+  // we control for our own output files — as the authoritative container name.
+  const ext = extname(filePath).slice(1).toLowerCase();
+  const EXT_MAP = { mp4: "mp4", mov: "mov", mkv: "mkv", webm: "webm", avi: "avi", ts: "ts", m4v: "m4v" };
+  const container = EXT_MAP[ext] ?? (fmtLine?.[1] ?? "unknown").trim().split(",")[0];
+
   return {
-    container:    (fmtLine?.[1] ?? "unknown").trim(),
+    container,
     videoCodec:   codecMatch?.[1]   ?? "unknown",
     videoProfile: profileMatch?.[1] ?? "—",
     pixFmt:       pixFmtMatch?.[1]  ?? "—",
@@ -886,6 +893,7 @@ app.post(
         "-ac",        "2",
         // Container
         "-movflags",  "+faststart",
+        "-f",         "mp4",
         "-map_metadata", "-1",
         outputPath,
       ], { maxBuffer: 100 * 1024 * 1024, timeout: 300_000 });
@@ -893,6 +901,14 @@ app.post(
       // Probe INPUT (source file info) and OUTPUT (preview MP4 info)
       const srcProbe     = await probeVideo(inputPath);
       const previewProbe = await probeVideo(outputPath);
+
+      // Abort if output is not a real MP4 container
+      if (previewProbe && previewProbe.container !== "mp4") {
+        throw new Error(
+          `Container validation failed: expected mp4, got "${previewProbe.container}". ` +
+          `FFmpeg did not produce a valid MP4 file.`
+        );
+      }
 
       if (srcProbe) {
         res.setHeader("X-Vyron-Src-Container",   srcProbe.container);
@@ -996,15 +1012,21 @@ app.post(
         args.push("-c:a", "aac", "-b:a", "192k");
       }
 
-      args.push("-movflags", "+faststart", outputPath);
+      args.push("-movflags", "+faststart", "-f", "mp4", outputPath);
 
       await execFileAsync(FFMPEG, args, {
         maxBuffer: 100 * 1024 * 1024,
         timeout:   360_000,
       });
 
-      // Probe enhanced output before streaming
+      // Probe enhanced output — abort if container is not mp4
       const outProbe = await probeVideo(outputPath);
+      if (outProbe && outProbe.container !== "mp4") {
+        throw new Error(
+          `Container validation failed: expected mp4, got "${outProbe.container}". ` +
+          `FFmpeg did not produce a valid MP4 file.`
+        );
+      }
       if (outProbe) {
         res.setHeader("X-Vyron-Out-Container",   outProbe.container);
         res.setHeader("X-Vyron-Out-Video-Codec", outProbe.videoCodec);
