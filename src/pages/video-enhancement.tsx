@@ -116,10 +116,22 @@ function SectionHeader({ label }: { label: string }) {
 }
 
 // ── Video card ─────────────────────────────────────────────────────────────────
+const MEDIA_ERR: Record<number, string> = {
+  1: "MEDIA_ERR_ABORTED",
+  2: "MEDIA_ERR_NETWORK",
+  3: "MEDIA_ERR_DECODE",
+  4: "MEDIA_ERR_SRC_NOT_SUPPORTED",
+};
+
 function VideoCard({
-  label, badge, badgeColor, src, isLoading,
+  label, badge, badgeColor, src, isLoading, onVideoError,
 }: {
-  label: string; badge?: string; badgeColor?: string; src: string | null; isLoading?: boolean;
+  label: string;
+  badge?: string;
+  badgeColor?: string;
+  src: string | null;
+  isLoading?: boolean;
+  onVideoError?: (code: string) => void;
 }) {
   const [hasError, setHasError] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -129,11 +141,17 @@ function VideoCard({
 
   const handleError = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const v = e.currentTarget;
-    console.error(`[VYRON video] onError — label="${label}" src="${src}"`, {
+    const err = v.error;
+    const codeStr = err
+      ? `${MEDIA_ERR[err.code] ?? "UNKNOWN"} (code ${err.code})`
+      : "unknown error";
+    console.error(`[VYRON video] onError — label="${label}"`, {
+      code:         codeStr,
       networkState: v.networkState,
       readyState:   v.readyState,
-      error:        v.error,
+      src,
     });
+    onVideoError?.(codeStr);
     setHasError(true);
   };
 
@@ -143,7 +161,7 @@ function VideoCard({
       duration: v.duration,
       width:    v.videoWidth,
       height:   v.videoHeight,
-      src:      src,
+      src,
     });
   };
 
@@ -219,12 +237,21 @@ export default function VideoEnhancementPage() {
   const [preset,       setPreset]       = useState<PresetId>("clean_boost");
   const [toggles,     setToggles]      = useState<Toggles>({ ...DEFAULT_TOGGLES });
   const [status,       setStatus]       = useState<Status>("idle");
-  const [uploadPct,    setUploadPct]    = useState(0);
-  const [errorMsg,     setErrorMsg]     = useState("");
-  const [dragging,     setDragging]     = useState(false);
+  const [uploadPct,       setUploadPct]       = useState(0);
+  const [errorMsg,        setErrorMsg]        = useState("");
+  const [dragging,        setDragging]        = useState(false);
+  const [enhancedBlobSize, setEnhancedBlobSize] = useState<number>(0);
+  const [origVideoError,  setOrigVideoError]  = useState<string | null>(null);
+  const [enhVideoError,   setEnhVideoError]   = useState<string | null>(null);
+  const [canPlayMp4,      setCanPlayMp4]      = useState<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
   const xhrRef   = useRef<XMLHttpRequest | null>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const v = document.createElement("video");
+    setCanPlayMp4(v.canPlayType("video/mp4") || "empty string (unsupported)");
+  }, []);
 
   // Clean up object URLs on unmount
   useEffect(() => {
@@ -288,6 +315,8 @@ export default function VideoEnhancementPage() {
     setStatus("uploading");
     setUploadPct(0);
     setErrorMsg("");
+    setEnhVideoError(null);
+    setEnhancedBlobSize(0);
 
     const params = new URLSearchParams({
       preset,
@@ -321,9 +350,11 @@ export default function VideoEnhancementPage() {
         // Explicitly type the blob as video/mp4 — browsers require a known
         // MIME type on blob URLs to allow in-page video playback
         const typed = new Blob([xhr.response as Blob], { type: "video/mp4" });
+        setEnhancedBlobSize(typed.size);
         const url = URL.createObjectURL(typed);
-        console.log("[VYRON enhance] enhanced blob URL ready:", url);
+        console.log("[VYRON enhance] enhanced blob URL ready:", url, "size:", typed.size);
         setEnhancedUrl(url);
+        setEnhVideoError(null);
         setStatus("done");
       } else {
         // Try to parse error message from blob
@@ -611,6 +642,7 @@ export default function VideoEnhancementPage() {
                 badge="Original"
                 badgeColor="border-border text-muted-foreground"
                 src={originalUrl}
+                onVideoError={(code) => setOrigVideoError(code)}
               />
               {(enhancedUrl || isProcessing) && (
                 <VideoCard
@@ -619,10 +651,74 @@ export default function VideoEnhancementPage() {
                   badgeColor={status === "done" ? "border-green-500/30 text-green-400" : "border-primary/30 text-primary"}
                   src={enhancedUrl}
                   isLoading={isProcessing}
+                  onVideoError={(code) => setEnhVideoError(code)}
                 />
               )}
             </div>
           </div>
+        )}
+
+        {/* ── Debug Preview panel ── */}
+        {file && (
+          <details className="group">
+            <summary className="cursor-pointer select-none text-xs font-bold text-muted-foreground/50 uppercase tracking-wider px-1 hover:text-muted-foreground transition-colors">
+              🔍 Debug Preview Panel
+            </summary>
+            <div className="mt-2 font-mono text-[11px] bg-black/60 border border-border/40 rounded-xl overflow-hidden">
+              {(() => {
+                const urlType = (u: string | null) => {
+                  if (!u) return "—";
+                  if (u.startsWith("blob:"))  return `blob: ✓`;
+                  if (u.startsWith("data:"))  return `data: (base64)`;
+                  if (u.startsWith("http"))   return `server URL`;
+                  return u.slice(0, 30);
+                };
+
+                const rows: [string, string, "ok" | "err" | "warn" | "info"][] = [
+                  ["browser can play video/mp4",  canPlayMp4 || "—",                canPlayMp4 === "probably" || canPlayMp4 === "maybe" ? "ok" : "err"],
+
+                  ["─── original ───",            "",                               "info"],
+                  ["original URL type",           urlType(originalUrl),             originalUrl ? "ok" : "warn"],
+                  ["original MIME type",          file?.type || "—",                file?.type?.startsWith("video/") ? "ok" : "warn"],
+                  ["original file size",          file ? fmtBytes(file.size) : "—", "ok"],
+                  ["original video error",        origVideoError ?? "none",         origVideoError ? "err" : "ok"],
+
+                  ["─── enhanced ───",            "",                               "info"],
+                  ["enhanced URL type",           urlType(enhancedUrl),             enhancedUrl ? "ok" : status === "done" ? "err" : "info"],
+                  ["enhanced MIME type",          enhancedUrl ? "video/mp4" : "—",  enhancedUrl ? "ok" : "info"],
+                  ["enhanced blob size",          enhancedBlobSize > 0 ? fmtBytes(enhancedBlobSize) : "—", enhancedBlobSize > 0 ? "ok" : "info"],
+                  ["enhanced video error",        enhVideoError ?? "none",          enhVideoError ? "err" : "ok"],
+                ];
+
+                const colourFor = (s: "ok"|"err"|"warn"|"info") =>
+                  s === "ok"   ? "text-green-400"
+                  : s === "err"  ? "text-red-400"
+                  : s === "warn" ? "text-yellow-400"
+                  : "text-muted-foreground/40";
+
+                return (
+                  <table className="w-full">
+                    <tbody>
+                      {rows.map(([label, value, state], i) =>
+                        label.startsWith("─") ? (
+                          <tr key={i} className="border-t border-border/30">
+                            <td colSpan={2} className="px-3 py-1 text-muted-foreground/30 text-[10px] uppercase tracking-widest">
+                              {label}
+                            </td>
+                          </tr>
+                        ) : (
+                          <tr key={i} className="border-t border-border/20 hover:bg-white/[0.02]">
+                            <td className="px-3 py-1.5 text-muted-foreground/60 w-1/2">{label}</td>
+                            <td className={`px-3 py-1.5 font-semibold ${colourFor(state)}`}>{value}</td>
+                          </tr>
+                        )
+                      )}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+          </details>
         )}
 
         {/* What this does — disclaimer */}
