@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { SettingsProvider } from "@/contexts/settings-context";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
@@ -107,10 +108,12 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base="">
-          <AuthProvider>
-            <Router />
-            <Toaster />
-          </AuthProvider>
+          <SettingsProvider>
+            <AuthProvider>
+              <Router />
+              <Toaster />
+            </AuthProvider>
+          </SettingsProvider>
         </WouterRouter>
       </TooltipProvider>
     </QueryClientProvider>

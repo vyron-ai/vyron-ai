@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useVyronSettings } from "@/contexts/settings-context";
+import { BusinessSettings } from "@/components/business-settings";
 import {
   Loader2, Zap, BarChart3, Copy, Check, Brain,
   Users, TrendingUp, Calendar, MessageSquare, Sparkles,
@@ -154,6 +156,7 @@ export default function ContentStrategyPage() {
   const [result,   setResult]   = useState<StrategyResult | null>(null);
   const { toast } = useToast();
 
+  const { language, businessStage } = useVyronSettings();
   const canGenerate = niche.trim().length > 0;
 
   const handleGenerate = async () => {
@@ -169,6 +172,8 @@ export default function ContentStrategyPage() {
           product:  product.trim(),
           audience: audience.trim(),
           goal,
+          language,
+          businessStage,
         }),
       });
       if (!res.ok) throw new Error("Server error");
@@ -194,6 +199,8 @@ export default function ContentStrategyPage() {
             A full content strategy built around your goal, niche, and audience — not generic templates.
           </p>
         </div>
+
+        <BusinessSettings />
 
         {/* Form */}
         <div className="glass border border-border rounded-xl p-4 md:p-6 space-y-5">

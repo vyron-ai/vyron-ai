@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useVyronSettings } from "@/contexts/settings-context";
+import { BusinessSettings } from "@/components/business-settings";
 import {
   Loader2, Copy, Check, Zap, Hash, Type, MessageSquare,
   Brain, AlertTriangle, TrendingUp, Heart, ShieldAlert,
@@ -159,6 +161,7 @@ export default function ScriptEnginePage() {
   const [result,    setResult]    = useState<ScriptResult | null>(null);
   const { toast } = useToast();
 
+  const { language, businessStage } = useVyronSettings();
   const [topic, setTopic] = useState("");
 
   // Pre-populate from Content Planner deep-link
@@ -194,6 +197,8 @@ export default function ScriptEnginePage() {
           audience: audience.trim(),
           hookType,
           intensity,
+          language,
+          businessStage,
         }),
       });
       if (!res.ok) throw new Error("Server error");
@@ -219,6 +224,8 @@ export default function ScriptEnginePage() {
             Context-intelligent scripts built around audience psychology, not just niche keywords.
           </p>
         </div>
+
+        <BusinessSettings />
 
         {/* Content Topic chip — shown when arriving from Content Planner */}
         {topic && (

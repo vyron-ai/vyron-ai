@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useVyronSettings } from "@/contexts/settings-context";
+import { BusinessSettings } from "@/components/business-settings";
 import {
   Loader2, Zap, CalendarDays, Sparkles, Target, MessageSquare,
 } from "lucide-react";
@@ -219,6 +221,7 @@ export default function ContentPlannerPage() {
   const [, navigate] = useLocation();
   const { toast }    = useToast();
 
+  const { language, businessStage } = useVyronSettings();
   const canGenerate = niche.trim().length > 0;
 
   const handleGenerate = async () => {
@@ -236,6 +239,8 @@ export default function ContentPlannerPage() {
           goal,
           postingFrequency: frequency,
           duration,
+          language,
+          businessStage,
         }),
       });
       if (!res.ok) throw new Error("Server error");
@@ -273,6 +278,8 @@ export default function ContentPlannerPage() {
             Generate a balanced content calendar — click any day to open Script Engine pre-filled and ready.
           </p>
         </div>
+
+        <BusinessSettings />
 
         {/* Form */}
         <div className="glass border border-border rounded-xl p-4 md:p-6 space-y-5">

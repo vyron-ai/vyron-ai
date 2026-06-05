@@ -1,4 +1,6 @@
 import { useState, useMemo } from "react";
+import { useVyronSettings } from "@/contexts/settings-context";
+import { BusinessSettings } from "@/components/business-settings";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -229,6 +231,85 @@ const STATUS_TIMING: Record<LeadStatus, string> = {
   cold:              "Re-engage after 2–3 weeks with a fresh angle, not a follow-up reminder.",
 };
 
+// ── Spanish translations ────────────────────────────────────────────────────────
+const SIGNAL_WHY_LOST_ES: Record<SignalType, string> = {
+  price_concern:
+    "Tus notas indican una objeción de precio — pero una objeción de precio casi nunca es realmente sobre el precio. Es sobre un retorno de inversión poco claro. Este lead no puede ver una conexión suficientemente concreta entre lo que pagaría y lo que ganaría. La conversación se detuvo porque el valor se comunicó en características, no en resultados medibles específicos para su situación.",
+  timing_issue:
+    "El lead indicó que el momento no era el adecuado. Esta es la objeción más recuperable en ventas porque no se trata de la oferta — se trata del calendario. Las objeciones de timing surgen cuando un lead tiene interés real pero una prioridad interna que compite. La ventana se vuelve a abrir tan pronto como esa prioridad se resuelve, y el primero en dar seguimiento en ese momento gana.",
+  trust_issue:
+    "El lead expresó duda o pidió pruebas — una señal clara de que la brecha de credibilidad no se cerró en la conversación inicial. Las objeciones de confianza no significan falta de interés. Significan que el lead está lo suficientemente interesado como para querer creer en ti, pero no ha visto suficiente evidencia para asumir el riesgo. La prueba social, los casos de estudio y los resultados específicos para clientes similares son lo que cierra esta brecha.",
+  competitor:
+    "Tus notas muestran que el lead está considerando una solución de la competencia. La venta sigue viva — todavía no han decidido. Esto es una comparación, no una pérdida. Lo que determina el resultado ahora es quién da seguimiento con el caso de valor más específico y relevante para su situación exacta. Las características genéricas no ganan en conversaciones de comparación. Los resultados específicos sí.",
+  no_follow_up:
+    "La conversación se detuvo porque no se hizo seguimiento — la pelota quedó en tu cancha y el lead siguió con otras prioridades. Esta es la causa más prevenible de pérdida de leads. El lead no te rechazó; simplemente llenó su atención con lo que tenía enfrente. La reactivación reinicia la conversación, y la mayoría de los leads en esta categoría son receptivos a un reinicio bien enmarcado.",
+  lack_of_urgency:
+    "El lead está interesado pero no percibe urgencia para actuar. Cuando no hay un costo claro por esperar, esperar se convierte en la opción predeterminada. Este lead necesita entender qué le está costando realmente el retraso — no en términos abstractos, sino en impacto específico y cuantificable. La urgencia no es presión artificial; es la articulación honesta de lo que cuesta la inacción.",
+};
+
+const SIGNAL_ACTION_ES: Record<SignalType, string> = {
+  price_concern:
+    "Reencuadra la conversación completamente alrededor del resultado, no del costo. Lidera con un caso de estudio específico o dato que haga el ROI concreto para alguien en su situación. Nunca defiendas el precio — en cambio, haz el valor tan específico y medible que el precio se convierta en una consideración secundaria. Si está disponible, ofrece un punto de entrada escalonado o un mecanismo de reversión de riesgo.",
+  timing_issue:
+    "Elimina toda presión del mensaje de reactivación. Haz una sola pregunta de bajo impacto: ¿se resolvió la situación original, o sigue siendo algo en su radar? Tu objetivo es mantenerte en su conciencia sin crear fricción. Cuando el momento cambie a su favor, quieres ser la primera persona en la que piensen — y eso solo ocurre a través de una presencia consistente y sin presión.",
+  trust_issue:
+    "Lidera con credibilidad, no con argumento de venta. Comparte un resultado específico que hayas logrado para alguien en una situación comparable — nombra la categoría de cliente, el problema específico y el resultado medible. Ofrece una llamada de referencia, un caso de estudio o una prueba de concepto si tu oferta lo permite. Cada elemento de tu mensaje debe reducir el riesgo percibido, no aumentarlo.",
+  competitor:
+    "Diferénciate sin atacar. Reconoce que está haciendo su diligencia debida — es inteligente. Luego haz un punto específico y honesto sobre por qué tu solución es el ajuste correcto para su situación particular que ningún competidor puede igualar. No listes características. No hagas descuentos. Un insight específico sobre su situación que te posicione correctamente es más persuasivo que toda una presentación comparativa.",
+  no_follow_up:
+    "Reinicia la conversación de manera limpia y sin culpa. Referencia el punto de contacto anterior brevemente, reconoce que no diste seguimiento, y abre la puerta sin presión. Una pregunta simple de sí/no sobre si el problema original fue resuelto es el patrón de reactivación más efectivo — es fácil de responder e inmediatamente revela si el lead sigue siendo relevante.",
+  lack_of_urgency:
+    "Haz concreto el costo de esperar. No crees escasez artificial — en cambio, muestra lo que permanecer en la situación actual les está costando con el tiempo. Enmarca la decisión no como 'gastar dinero ahora' sino como 'seguir pagando el costo oculto de este problema.' Un número específico, incluso una estimación, es dramáticamente más persuasivo que el lenguaje abstracto de urgencia.",
+};
+
+const SIGNAL_TIMING_ES: Record<SignalType, string> = {
+  price_concern:    "Espera 3–5 días antes de dar seguimiento con un mensaje enfocado en ROI. El seguimiento inmediato en una objeción de precio se siente como presión — dale espacio y luego reencuadra.",
+  timing_issue:     "Da seguimiento cada 2–3 semanas con un chequeo sin presión. Las objeciones de timing se resuelven a su propio ritmo — tu trabajo es mantenerte presente hasta que lo hagan.",
+  trust_issue:      "Da seguimiento dentro de las 48 horas con una pieza de credibilidad — un caso de estudio, oferta de referencia o prueba específica. Las brechas de confianza se cierran más rápido con evidencia, no con tiempo.",
+  competitor:       "Da seguimiento dentro de las 24–48 horas. En una comparación activa, el retraso señala baja confianza. Muévete rápido con un caso de valor específico y personalizado.",
+  no_follow_up:     "Da seguimiento hoy. Los leads sin seguimiento son los más urgentes en tiempo — mientras más dure el silencio, más difícil se vuelve la reactivación.",
+  lack_of_urgency:  "Da seguimiento dentro de 1 semana con un mensaje enfocado en el costo de la situación actual. No esperes — los leads sin urgencia que no sienten presión se alejan indefinidamente.",
+};
+
+const STATUS_WHY_LOST_ES: Record<LeadStatus, string> = {
+  interested:
+    "Este lead expresó interés genuino pero nunca fue llevado al siguiente paso. La causa más común es una oferta poco clara o un seguimiento que faltó y definiera el próximo paso específico. Cuando los leads se sienten interesados pero no saben exactamente qué ocurre después, no avanzan — esperan, y eventualmente se enfrían.",
+  follow_up_needed:
+    "Este lead requería un seguimiento que nunca llegó. La conversación creó intención pero la pelota quedó en tu cancha. Sin una secuencia estructurada de seguimiento, los leads de alta intención como este se deslizan hacia los pipelines de tu competencia mientras tú estás enfocado en nuevos prospectos.",
+  comparing:
+    "Este lead todavía está evaluando sus opciones — lo que significa que la venta sigue viva. No se perdió por falta de interés; se perdió ante un competidor más rápido y más presente. La ventana está abierta pero cerrándose. El primero en dar seguimiento con la propuesta de valor más específica gana.",
+  no_response:
+    "Este lead guardó silencio después del contacto inicial. En la mayoría de los casos, la no respuesta no señala rechazo — señala seguimiento inadecuado o contacto mal timed. La mayoría de los leads 'sin respuesta' convierten cuando se les contacta con un canal diferente, un ángulo de mensaje diferente o un horario diferente del día.",
+  budget_concern:
+    "Una objeción de presupuesto casi nunca es sobre dinero. Es sobre retorno de inversión poco claro. Este lead no puede justificar el costo porque la ecuación de valor no se ha hecho suficientemente concreta para su situación específica. La conversación necesita cambiar de precio a resultado.",
+  cold:
+    "Este lead se ha enfriado, lo que generalmente significa que el momento estaba mal — no la persona, no la oferta. Los eventos de vida, las prioridades internas y los ciclos de presupuesto pausan las decisiones de compra. Los leads fríos que coincidieron con tu criterio de calificación original son a menudo los objetivos de reactivación de mayor conversión porque el trabajo de calificación ya está hecho.",
+};
+
+const STATUS_ACTION_ES: Record<LeadStatus, string> = {
+  interested:
+    "Envía un mensaje directo y específico que defina el próximo paso exacto — no un chequeo, sino una propuesta concreta. Incluye un resultado específico que entrega tu oferta y un llamado a la acción único de baja fricción. Elimina la ambigüedad sobre a qué se están comprometiendo.",
+  follow_up_needed:
+    "Inicia contacto de inmediato con un próximo paso claro. Referencia tu conversación anterior de forma específica — no genérica. Dales una razón para responder arraigada en el valor que recibirán, no en tu necesidad de cerrar. Propón un horario específico para reconectarse.",
+  comparing:
+    "Diferénciate en lugar de hacer descuentos. Envía un mensaje listo para comparación que aborde honestamente por qué tu solución es el ajuste correcto para su situación específica — no por qué es mejor en general. La especificidad gana conversaciones de comparación, no las características.",
+  no_response:
+    "Cambia de canal y de ángulo. Si enviaste email, prueba un mensaje de voz. Si llamaste, prueba un texto breve. Empieza con el resultado que buscaban, no un recordatorio de quién eres. Mantenlo por debajo de 60 palabras. Agrega una pregunta simple de sí/no para reducir la barrera de respuesta.",
+  budget_concern:
+    "Reencuadra la conversación alrededor del ROI, no del costo. Comparte un caso de estudio específico o dato que haga el retorno concreto. Ofrece una estructura de pago o un punto de entrada más pequeño si está disponible. Nunca defiendas el precio — en cambio, haz el valor innegable.",
+  cold:
+    "Reactiva con un ángulo fresco, no con un recordatorio. Lidera con algo nuevo: un resultado que hayas logrado para alguien en su situación, un desarrollo relevante de la industria, o una pregunta genuina sobre si el problema original fue resuelto. Facilita el sí eliminando cualquier presión implícita.",
+};
+
+const STATUS_TIMING_ES: Record<LeadStatus, string> = {
+  interested:        "Dentro de las 24 horas — los leads de alta intención se deterioran rápidamente sin un próximo paso definido.",
+  follow_up_needed:  "Hoy. Cada día adicional sin contacto reduce la probabilidad de cierre en aproximadamente un 10%.",
+  comparing:         "Dentro de las 48 horas — tu competidor probablemente ya está en contacto. La urgencia está justificada.",
+  no_response:       "Prueba un canal diferente dentro de las 48 horas. Luego sigue una cadencia de Día 3 · 7 · 14 · 30.",
+  budget_concern:    "Da 3–5 días después de un reencuadre de ROI. La presión acelera el rechazo en objeciones de presupuesto.",
+  cold:              "Reactiva después de 2–3 semanas con un ángulo fresco, no con un recordatorio de seguimiento.",
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function nameHash(s: string): number {
   return s.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
@@ -280,6 +361,68 @@ function computeRevenue(status: LeadStatus, leadName: string, companyName: strin
 function resolveObjection(signals: SignalType[], status: LeadStatus): string {
   if (signals.length > 0) return SIGNAL_DEFS[signals[0]].label;
   return STATUS_OBJECTION[status];
+}
+
+// ── Spanish recovery message ──────────────────────────────────────────────────
+function buildRecoveryMessageES(
+  leadName:    string,
+  companyName: string,
+  status:      LeadStatus,
+  signals:     SignalType[],
+  lastContact: string,
+): string {
+  const first   = leadName.split(" ")[0] || leadName;
+  const company = companyName ? ` en ${companyName}` : "";
+  const days    = daysBetween(lastContact);
+  const timeRef =
+    days === 0 ? "más temprano hoy" :
+    days === 1 ? "ayer" :
+    days < 7   ? `hace ${days} días` :
+    days < 30  ? `hace aproximadamente ${Math.round(days / 7)} semana${Math.round(days / 7) !== 1 ? "s" : ""}` :
+    days < 365 ? `hace aproximadamente ${Math.round(days / 30)} mes${Math.round(days / 30) !== 1 ? "es" : ""}` :
+                 "hace un tiempo";
+
+  const strongest = getStrongest(signals);
+
+  if (strongest === "price_concern") return (
+    `Hola ${first},\n\nEstuve pensando en nuestra conversación de ${timeRef}${company}, y me di cuenta de que probablemente lideré demasiado con lo que cuesta en lugar de lo que realmente entrega.\n\nDéjame intentarlo de otra manera: [cliente en situación similar] logró [resultado específico y medible] en [plazo]. Eso es lo que se ve en la práctica — no una característica, un resultado real.\n\n¿Valdría la pena 10 minutos para ver cuál sería el retorno realista para tu situación específica? Sin venta — solo los números.`
+  );
+
+  if (strongest === "timing_issue") return (
+    `Hola ${first},\n\nSé que cuando hablamos ${timeRef} el momento no era del todo el adecuado — lo entiendo completamente.\n\nNo me comunico para presionarte a nada. Solo quería chequear: ¿cambió la situación, o sigue siendo algo que planeas retomar cuando el momento sea el correcto?\n\nCualquier respuesta está bien. Un sí o no — y sabré exactamente cómo estamos.`
+  );
+
+  if (strongest === "trust_issue") return (
+    `Hola ${first},\n\nEstuve pensando en nuestra conversación de ${timeRef}. Entiendo que necesitabas más confianza antes de avanzar — es una posición completamente razonable.\n\nMe gustaría ofrecerte algo concreto: [resultado específico para un cliente comparable en su situación — nombra el problema, la solución, el resultado]. También puedo organizar una llamada de referencia con alguien que haya pasado por el proceso si eso ayudaría.\n\nSin compromiso — solo claridad. ¿Te sería útil?`
+  );
+
+  if (strongest === "competitor") return (
+    `Hola ${first},\n\nSé que estás haciendo tu diligencia debida y mirando tus opciones — ese es exactamente el enfoque correcto.\n\nNo voy a darte otro argumento de venta. En cambio, solo quiero hacer una pregunta honesta: ¿hay una razón específica por la que la otra opción se siente más adecuada para tu situación, o todavía es una comparación abierta?\n\nSi hay algo específico que pueda aclarar sobre lo que hacemos diferente para [su tipo de situación], prefiero tener esa conversación directamente que dejarlo a las suposiciones.`
+  );
+
+  if (strongest === "no_follow_up") return (
+    `Hola ${first},\n\nTe debo un seguimiento — hablamos ${timeRef}${company} y no volví contigo de la manera que debería. Eso es responsabilidad mía.\n\nNo quería dejar pasar más tiempo sin comunicarme apropiadamente. ¿Todavía estás trabajando en [el desafío original], o ya fue resuelto?\n\nDe cualquier manera — con gusto retomamos donde lo dejamos, o te doy una respuesta clara si el momento ha cambiado.`
+  );
+
+  if (strongest === "lack_of_urgency") return (
+    `Hola ${first},\n\nEstuve pensando en nuestra conversación de ${timeRef}. Quiero ser directo contigo: no voy a crear urgencia artificial.\n\nLo que sí diré es esto — los clientes con los que trabajo que avanzan en [el problema original] temprano consistentemente ven [resultado específico] que los que esperan no ven. La brecha se acumula con el tiempo, y generalmente no es visible hasta que lo es.\n\nPrefiero que tomes esta decisión con información completa que sin ella. ¿Vale 15 minutos ver cuál es el costo real de esperar en tu situación?`
+  );
+
+  const fallbacks: Record<LeadStatus, string> = {
+    interested:
+      `Hola ${first},\n\nEstaba revisando nuestra conversación de ${timeRef} y me di cuenta de que nunca te di un próximo paso claro — eso es responsabilidad mía.\n\nHabías expresado interés en [resultado específico]. Me gustaría hacerlo simple: aquí está exactamente lo que pasaría si avanzamos, y aquí está lo que se necesita.\n\n¿Tendría sentido retomar esto? Una llamada rápida de 15 minutos esta semana sería suficiente para darte claridad completa.`,
+    follow_up_needed:
+      `Hola ${first},\n\nFallé en dar seguimiento después de que hablamos ${timeRef}${company} — no quería dejar las cosas abiertas.\n\nTodavía me gustaría ayudarte con [meta específica de la conversación original]. ¿Sigues explorando esto, o cambió la situación?\n\nCon gusto retomamos exactamente donde lo dejamos — no es necesario empezar desde cero.`,
+    comparing:
+      `Hola ${first},\n\nSé que ahora mismo estás mirando tus opciones, y lo respeto. Solo quería comunicarme directamente.\n\nEn lugar de presentarte el argumento nuevamente, me gustaría preguntar: ¿qué haría que esta decisión fuera sencilla para ti? Prefiero saber lo que realmente necesitas que adivinarlo.\n\n¿Vale una conversación rápida?`,
+    no_response:
+      `Hola ${first},\n\nSé que el momento puede no haber sido el adecuado cuando hablamos ${timeRef} — está completamente bien.\n\nSolo quería chequear: ¿el [problema original] ya fue resuelto, o es algo en lo que todavía estás trabajando?\n\nSolo un sí o no — yo sigo desde ahí.`,
+    budget_concern:
+      `Hola ${first},\n\nEstuve pensando en nuestra última conversación de ${timeRef}. Me di cuenta de que probablemente me enfoqué demasiado en el costo en lugar del resultado.\n\nDéjame compartir algo concreto: [resultado específico para cliente similar en su situación]. Eso es lo que se ve en la práctica.\n\n¿Valdría la pena 10 minutos ver cuál sería el retorno real para ti específicamente?`,
+    cold:
+      `Hola ${first},\n\nHa pasado un tiempo desde que conectamos. No voy a pretender lo contrario.\n\nRecientemenente me topé con algo que me hizo pensar en [su empresa/situación] y pensé que valía una nota rápida. [Insight relevante o resultado].\n\n¿El [desafío original] sigue en tu radar, o ya fue resuelto?`,
+  };
+  return fallbacks[status];
 }
 
 // ── Recovery message (signal-driven, status fallback) ─────────────────────────
@@ -437,6 +580,9 @@ const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function LeadRecoveryPage() {
+  const { language, businessStage } = useVyronSettings();
+  const t = (es: string, en: string) => language === "Español" ? es : en;
+
   const [leadName,    setLeadName]    = useState("");
   const [companyName, setCompanyName] = useState("");
   const [lastContact, setLastContact] = useState("");
@@ -492,16 +638,24 @@ export default function LeadRecoveryPage() {
 
   const strongest       = result ? getStrongest(result.signals) : null;
   const recoveryMessage = result
-    ? buildRecoveryMessage(result.leadName, result.companyName, status, result.signals, lastContact)
+    ? (language === "Español"
+        ? buildRecoveryMessageES(result.leadName, result.companyName, status, result.signals, lastContact)
+        : buildRecoveryMessage(result.leadName, result.companyName, status, result.signals, lastContact))
     : "";
+  const activeSignalWhyLost = language === "Español" ? SIGNAL_WHY_LOST_ES : SIGNAL_WHY_LOST;
+  const activeSignalAction  = language === "Español" ? SIGNAL_ACTION_ES   : SIGNAL_ACTION;
+  const activeSignalTiming  = language === "Español" ? SIGNAL_TIMING_ES   : SIGNAL_TIMING;
+  const activeStatusWhyLost = language === "Español" ? STATUS_WHY_LOST_ES : STATUS_WHY_LOST;
+  const activeStatusAction  = language === "Español" ? STATUS_ACTION_ES   : STATUS_ACTION;
+  const activeStatusTiming  = language === "Español" ? STATUS_TIMING_ES   : STATUS_TIMING;
   const whyLost = result
-    ? (strongest ? SIGNAL_WHY_LOST[strongest] : STATUS_WHY_LOST[status])
+    ? (strongest ? activeSignalWhyLost[strongest] : activeStatusWhyLost[status])
     : "";
   const action = result
-    ? (strongest ? SIGNAL_ACTION[strongest] : STATUS_ACTION[status])
+    ? (strongest ? activeSignalAction[strongest] : activeStatusAction[status])
     : "";
   const timing = result
-    ? (strongest ? SIGNAL_TIMING[strongest] : STATUS_TIMING[status])
+    ? (strongest ? activeSignalTiming[strongest] : activeStatusTiming[status])
     : "";
 
   return (
@@ -515,9 +669,14 @@ export default function LeadRecoveryPage() {
             Lead Recovery AI
           </h2>
           <p className="text-muted-foreground text-sm">
-            Turn inactive leads into revenue opportunities with data-driven recovery strategies.
+            {t(
+              "Convierte leads inactivos en oportunidades de ingresos con estrategias de recuperación basadas en datos.",
+              "Turn inactive leads into revenue opportunities with data-driven recovery strategies.",
+            )}
           </p>
         </div>
+
+        <BusinessSettings />
 
         {/* Executive Dashboard */}
         {analyses.length > 0 && (

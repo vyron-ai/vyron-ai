@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useVyronSettings } from "@/contexts/settings-context";
+import { BusinessSettings } from "@/components/business-settings";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,6 +111,9 @@ const RESPONSE_OPTIONS = [
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function SalesDiagnosticPage() {
+  const { language, businessStage } = useVyronSettings();
+  const t = (es: string, en: string) => language === "Español" ? es : en;
+
   const [businessName,   setBusinessName]   = useState("");
   const [monthlyRevenue, setMonthlyRevenue] = useState("");
   const [monthlyLeads,   setMonthlyLeads]   = useState("");
@@ -173,42 +178,73 @@ export default function SalesDiagnosticPage() {
 
   if (rtHours > 0.75) {
     const recoverable = fmtCurrency(lostLeads * 0.15 * avgClientValue);
+    const rtLabel = RESPONSE_OPTIONS.find(o => o.value === responseTime)?.label?.toLowerCase() ?? `${rtHours}h`;
     recommendations.push({
-      priority: rtHours > 7 ? "Critical" : "High",
-      title:    "Speed-to-Lead is Killing Your Pipeline",
-      text:     `Responding in ${RESPONSE_OPTIONS.find(o => o.value === responseTime)?.label?.toLowerCase() ?? `${rtHours}h`} puts you at a serious conversion disadvantage. Research consistently shows a 9× drop in lead conversion when response time exceeds 5 minutes. At your current lead volume of ${fmt(safeLeads)}/month, reducing response time to under 30 minutes could realistically recover up to ${recoverable}/month in lost revenue.`,
+      priority: t(rtHours > 7 ? "Crítico" : "Alto", rtHours > 7 ? "Critical" : "High"),
+      title: t(
+        "La Velocidad de Respuesta Está Destruyendo Tu Pipeline",
+        "Speed-to-Lead is Killing Your Pipeline",
+      ),
+      text: t(
+        `Responder en ${rtLabel} te pone en una desventaja seria de conversión. Las investigaciones muestran consistentemente una caída de 9× en la conversión cuando el tiempo de respuesta supera los 5 minutos. Con tu volumen actual de ${fmt(safeLeads)} leads/mes, reducir el tiempo de respuesta a menos de 30 minutos podría recuperar de manera realista hasta ${recoverable}/mes en ingresos perdidos.`,
+        `Responding in ${rtLabel} puts you at a serious conversion disadvantage. Research consistently shows a 9× drop in lead conversion when response time exceeds 5 minutes. At your current lead volume of ${fmt(safeLeads)}/month, reducing response time to under 30 minutes could realistically recover up to ${recoverable}/month in lost revenue.`,
+      ),
     });
   }
 
   if (closeRate < 15) {
     recommendations.push({
-      priority: closeRate < 8 ? "Critical" : "High",
-      title:    "Close Rate Is Below Baseline — Qualification Gap Likely",
-      text:     `A ${fmtPct(closeRate)} close rate signals that unqualified leads are reaching your sales conversations. Implementing a 3-question pre-qualification step before any scheduled call typically raises close rates by 8–15 percentage points. Applied to your current pipeline of ${fmt(safeLeads)} monthly leads, that's ${fmtCurrency(safeLeads * 0.1 * avgClientValue)} in additional monthly revenue from the same lead volume.`,
+      priority: t(closeRate < 8 ? "Crítico" : "Alto", closeRate < 8 ? "Critical" : "High"),
+      title: t(
+        "Tasa de Cierre Bajo Mínimo — Posible Brecha de Calificación",
+        "Close Rate Is Below Baseline — Qualification Gap Likely",
+      ),
+      text: t(
+        `Una tasa de cierre de ${fmtPct(closeRate)} indica que prospectos no calificados están llegando a tus conversaciones de venta. Implementar un paso de 3 preguntas de pre-calificación antes de cualquier llamada agendada típicamente eleva las tasas de cierre en 8–15 puntos porcentuales. Aplicado a tu pipeline actual de ${fmt(safeLeads)} leads mensuales, eso representa ${fmtCurrency(safeLeads * 0.1 * avgClientValue)} en ingresos mensuales adicionales del mismo volumen de leads.`,
+        `A ${fmtPct(closeRate)} close rate signals that unqualified leads are reaching your sales conversations. Implementing a 3-question pre-qualification step before any scheduled call typically raises close rates by 8–15 percentage points. Applied to your current pipeline of ${fmt(safeLeads)} monthly leads, that's ${fmtCurrency(safeLeads * 0.1 * avgClientValue)} in additional monthly revenue from the same lead volume.`,
+      ),
     });
   }
 
   if (lostLeads > safeLeads * 0.6) {
     recommendations.push({
-      priority: "High",
-      title:    "No Follow-Up System = Leaving Money on the Table",
-      text:     `You're losing ${fmt(lostLeads)} leads per month. 80% of deals close after 5+ follow-up touches, but most businesses stop after 1–2 attempts. A structured 5-step follow-up sequence (Day 1 · 3 · 7 · 14 · 30) applied to your lost leads could conservatively recover 10–20% of them — that's ${fmtCurrency(lostLeads * 0.15 * avgClientValue)}/month without a single new lead.`,
+      priority: t("Alto", "High"),
+      title: t(
+        "Sin Sistema de Seguimiento = Dejando Dinero Sobre la Mesa",
+        "No Follow-Up System = Leaving Money on the Table",
+      ),
+      text: t(
+        `Estás perdiendo ${fmt(lostLeads)} leads por mes. El 80% de los negocios se cierran después de 5 o más contactos de seguimiento, pero la mayoría de los negocios se detienen después de 1–2 intentos. Una secuencia estructurada de 5 pasos (Día 1 · 3 · 7 · 14 · 30) aplicada a tus leads perdidos podría recuperar de forma conservadora el 10–20% de ellos — eso es ${fmtCurrency(lostLeads * 0.15 * avgClientValue)}/mes sin un solo lead nuevo.`,
+        `You're losing ${fmt(lostLeads)} leads per month. 80% of deals close after 5+ follow-up touches, but most businesses stop after 1–2 attempts. A structured 5-step follow-up sequence (Day 1 · 3 · 7 · 14 · 30) applied to your lost leads could conservatively recover 10–20% of them — that's ${fmtCurrency(lostLeads * 0.15 * avgClientValue)}/month without a single new lead.`,
+      ),
     });
   }
 
   if (avgClientValue > 0) {
     recommendations.push({
-      priority: "Medium",
-      title:    "Increase Average Deal Value Without More Leads",
-      text:     `Your average client value is ${fmtCurrency(avgClientValue)}/month. A 20% increase through tiered packaging or upsell offers on your existing ${fmt(safeClosed)} monthly clients would add ${fmtCurrency(safeClosed * avgClientValue * 0.2 * 12)}/year — without acquiring a single new lead or changing your close rate.`,
+      priority: t("Medio", "Medium"),
+      title: t(
+        "Aumenta el Valor Promedio de Cada Cliente Sin Más Leads",
+        "Increase Average Deal Value Without More Leads",
+      ),
+      text: t(
+        `El valor promedio de tu cliente es ${fmtCurrency(avgClientValue)}/mes. Un aumento del 20% a través de paquetes escalonados u ofertas de upsell sobre tus ${fmt(safeClosed)} clientes mensuales actuales agregaría ${fmtCurrency(safeClosed * avgClientValue * 0.2 * 12)}/año — sin adquirir un solo lead nuevo ni cambiar tu tasa de cierre.`,
+        `Your average client value is ${fmtCurrency(avgClientValue)}/month. A 20% increase through tiered packaging or upsell offers on your existing ${fmt(safeClosed)} monthly clients would add ${fmtCurrency(safeClosed * avgClientValue * 0.2 * 12)}/year — without acquiring a single new lead or changing your close rate.`,
+      ),
     });
   }
 
   if (closeRate >= 20 && rtHours <= 0.75) {
     recommendations.push({
-      priority: "Medium",
-      title:    "Strong Foundation — Scale Lead Volume Now",
-      text:     `With a ${fmtPct(closeRate)} close rate and fast response time, your sales operation is performing well above average. The highest-leverage action is increasing lead volume. A 25% increase in monthly leads at your current close rate would add ${fmtCurrency(safeLeads * 0.25 * closeRate / 100 * avgClientValue * 12)}/year with no change to your current process.`,
+      priority: t("Medio", "Medium"),
+      title: t(
+        "Base Sólida — Escala el Volumen de Leads Ahora",
+        "Strong Foundation — Scale Lead Volume Now",
+      ),
+      text: t(
+        `Con una tasa de cierre de ${fmtPct(closeRate)} y tiempo de respuesta rápido, tu operación de ventas está funcionando muy por encima del promedio. La acción de mayor apalancamiento es aumentar el volumen de leads. Un aumento del 25% en leads mensuales a tu tasa de cierre actual agregaría ${fmtCurrency(safeLeads * 0.25 * closeRate / 100 * avgClientValue * 12)}/año sin ningún cambio en tu proceso actual.`,
+        `With a ${fmtPct(closeRate)} close rate and fast response time, your sales operation is performing well above average. The highest-leverage action is increasing lead volume. A 25% increase in monthly leads at your current close rate would add ${fmtCurrency(safeLeads * 0.25 * closeRate / 100 * avgClientValue * 12)}/year with no change to your current process.`,
+      ),
     });
   }
 
@@ -227,6 +263,8 @@ export default function SalesDiagnosticPage() {
             Enter your business metrics and get a data-driven revenue leak analysis with specific recommendations.
           </p>
         </div>
+
+        <BusinessSettings />
 
         {/* Input form */}
         <div className="glass border border-border rounded-xl p-4 md:p-6 space-y-4">

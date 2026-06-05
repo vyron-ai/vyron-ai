@@ -234,6 +234,8 @@ app.post("/api/content-planner/generate", (req, res) => {
     goal = "brand_awareness",
     postingFrequency = "daily",
     duration = 30,
+    language = "Español",
+    businessStage = "Microempresa",
   } = req.body ?? {};
   if (!niche.trim()) return res.status(400).json({ error: "niche is required" });
 
@@ -241,19 +243,25 @@ app.post("/api/content-planner/generate", (req, res) => {
   const pr  = product.trim();
   const au  = audience.trim();
   const dur = Math.min(Math.max(parseInt(duration) || 30, 7), 90);
+  const isES = language !== "English";
 
   const freqMap  = { daily: 7, "5x_week": 5, "3x_week": 3, "2x_week": 2 };
   const ppw      = freqMap[postingFrequency] ?? 7;
   const total    = Math.min(Math.ceil(dur * ppw / 7), 90);
 
-  const contentTypes = [
+  const contentTypesEN = [
     "Educational", "Listicle", "Behind the Scenes", "Social Proof",
     "Product Demo", "Q&A", "Trending", "Story", "Challenge", "Hot Take",
   ];
+  const contentTypesES = [
+    "Educativo", "Lista", "Detrás de Escena", "Prueba Social",
+    "Demo del Producto", "Preguntas y Respuestas", "Tendencia", "Historia", "Desafío", "Opinión Fuerte",
+  ];
+  const contentTypes = isES ? contentTypesES : contentTypesEN;
 
   const hookTypes = ["curiosity", "pain", "story", "authority", "mistake", "opportunity", "viral"];
 
-  const titleTemplates = {
+  const titleTemplatesEN = {
     curiosity: [
       `The ${n} secret high performers never share`,
       `What nobody tells you about ${n}`,
@@ -298,7 +306,52 @@ app.post("/api/content-planner/generate", (req, res) => {
     ],
   };
 
-  const objectiveMap = {
+  const titleTemplatesES = {
+    curiosity: [
+      `El secreto de ${n} que los mejores nunca comparten`,
+      `Lo que nadie te dice sobre ${n}`,
+      `El lado oculto de ${n} que cambia todo`,
+      `Por qué la mayoría de los consejos de ${n} tienen este hueco`,
+    ],
+    pain: [
+      `Por qué tus resultados en ${n} siguen decepcionándote`,
+      `La verdadera razón por la que ${n} se siente tan difícil ahora`,
+      `¿Luchando con ${n}? Aquí está la respuesta honesta`,
+      `El problema de ${n} que nadie quiere admitir`,
+    ],
+    story: [
+      `Cómo reconstruí mi ${n} desde cero`,
+      `Lo que ${n} me enseñó que ningún curso pudo`,
+      `El punto de inflexión en ${n} que no vi venir`,
+      `Mi mayor fracaso en ${n} — y lo que vino después`,
+    ],
+    authority: [
+      `El marco de ${n} que realmente aguanta`,
+      `Lo que los datos muestran sobre ${n}`,
+      `${n} bien hecho: lo que separa a los mejores`,
+      `Las claves no negociables de una estrategia sólida de ${n}`,
+    ],
+    mistake: [
+      `El error #1 de ${n} que probablemente estás cometiendo ahora`,
+      `Deja de hacer esto en tu ${n} de inmediato`,
+      `3 hábitos de ${n} que te están costando en silencio`,
+      `Este movimiento común de ${n} está empeorando las cosas`,
+    ],
+    opportunity: [
+      `La oportunidad de ${n} que la mayoría ignora ahora`,
+      `Hay una brecha en ${n} ahora mismo — aprovéchala`,
+      `Por qué ahora es el mejor momento para apostarlo todo a ${n}`,
+      `El ángulo de ${n} que tu competencia todavía no encontró`,
+    ],
+    viral: [
+      `El formato de ${n} que está explotando ahora (y por qué)`,
+      `Por qué esta tendencia de ${n} está reemplazando todo lo demás`,
+      `Todos hablan de esto en ${n} — aquí está la verdad`,
+      `El cambio en ${n} que tomó a todos por sorpresa`,
+    ],
+  };
+
+  const objectiveMapEN = {
     brand_awareness:  ["Reach new audience", "Grow organic followers", "Build niche authority", "Increase brand recall"],
     lead_generation:  ["Drive link-in-bio clicks", "Generate DM inquiries", "Capture email subscribers", "Build prospect list"],
     sales:            ["Drive offer conversions", "Present product value", "Overcome objections", "Move warm leads to action"],
@@ -306,7 +359,15 @@ app.post("/api/content-planner/generate", (req, res) => {
     community:        ["Deepen audience relationship", "Foster two-way conversation", "Build brand advocates", "Encourage participation"],
   };
 
-  const ctaTemplates = {
+  const objectiveMapES = {
+    brand_awareness:  ["Llegar a nueva audiencia", "Crecer seguidores orgánicos", "Construir autoridad en el nicho", "Aumentar recordación de marca"],
+    lead_generation:  ["Generar clics en el enlace de bio", "Conseguir consultas por DM", "Capturar suscriptores de email", "Construir lista de prospectos"],
+    sales:            ["Impulsar conversiones de oferta", "Presentar el valor del producto", "Superar objeciones", "Mover prospectos tibios a acción"],
+    engagement:       ["Maximizar comentarios", "Fomentar guardados y compartidos", "Generar conversación en comunidad", "Aumentar tasa de interacción"],
+    community:        ["Profundizar relación con audiencia", "Fomentar conversación bidireccional", "Crear defensores de marca", "Estimular participación activa"],
+  };
+
+  const ctaTemplatesEN = {
     curiosity:   ["Comment 'HOW' and I'll send the full breakdown", "Follow for the answer in part 2", "Save this before it disappears"],
     pain:        ["Comment 'STUCK' if this is you right now", "DM me — I'll show you the first step", "Link in bio if you're ready to fix this"],
     story:       ["Comment 'ME TOO' if you've been here", "Follow for the next chapter", "Share this with someone who needs it"],
@@ -315,6 +376,20 @@ app.post("/api/content-planner/generate", (req, res) => {
     opportunity: ["Comment 'IN' if you want the details", "Link in bio — the window won't stay open", "Follow to catch the next opportunity early"],
     viral:       ["Share this with one creator who needs it", "Follow for what's working right now", "Duet or stitch this — let me know your take"],
   };
+
+  const ctaTemplatesES = {
+    curiosity:   ["Comenta 'CÓMO' y te mando el desglose completo", "Sígueme para la respuesta en la parte 2", "Guarda esto antes de que desaparezca"],
+    pain:        ["Comenta 'ESTANCADO' si esto eres tú ahora", "Escríbeme por DM — te muestro el primer paso", "Enlace en bio si estás listo para solucionar esto"],
+    story:       ["Comenta 'YO TAMBIÉN' si has estado aquí", "Sígueme para el próximo capítulo", "Comparte esto con alguien que lo necesita"],
+    authority:   ["Guarda este marco para después", "Sígueme si quieres el desglose completo", "Comenta 'MARCO' para la versión en PDF"],
+    mistake:     ["Comenta 'CULPABLE' si lo has hecho", "Sígueme — publico el arreglo cada semana", "Guarda esto antes de cometer el mismo error"],
+    opportunity: ["Comenta 'DENTRO' si quieres los detalles", "Enlace en bio — la ventana no va a quedar abierta", "Sígueme para detectar la próxima oportunidad temprano"],
+    viral:       ["Comparte esto con un creador que lo necesita", "Sígueme para lo que está funcionando ahora", "Duplícalo o une — dime tu perspectiva"],
+  };
+
+  const titleTemplates = isES ? titleTemplatesES : titleTemplatesEN;
+  const objectiveMap   = isES ? objectiveMapES   : objectiveMapEN;
+  const ctaTemplates   = isES ? ctaTemplatesES   : ctaTemplatesEN;
 
   const intensityCycle = ["medium", "aggressive", "soft", "medium", "aggressive", "medium", "soft"];
 
@@ -344,8 +419,41 @@ app.post("/api/content-planner/generate", (req, res) => {
 });
 
 // ── Context Intelligence Layer ────────────────────────────────────────────────
-function buildAudienceIntelligence(n, au, au1, pr, hookType, intensity) {
+function buildAudienceIntelligence(n, au, au1, pr, hookType, intensity, isES = false) {
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  if (isES) {
+    const desireVariantsES = [
+      `Los ${au} quieren algo más que mejores resultados en ${n} — buscan la transformación de identidad que llega cuando finalmente lo tienen bajo control. El deseo real es certeza: saber que tienen un sistema que funciona, que se acumula con el tiempo, y que no tienen que cuestionar cada movimiento. Quieren ser la persona que domina ${n}, no la que sigue intentando.`,
+      `Lo que impulsa a los ${au} en ${n} no es solo el resultado — es la predictibilidad. Buscan un proceso que produzca resultados de forma confiable. Detrás de eso hay un deseo más profundo: sentirse competentes y creíbles en su espacio. Quieren que ${n} sea una fuente de confianza, no un recordatorio constante de lo que aún no han logrado.`,
+      `En el fondo, lo que persiguen los ${au} en ${n} es progreso visible y medible. No solo buscan resultados — buscan la historia que podrán contar sobre sí mismos cuando lleguen. Quieren ser el ${au1} que descifró ${n} mientras todos los demás seguían atascados.`,
+      `Los ${au} buscan el momento en que ${n} deje de ser algo que tienen que empujar y empiece a funcionar por sí solo. Quieren el efecto de acumulación — impulso que no requiera esfuerzo heroico para sostenerse.`,
+    ];
+    const fearVariantsES = [
+      `El miedo más profundo de los ${au} no es el fracaso — es el tiempo desperdiciado seguido de la realización de que trabajaron en las cosas equivocadas en ${n} todo el tiempo. Justo después viene el miedo a verse ingenuos: la persona que siguió consejos que los ${au} más experimentados ya sabían que no funcionaban.`,
+      `Los ${au} temen en silencio que le estén perdiendo algo fundamental sobre ${n} que todos los demás ya comprenden, y que su ventana para adelantarse se está cerrando. El pensamiento de empezar de cero — abandonar el esfuerzo ya invertido — está en el fondo de cada decisión.`,
+      `El miedo que mantiene a los ${au} en su lugar es comprometerse visiblemente con un enfoque de ${n} y fallar públicamente. Prefieren esperar hasta estar seguros, lo que significa que a menudo esperan demasiado. Debajo de esa hesitación hay un miedo más personal: que su situación específica sea una excepción.`,
+      `Lo que los ${au} más quieren evitar en ${n} es sentirse estancados viendo cómo otros avanzan. Temen la versión donde miran atrás y ven que la oportunidad estuvo ahí, el conocimiento era accesible, y aun así no actuaron a tiempo.`,
+    ];
+    const painVariantsES = [
+      `Ahora mismo, los ${au} viven una fricción específica y agotadora: tienen acceso a más información sobre ${n} que nunca, y menos claridad sobre qué hacer realmente. Cada recurso nuevo agrega una decisión. Cada consejo contradice algo que leyeron la semana pasada. No están atascados porque no saben suficiente — están atascados porque saben demasiado y no pueden convertirlo en acción.`,
+      `La frustración que viven los ${au} en ${n} ahora mismo es la inconsistencia que no pueden explicar ni solucionar. Tienen días buenos y malos, sin entender de manera confiable el porqué. Los resultados parecen depender de variables que no pueden identificar ni controlar.`,
+      `Lo que los ${au} enfrentan diariamente en ${n} es la brecha entre lo que saben que deberían hacer y lo que realmente ejecutan. Pueden describir el enfoque correcto. Lo han leído. Pero cuando llega el momento de la implementación consistente, algo falla — motivación, claridad, estructura, o las tres cosas.`,
+      `La situación actual de la mayoría de ${au} en ${n} es una de ineficiencia invisible. Están ocupados, producen esfuerzo, y genuinamente creen que progresan — pero los resultados no lo reflejan. La frustración no es solo sobre resultados. Es sobre la desconexión entre el trabajo que ponen y el resultado que debería seguir lógicamente.`,
+    ];
+    const transformationVariantsES = [
+      `La transformación que buscan los ${au} no es solo mejores resultados en ${n} — es una relación completamente diferente con ${n}. Al otro lado de esa transformación, ${n} se siente liviano. El proceso es claro. El progreso es consistente y visible. La versión de sí mismos que están construyendo no tiene que pensar mucho en ${n} — simplemente funciona.`,
+      `Si ${pr} entrega lo que los ${au} realmente necesitan, terminan en una versión de su vida donde ${n} ya no es fuente de estrés ni incertidumbre. Quieren una realidad donde los resultados llegan de manera predecible, saben exactamente qué hacer, y el impulso siempre avanza — sin reiniciar desde cero cada pocas semanas.`,
+      `El estado final deseado por los ${au} en ${n} es engañosamente simple: quieren despertar y saber que su enfoque está funcionando. No a veces. No cuando las condiciones son perfectas. Funcionando como base — de forma consistente, sin esfuerzo heroico ni corrección constante. ${pr} es el puente hacia esa versión.`,
+      `Lo que los ${au} realmente buscan cuando invierten en ${n} es tiempo de vuelta y certeza hacia adelante. Quieren pasar de "creo que esto funciona" a "sé que esto funciona" — y desde ahí, a los resultados acumulativos que siguen de esa claridad.`,
+    ];
+    return {
+      desires:        pick(desireVariantsES),
+      fears:          pick(fearVariantsES),
+      pains:          pick(painVariantsES),
+      transformation: pick(transformationVariantsES),
+    };
+  }
 
   const desireVariants = [
     `${au} want more than better ${n} results — they want the identity shift that comes with having it handled. The real desire is confidence: knowing they have a system that works, knowing it compounds, and not having to second-guess every move. They want to become someone who has ${n} figured out, not someone who is still trying to figure it out. That distinction matters enormously to them.`,
@@ -391,6 +499,8 @@ app.post("/api/script/generate", (req, res) => {
     audience = "",
     hookType = "curiosity",
     intensity = "medium",
+    language = "Español",
+    businessStage = "Microempresa",
   } = req.body ?? {};
   if (!niche.trim() || !product.trim() || !audience.trim()) {
     return res.status(400).json({ error: "niche, product, and audience are required" });
@@ -400,11 +510,12 @@ app.post("/api/script/generate", (req, res) => {
   const pr  = product.trim();
   const au  = audience.trim();
   const au1 = au.replace(/s$/i, "");
+  const isES = language !== "English";
 
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
   // Build audience intelligence first — everything downstream uses it
-  const intel = buildAudienceIntelligence(n, au, au1, pr, hookType, intensity);
+  const intel = buildAudienceIntelligence(n, au, au1, pr, hookType, intensity, isES);
 
   // ── SAR Triggers — intelligence-aware, hook-type-driven ──────────────────────
   const sarMap = {
@@ -556,6 +667,157 @@ app.post("/api/script/generate", (req, res) => {
     `${tag(n)}hacks ${tag(au)} #contentmarketing ${tag(pr)} #foryoupage #viral #shorts #neurohook`,
   ];
 
+  // ── Spanish templates ─────────────────────────────────────────────────────────
+  const sarMapES = {
+    curiosity: [
+      `PARA — estás a punto de pasar por alto el insight que explica por qué ${n} todavía no hace clic para ti.\nAGITA — ya sabes más sobre ${n} que la mayoría de ${au}. Ese no es el problema. El problema es que saber y ejecutar son cosas completamente distintas, y esa brecha es exactamente donde los ${au} se quedan estancados.\nRESOLUCIÓN — ${pr} cierra esa brecha. No con más información — con un sistema construido para la forma en que los ${au} realmente ejecutan.`,
+      `PARA — el próximo método de ${n} que pruebes probablemente fallará. No porque lo ejecutes mal, sino porque no fue construido para alguien en tu situación.\nAGITA — los ${au} pasan meses probando enfoques que funcionan en teoría y se derrumban en la práctica. Cada intento fallido hace que el siguiente sea más difícil.\nRESOLUCIÓN — ${pr} rompe ese ciclo empezando por lo que realmente es verdad sobre cómo operan los ${au}.`,
+    ],
+    pain: [
+      `PARA — si eres un ${au1} que pone esfuerzo real en ${n} y todavía no ves los resultados que deberían seguir, esta es la conversación que reencuadra el porqué.\nAGITA — no te falta motivación. No te falta información. Te falta un sistema que contemple la forma específica en que los ${au} experimentan ${n} — la fricción, la inconsistencia, la brecha entre saber y hacer.\nRESOLUCIÓN — ${pr} está construido alrededor de esa brecha. No alrededor del problema de ${n} en teoría — alrededor del que los ${au} realmente viven.`,
+      `PARA — el ciclo de ${n} en el que los ${au} se quedan atascados tiene un nombre específico: esfuerzo sin acumulación. Trabajas. Nada se construye. Reinicias.\nAGITA — ese ciclo persiste porque el enfoque no encaja con la persona. La mayoría de los sistemas de ${n} fueron construidos para la vida de otra persona, las limitaciones de otra persona.\nRESOLUCIÓN — ${pr} fue construido para las tuyas. Esto es lo que cambia.`,
+    ],
+    story: [
+      `PARA — hace seis meses era un ${au1} que había consumido todo el contenido de ${n} disponible y todavía no podía hacerlo funcionar de forma consistente.\nAGITA — la frustración no es que la información no exista. Es que toda está construida para una versión de ti que no tiene tus limitaciones específicas.\nRESOLUCIÓN — construir ${pr} fue cómo lo resolví para mí. Luego me di cuenta de que también funcionaba para otros ${au}.`,
+      `PARA — el momento en que mis resultados en ${n} cambiaron no fue cuando aprendí algo nuevo. Fue cuando dejé de hacer algo que se sentía productivo pero no lo era.\nAGITA — la mayoría de los ${au} están haciendo una versión de eso ahora mismo — algo que parece progreso y no lo es. Es muy difícil verlo desde adentro.\nRESOLUCIÓN — ${pr} lo hace visible. Y una vez que es visible, todo cambia.`,
+    ],
+    authority: [
+      `PARA — después de trabajar profundamente en ${n}, un patrón se repite casi con cada grupo de ${au}: fallan no porque les falta impulso, sino porque el método que siguen fue construido para otra persona.\nAGITA — el enfoque convencional de ${n} asume condiciones que no aplican a la mayoría de ${au}. Seguirlo produce resultados inconsistentes y una sensación creciente de que el problema es personal.\nRESOLUCIÓN — ${pr} está construido sobre lo que realmente funciona cuando quitas las suposiciones.`,
+      `PARA — he visto a los ${au} fallar en ${n} por la misma razón prevenible tantas veces que dejó de parecer coincidencia.\nAGITA — la brecha no es capacidad. Es que las herramientas disponibles fueron diseñadas para una audiencia general — no para las realidades específicas que definen cómo operan los ${au} en ${n}.\nRESOLUCIÓN — ${pr} está construido alrededor de esas realidades. Esa es la diferencia.`,
+    ],
+    mistake: [
+      `PARA — los ${au} están cometiendo un error específico en ${n} ahora mismo que parece el movimiento correcto desde adentro.\nAGITA — no es el error obvio. Es más sutil: optimizar para la métrica fácil de rastrear en lugar de la que realmente impulsa el resultado que quieren. Se siente como progreso. El marcador dice lo contrario.\nRESOLUCIÓN — ${pr} empieza revelando ese error, porque corregirlo cambia toda la trayectoria de tus resultados en ${n}.`,
+      `PARA — hay una conducta en ${n} que los ${au} hacen constantemente, que constantemente socava sus resultados, y sobre la que casi nadie habla directamente.\nAGITA — no es pereza. No es falta de conocimiento. Es un desalineamiento estructural entre la acción y el resultado — y se acumula silenciosamente.\nRESOLUCIÓN — ${pr} está construido para detectarlo temprano. Antes de que meses de esfuerzo vayan en la dirección equivocada.`,
+    ],
+    opportunity: [
+      `PARA — ahora mismo hay un cambio específico en ${n} del que la mayoría de ${au} están posicionados para beneficiarse — y casi ninguno de ellos lo sabe todavía.\nAGITA — cuando esta oportunidad sea obvia, la ventana ya estará llena. Los ${au} que se mueven ahora son los que en 12 meses parecerán clarividentes.\nRESOLUCIÓN — ${pr} mapea exactamente cómo entrar en esta ventana antes de que se cierre. Este es el momento.`,
+      `PARA — el panorama de ${n} ha cambiado de una manera que crea una ventaja real y específica para los ${au} que están prestando atención.\nAGITA — la mayoría de los ${au} todavía usan el método de hace 18 meses. Ese método está saturado. El nuevo carril está completamente abierto — pero solo por una ventana limitada.\nRESOLUCIÓN — ${pr} te pone en ese carril con un camino claro.`,
+    ],
+    viral: [
+      `PARA — el formato de contenido de ${n} que los ${au} todavía usan funcionaba hace 90 días. El algoritmo ha seguido adelante.\nAGITA — lo que está funcionando ahora tiene una estructura diferente. Está construido sobre señales y comportamientos distintos. Copiar el formato antiguo está trabajando activamente en tu contra.\nRESOLUCIÓN — ${pr} está construido alrededor de lo que está funcionando en ${n} ahora mismo — no lo que funcionó antes.`,
+      `PARA — la razón por la que algunos ${au} en ${n} obtienen resultados que parecen desproporcionados a su esfuerzo no es suerte. Hay un patrón estructural específico detrás de eso.\nAGITA — la mayoría de los ${au} puede ver que algo está funcionando para otros en ${n} pero no pueden entender por qué. Esa brecha entre observación y comprensión es donde se asienta la oportunidad.\nRESOLUCIÓN — ${pr} mapea ese patrón en algo que los ${au} pueden replicar.`,
+    ],
+  };
+
+  const painMapES = {
+    soft: [
+      `La mayoría de los ${au} en ${n} están haciendo todo lo que saben — y aun así sienten que algo no está aterrizando. Esa sensación es real, y generalmente señala una brecha en el sistema, no en la persona. El esfuerzo no es el problema. La estructura alrededor de él lo es.`,
+      `Hay un momento específico que la mayoría de los ${au} en ${n} reconocen: pones trabajo real, sigues consejos reales, y los resultados siguen siendo inconsistentes de una manera que no puedes explicar del todo. Esa inconsistencia no es aleatoria. Tiene una causa — y generalmente no es la que se habla.`,
+    ],
+    medium: [
+      `Eres un ${au1} que ha puesto esfuerzo genuino en ${n} — y los resultados no reflejan ese esfuerzo de la manera que deberían. No es un problema de motivación ni de conocimiento. Es un problema estructural. El enfoque que estás usando fue construido para la situación de otra persona.`,
+      `Los ${au} pasan meses girando alrededor de la misma fricción en ${n}: esfuerzo que no se acumula, estrategias que funcionan hasta que no funcionan, y resultados que nunca son suficientemente consistentes para construir sobre ellos.`,
+    ],
+    aggressive: [
+      `Esto es lo que realmente está pasando para los ${au} en ${n} ahora mismo: el enfoque no está funcionando, y cada semana que pasa es una semana que alguien más usa para avanzar más. No hay versión de esto donde esperar produzca un resultado diferente. La brecha no se cierra sola.`,
+      `Si tus resultados en ${n} estuvieran donde deberían estar, no estarías viendo esto. Estás estancado — y el tipo específico de estancamiento que los ${au} experimentan en ${n} no se soluciona solo. Requiere un enfoque diferente, no más esfuerzo en el mismo.`,
+    ],
+  };
+
+  const curiosityMapES = {
+    curiosity: [
+      `¿Y si la razón por la que ${n} no ha funcionado como esperabas es algo completamente diferente a lo que has estado intentando solucionar? La mayoría de los ${au} están resolviendo el problema visible. El problema real está una capa por debajo.`,
+      `Hay un patrón que separa a los ${au} que obtienen resultados consistentes en ${n} de los que se quedan estancados — y no tiene casi nada que ver con las tácticas que están usando. La variable que realmente importa es la que casi nadie menciona directamente.`,
+    ],
+    pain: [
+      `El costo real de otros 6 meses de los mismos resultados en ${n} no es solo tiempo. Para los ${au}, es el efecto acumulado del impulso que no se construye — de la confianza que se erosiona silenciosamente en el fondo mientras el esfuerzo continúa al frente.`,
+      `¿Y si lo que mantiene a los ${au} estancados en ${n} no es una pieza de información que falta, sino una decisión estructural que tomaron al principio que ha estado dando forma a todo lo demás? Eso es lo que nadie quiere decir en voz alta — porque solucionar lo requiere reconocerlo primero.`,
+    ],
+    story: [
+      `El cambio en mis resultados de ${n} no ocurrió cuando encontré una mejor estrategia. Ocurrió cuando dejé de hacer algo que parecía el movimiento correcto pero silenciosamente evitaba que todo lo demás funcionara. Guardé eso para mí durante meses antes de darme cuenta de que la mayoría de los ${au} estaban haciendo exactamente lo mismo.`,
+      `He tenido esta conversación con decenas de ${au} que están estancados en ${n} — y lo que los sorprende cada vez no es la solución. Es darse cuenta de que el problema no era lo que pensaban que era. Solo ese reencuadre cambia todo.`,
+    ],
+    authority: [
+      `La mayoría de los marcos de ${n} están construidos alrededor de suposiciones que no aplican a los ${au} — y las personas que los construyeron no lo saben, porque nunca han operado dentro de las limitaciones específicas que definen tu situación.`,
+      `He rastreado resultados de ${n} en suficientes ${au} para ver un patrón que no aparece en ninguno de los consejos populares: los que ganan no están haciendo más. Están haciendo una cosa específica diferente que hace que todo lo demás sea más eficiente.`,
+    ],
+    mistake: [
+      `El error más costoso de ${n} que cometen los ${au} no es el obvio. Es el que parece disciplina, parece consistencia, parece el movimiento correcto — y está activamente impidiendo el resultado hacia el que están trabajando.`,
+      `Los ${au} que están estancados en ${n} típicamente tienen algo en común: una decisión que tomaron temprano que tenía sentido en ese momento y que ha estado acumulándose silenciosamente en la dirección equivocada desde entonces.`,
+    ],
+    opportunity: [
+      `La ventana específica que acaba de abrirse en ${n} es el tipo que solo tiene sentido en retrospectiva — cuando las personas que se movieron temprano están hablando de por qué lo hicieron, y todos los demás desearían haber prestado más atención cuando importaba.`,
+      `Hay una brecha en ${n} ahora mismo en la que los ${au} con el enfoque correcto pueden entrar antes de que se llene. La razón por la que la mayoría no lo hará no es que no puedan verla — es que actuar antes de que sea obvio requiere una relación diferente con la incertidumbre.`,
+    ],
+    viral: [
+      `El patrón de contenido de ${n} que está reemplazando a la fórmula anterior ya la está superando consistentemente — y la mayoría de los ${au} aún no han entendido por qué. La brecha entre los que lo ven y los que no es exactamente donde se asienta la ventaja ahora mismo.`,
+      `¿Por qué algunos ${au} en ${n} están generando resultados que parecen desproporcionados a su esfuerzo o su audiencia? La respuesta no es un secreto. Es un patrón estructural que parece obvio una vez que alguien te lo muestra — e invisible hasta que lo hace.`,
+    ],
+  };
+
+  const scriptMapES = {
+    curiosity: `Esto es algo que casi nunca se dice directamente sobre ${n}:\n\nLos ${au} que obtienen resultados consistentes no están haciendo más — están haciendo menos de las cosas equivocadas. La brecha en ${n} no está entre los que saben más y los que saben menos. Está entre los que han encontrado la pieza estructural que hace que todo lo demás sea eficiente, y los que todavía están trabajando alrededor de ella.\n\nLo que los ${au} realmente quieren — y lo que la mayoría de los consejos de ${n} nunca les da — es un proceso que se acumula sin requerir esfuerzo heroico para sostenerse. No una táctica nueva. Un sistema donde el esfuerzo que ya están poniendo en ${n} realmente aterriza.\n\n${pr} está construido alrededor de eso. Toma lo que ya estás haciendo en ${n} y lo reestructura alrededor de la variable que realmente impulsa resultados para los ${au} en tu situación.`,
+    pain: `Si eres un ${au1} que ha puesto esfuerzo real en ${n} y los resultados todavía no reflejan ese esfuerzo — el problema no eres tú.\n\nEl espacio de ${n} está lleno de marcos y sistemas que funcionan para alguien. Solo no para los ${au} con tus limitaciones específicas, tus metas específicas, y la versión específica de ${n} que estás intentando hacer funcionar.\n\nLo que eso crea es el peor tipo de estancamiento: el tipo donde estás haciendo las cosas correctas en teoría, y el marcador todavía no se mueve. El esfuerzo es real. El enfoque simplemente no está calibrado para tu situación.\n\n${pr} fue construido para corregir esa calibración. No añadiendo más a tu proceso — alineando lo que ya estás haciendo con lo que realmente mueve la aguja para los ${au} como tú.`,
+    story: `Hace seis meses era un ${au1} que tenía el conocimiento, el esfuerzo y las herramientas — y todavía no podía hacer que ${n} produjera resultados consistentes.\n\nLo que finalmente entendí no fue una nueva estrategia. Fue que las estrategias que estaba usando estaban construidas alrededor de un conjunto de suposiciones que no aplicaban a mi situación. Una vez que lo vi, reconstruí el enfoque desde cero — alrededor de las limitaciones reales de alguien que opera como yo.\n\nEso es lo que se convirtió en ${pr}. Y lo que me sorprendió fue que cuando se lo mostré a otros ${au}, también funcionó para ellos. Porque el problema estructural no era único para mí. Era la misma brecha que la mayoría de los ${au} encuentran en ${n} — y que casi nadie nombra directamente.\n\nSi la descripción de dónde estaba te resulta familiar, esto es lo que cambió.`,
+    authority: `Después de trabajar profundamente en ${n}, una cosa se vuelve imposible de ignorar:\n\nLos ${au} que tienen dificultades no las tienen porque les falte impulso o información. Las tienen porque los marcos que están usando fueron construidos para una versión generalizada del problema — no para las limitaciones, metas y condiciones específicas que definen cómo los ${au} realmente experimentan ${n}.\n\nEsa discrepancia es invisible hasta que la ves. Y una vez que la ves, cada pieza de consejo genérico sobre ${n} empieza a leerse diferente.\n\n${pr} está construido desde cero alrededor de lo que los ${au} realmente necesitan — no lo que necesita una audiencia general. La diferencia en resultados no es porque los principios subyacentes de ${n} sean diferentes. Es porque se están aplicando con precisión, al problema correcto, en la secuencia correcta.`,
+    mistake: `El error más común de ${n} entre los ${au} no es el obvio.\n\nEs más sutil: optimizar consistentemente para la métrica fácil de rastrear, mientras la métrica que realmente impulsa el resultado que quieres se mantiene plana en silencio. Se siente como progreso porque estás produciendo output. Pero output y resultado son cosas diferentes — y en ${n}, confundirlos es lo que mantiene a los ${au} en la misma posición mes tras mes.\n\nAsí es como se acumula: te vuelves mejor en la métrica visible. Sientes que las cosas están mejorando. El resultado subyacente no cambia. Eventualmente la desconexión se vuelve innegable — y entonces reinicias.\n\n${pr} empieza revelando cuál métrica está realmente moviendo tus resultados en ${n}, y cuál simplemente hace que el esfuerzo parezca que vale la pena. Esa distinción sola cambia la dirección de todo lo que sigue.`,
+    opportunity: `Ahora mismo hay un cambio estructural ocurriendo en ${n} del que la mayoría de los ${au} están posicionados para beneficiarse — y la mayoría de ellos no lo saben todavía.\n\nEl método que funcionó hace 12 a 18 meses está saturado. Los retornos se están comprimiendo. Y en el espacio que se está abriendo, la ventaja va para los ${au} que se mueven antes de que la oportunidad sea obvia — antes de que se vuelva competitiva, antes de que se llene, antes de que la ventana se reduzca a una fracción de lo que es ahora.\n\nEste es ese momento. No en teoría. Específicamente, ahora mismo.\n\n${pr} mapea el camino exacto hacia esta ventana para los ${au} en ${n} — qué hacer, en qué orden, y por qué el momento lo hace funcionar.`,
+    viral: `La fórmula de contenido de ${n} que los ${au} todavía están usando era la correcta — hace 90 días.\n\nEl algoritmo ha seguido adelante. El comportamiento de los espectadores ha seguido adelante. Lo que está produciendo resultados ahora parece estructuralmente diferente de lo que solía funcionar, y los ${au} que han hecho el cambio están obteniendo resultados que parecen desproporcionados a su tamaño o esfuerzo.\n\nNo es desproporcionado. Es que están trabajando con el modelo actual mientras todos los demás siguen ejecutando el anterior.\n\n${pr} está construido alrededor del modelo actual. No la teoría de lo que podría funcionar en ${n} — la estructura de lo que realmente está produciendo resultados para los ${au} ahora mismo.`,
+  };
+
+  const ctaMapES = {
+    soft: [
+      `Si esto resonó, sigue para más contenido de ${n} construido específicamente para ${au}. Publicaciones nuevas cada semana.`,
+      `Guarda esto si eres un ${au1} trabajando en tu enfoque de ${n} — querrás volver a verlo.`,
+      `Prueba ${pr} y ve si es el ajuste correcto para tus metas de ${n}. Enlace en bio.`,
+    ],
+    medium: [
+      `Comenta "${n.toUpperCase()}" abajo y te envío el desglose completo — gratis.`,
+      `Sígueme si eres un ${au1} serio sobre resultados en ${n}. No publico relleno.`,
+      `${pr} está disponible ahora. Enlace en bio — menos de 2 minutos para empezar.`,
+    ],
+    aggressive: [
+      `Los ${au} que actúan hoy van a estar en una posición completamente diferente en 90 días. Enlace en bio. No lo pienses demasiado.`,
+      `Deja de ver. Empieza a hacer. ${pr} — enlace en bio. Este es el sistema.`,
+      `Comenta "LISTO" si ya terminaste de dejar que ${n} se quede estancado. Te envío el primer paso ahora mismo.`,
+    ],
+  };
+
+  const titleMapES = {
+    curiosity: [
+      `El método de ${n} que los ${au} siguen ignorando (y no es lo que piensas)`,
+      `Por qué todo lo que sabes sobre ${n} puede estar trabajando en tu contra`,
+    ],
+    pain: [
+      `Por qué los ${au} se quedan estancados en ${n} — y el arreglo exacto`,
+      `La verdadera razón por la que tus resultados en ${n} no avanzan (respuesta honesta)`,
+    ],
+    story: [
+      `Cómo pasé de ${au1} perdido a resultados consistentes en ${n} con ${pr}`,
+      `Qué cambió mis resultados en ${n} después de meses sin avanzar`,
+    ],
+    authority: [
+      `Lo que los expertos en ${n} saben que los ${au} no saben (conversación real)`,
+      `El marco de ${n} que realmente aguanta cuando miras los datos`,
+    ],
+    mistake: [
+      `El error #1 de ${n} que los ${au} cometen (y cómo parar de inmediato)`,
+      `Probablemente estás cometiendo este error de ${n} ahora mismo — aquí está el arreglo`,
+    ],
+    opportunity: [
+      `La oportunidad de ${n} que los ${au} están ignorando ahora mismo`,
+      `Hay una brecha en ${n} que los ${au} todavía pueden aprovechar — así es cómo`,
+    ],
+    viral: [
+      `El cambio de contenido en ${n} que ya está ocurriendo (la mayoría de ${au} van tarde)`,
+      `Por qué la fórmula antigua de ${n} dejó de funcionar para los ${au} — nuevo enfoque adentro`,
+    ],
+  };
+
+  const hashtagSetsES = [
+    `${tag(n)} ${tag(pr)} ${tag(au)} #creadoresdecontenido #marketingdigital #viral2025 #emprendimiento #fyp`,
+    `${tag(n)}tips ${tag(au)}latina ${tag(pr)} #reels #consejos #fyp #economiacreativa #negocios`,
+    `${tag(n)}hacks ${tag(au)} #contenidodigital ${tag(pr)} #parati #viralespanol #shorts #estrategia`,
+  ];
+
+  const activeSarMap    = isES ? sarMapES    : sarMap;
+  const activePainMap   = isES ? painMapES   : painMap;
+  const activeCurMap    = isES ? curiosityMapES : curiosityMap;
+  const activeScriptMap = isES ? scriptMapES : scriptMap;
+  const activeCtaMap    = isES ? ctaMapES    : ctaMap;
+  const activeTitleMap  = isES ? titleMapES  : titleMap;
+  const activeHashtags  = isES ? hashtagSetsES : hashtagSets;
+
   res.json({
     // Audience intelligence
     desires:          intel.desires,
@@ -563,14 +825,14 @@ app.post("/api/script/generate", (req, res) => {
     pains:            intel.pains,
     transformation:   intel.transformation,
     // Neuro triggers
-    sarTrigger:       pick(sarMap[hookType]       ?? sarMap.curiosity),
-    painTrigger:      pick(painMap[intensity]     ?? painMap.medium),
-    curiosityTrigger: pick(curiosityMap[hookType] ?? curiosityMap.curiosity),
+    sarTrigger:       pick(activeSarMap[hookType]    ?? activeSarMap.curiosity),
+    painTrigger:      pick(activePainMap[intensity]  ?? activePainMap.medium),
+    curiosityTrigger: pick(activeCurMap[hookType]    ?? activeCurMap.curiosity),
     // Script & output
-    script:           scriptMap[hookType]         ?? scriptMap.curiosity,
-    cta:              pick(ctaMap[intensity]      ?? ctaMap.medium),
-    title:            pick(titleMap[hookType]     ?? titleMap.curiosity),
-    hashtags:         pick(hashtagSets),
+    script:           activeScriptMap[hookType]      ?? activeScriptMap.curiosity,
+    cta:              pick(activeCtaMap[intensity]   ?? activeCtaMap.medium),
+    title:            pick(activeTitleMap[hookType]  ?? activeTitleMap.curiosity),
+    hashtags:         pick(activeHashtags),
   });
 });
 
@@ -581,6 +843,8 @@ app.post("/api/content-strategy/generate", (req, res) => {
     product  = "",
     audience = "",
     goal     = "sales",
+    language = "Español",
+    businessStage = "Microempresa",
   } = req.body ?? {};
   if (!niche.trim()) return res.status(400).json({ error: "niche is required" });
 
@@ -589,6 +853,7 @@ app.post("/api/content-strategy/generate", (req, res) => {
   const au  = audience.trim();
   const au1 = au.replace(/s$/i, "");
   const g   = goal.toLowerCase().replace(/[\s-]+/g, "_");
+  const isES = language !== "English";
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
   // ── 1. Content mix ────────────────────────────────────────────────────────
@@ -679,7 +944,57 @@ app.post("/api/content-strategy/generate", (req, res) => {
       { day: "Sunday",    hookType: "story",       contentType: "Q&A",              note: "Community conversation on Sunday builds anticipation and strengthens following loyalty." },
     ],
   };
-  const weeklySchedule = weeklyMap[g] ?? weeklyMap.sales;
+  const weeklyMapES = {
+    sales: [
+      { day: "Lunes",     hookType: "pain",        contentType: "Educativo",          note: `Expón el problema central que ${au || "tu audiencia"} todavía no ha nombrado del todo — la conciencia del problema desbloquea la intención de compra.` },
+      { day: "Martes",    hookType: "authority",   contentType: "Prueba Social",      note: "Establece credibilidad antes de la ventana de alta intención de mitad de semana con contenido basado en pruebas." },
+      { day: "Miércoles", hookType: "opportunity", contentType: "Demo del Producto",  note: `Mitad de semana captura el pico de intención de compra — presenta ${pr || "tu oferta"} directamente y con claridad.` },
+      { day: "Jueves",    hookType: "story",       contentType: "Historia",           note: "La narrativa humana después del contenido de ventas directo mantiene la confianza y reduce la resistencia." },
+      { day: "Viernes",   hookType: "pain",        contentType: "Lista",              note: "Refuerzo de dolor de fin de semana con un CTA claro y de baja fricción." },
+      { day: "Sábado",    hookType: "curiosity",   contentType: "Preguntas y Respuestas", note: "Contenido de comunidad impulsado por curiosidad mantiene el engagement algorítmico activo durante el fin de semana." },
+      { day: "Domingo",   hookType: "authority",   contentType: "Educativo",          note: `Contenido de autoridad de pre-semana prepara a ${au || "tu audiencia"} antes de la ventana de mayor intención del lunes.` },
+    ],
+    leads: [
+      { day: "Lunes",     hookType: "curiosity",   contentType: "Educativo",          note: `Abre la semana con una brecha de insight — ${au || "tu audiencia"} en mentalidad de aprendizaje es más probable que haga clic en un enlace.` },
+      { day: "Martes",    hookType: "pain",        contentType: "Lista",              note: "Nombra el dolor específico antes de ofrecer la solución. Los prospectos conscientes del problema son los más fáciles de convertir." },
+      { day: "Miércoles", hookType: "authority",   contentType: "Prueba Social",      note: "La prueba a mitad de semana reduce la fricción para clics en bio y consultas por DM." },
+      { day: "Jueves",    hookType: "story",       contentType: "Historia",           note: "La historia genera confianza emocional — el jueves es el día más fuerte para consultas y suscripciones." },
+      { day: "Viernes",   hookType: "curiosity",   contentType: "Preguntas y Respuestas", note: "Involucra a la audiencia con una pregunta no resuelta que responde tu lead magnet." },
+      { day: "Sábado",    hookType: "opportunity", contentType: "Tendencia",          note: "El contenido de tendencia del fin de semana expande el alcance a audiencias frías." },
+      { day: "Domingo",   hookType: "pain",        contentType: "Educativo",          note: "El contenido de reflexión dominical conecta con audiencias conscientes del problema que planean su próximo movimiento." },
+    ],
+    brand_awareness: [
+      { day: "Lunes",     hookType: "story",       contentType: "Detrás de Escena",   note: "Empieza la semana con autenticidad — el contenido detrás de escena construye conexión a largo plazo." },
+      { day: "Martes",    hookType: "curiosity",   contentType: "Educativo",          note: "El contenido de valor impulsado por curiosidad gana compartidos de nuevas audiencias que aún no te siguen." },
+      { day: "Miércoles", hookType: "viral",       contentType: "Tendencia",          note: "El contenido de tendencia de mitad de semana maximiza el alcance algorítmico — el día de mayor compartición en la mayoría de nichos." },
+      { day: "Jueves",    hookType: "authority",   contentType: "Lista",              note: `Establece credibilidad en ${n} antes de la ventana de engagement del fin de semana con marcos compartibles.` },
+      { day: "Viernes",   hookType: "story",       contentType: "Desafío",            note: "El contenido de desafío interactivo impulsa la participación de la comunidad y visitas al perfil." },
+      { day: "Sábado",    hookType: "viral",       contentType: "Opinión Fuerte",     note: "Las opiniones fuertes del fin de semana generan comentarios y compartidos de audiencias que aún no te siguen." },
+      { day: "Domingo",   hookType: "curiosity",   contentType: "Preguntas y Respuestas", note: "Las preguntas y respuestas de comunidad profundizan la conexión con seguidores existentes y mejoran la retención." },
+    ],
+    authority: [
+      { day: "Lunes",     hookType: "authority",   contentType: "Educativo",          note: `Lidera con expertise — las audiencias del lunes están en mentalidad de aprendizaje y recompensan el insight genuino de ${n}.` },
+      { day: "Martes",    hookType: "mistake",     contentType: "Lista",              note: "El contenido de errores señala conocimiento profundo del dominio. Genera guardados — la señal de engagement de mayor confianza." },
+      { day: "Miércoles", hookType: "story",       contentType: "Historia",           note: "La narrativa personal humaniza tu expertise y genera confianza emocional junto a la credibilidad intelectual." },
+      { day: "Jueves",    hookType: "authority",   contentType: "Prueba Social",      note: "Los casos de estudio del jueves refuerzan la credibilidad establecida a principios de semana." },
+      { day: "Viernes",   hookType: "curiosity",   contentType: "Educativo",          note: "El insight de fin de semana genera anticipación y te posiciona como la fuente de referencia antes del fin de semana." },
+      { day: "Sábado",    hookType: "mistake",     contentType: "Opinión Fuerte",     note: "El contenido contrario del fin de semana genera discusión e introduce tu perspectiva a nuevas audiencias." },
+      { day: "Domingo",   hookType: "story",       contentType: "Detrás de Escena",   note: "El contenido detrás de escena construye profundidad de relación con tu audiencia central de autoridad." },
+    ],
+    engagement: [
+      { day: "Lunes",     hookType: "curiosity",   contentType: "Preguntas y Respuestas", note: `Empieza con una pregunta — las audiencias del lunes responden fuerte al contenido participativo.` },
+      { day: "Martes",    hookType: "mistake",     contentType: "Opinión Fuerte",     note: "El contenido de errores genera comentarios de personas que vivieron la misma situación." },
+      { day: "Miércoles", hookType: "viral",       contentType: "Desafío",            note: "Los desafíos de mitad de semana generan las tasas de participación más altas de cualquier formato." },
+      { day: "Jueves",    hookType: "story",       contentType: "Historia",           note: "El contenido de historia construye el capital emocional que impulsa guardados, compartidos y DMs." },
+      { day: "Viernes",   hookType: "viral",       contentType: "Tendencia",          note: "El contenido de tendencia del viernes captura el comportamiento de compartición del fin de semana en su pico." },
+      { day: "Sábado",    hookType: "curiosity",   contentType: "Detrás de Escena",   note: "Las audiencias del sábado se involucran más profundamente con contenido auténtico y sin pulir." },
+      { day: "Domingo",   hookType: "story",       contentType: "Preguntas y Respuestas", note: "La conversación de comunidad del domingo construye anticipación y fortalece la lealtad de los seguidores." },
+    ],
+  };
+
+  const weeklySchedule = isES
+    ? (weeklyMapES[g] ?? weeklyMapES.sales)
+    : (weeklyMap[g]   ?? weeklyMap.sales);
 
   // ── 3. Strategic reasoning ────────────────────────────────────────────────
   const whyMixWorks = {
@@ -744,7 +1059,16 @@ app.post("/api/content-strategy/generate", (req, res) => {
     authority:       { recommended: "3x_week", reason: `Authority is built on depth, not volume. 3x/week gives you the production time to create content that genuinely demonstrates expertise — which is more valuable than daily shallow content for ${n} authority positioning.` },
     engagement:      { recommended: "daily",   reason: `Engagement compounds with frequency. Daily content gives ${au || "your audience"} more opportunities to participate, and the algorithm rewards engagement velocity, which requires consistent touchpoints.` },
   };
-  const postingRec = postingMap[g] ?? postingMap.sales;
+  const postingMapES = {
+    sales:           { recommended: "5x_week", reason: `Las ventas requieren presencia consistente durante la ventana de decisión de compra. 5 veces/semana mantiene visibilidad sin saturar — ${au || "tu audiencia"} necesita entre 5 y 7 exposiciones a una solución antes de actuar.` },
+    leads:           { recommended: "5x_week", reason: `La generación de prospectos es un juego de volumen y consistencia. 5 veces/semana da suficientes puntos de contacto para mover a ${au || "tu audiencia"} de consciente del problema a listo para optar dentro de un ciclo de semana.` },
+    brand_awareness: { recommended: "daily",   reason: `La conciencia de marca escala con frecuencia. Publicar diariamente en ${n} maximiza la superficie algorítmica y crea la repetición que convierte espectadores pasivos en seguidores activos.` },
+    authority:       { recommended: "3x_week", reason: `La autoridad se construye con profundidad, no con volumen. 3 veces/semana te da tiempo de producir contenido que realmente demuestra expertise — lo que vale más que contenido diario superficial para el posicionamiento de autoridad en ${n}.` },
+    engagement:      { recommended: "daily",   reason: `El engagement se compone con frecuencia. El contenido diario da a ${au || "tu audiencia"} más oportunidades de participar, y el algoritmo recompensa la velocidad de engagement, que requiere puntos de contacto consistentes.` },
+  };
+  const postingRec = isES
+    ? (postingMapES[g] ?? postingMapES.sales)
+    : (postingMap[g]   ?? postingMap.sales);
 
   // ── 5. CTA recommendations ────────────────────────────────────────────────
   const ctaNicheMap = {
@@ -775,11 +1099,46 @@ app.post("/api/content-strategy/generate", (req, res) => {
     ],
   };
 
+  const ctaNicheMapES = {
+    sales: [
+      `Comenta "${n.toUpperCase()}" abajo y te mando el desglose completo — sin venta, solo la información.`,
+      `Guarda esta publicación. Cuando estés listo para dejar de adivinar en ${n}, el enlace en bio es donde empiezas.`,
+      `Escríbeme "${n}" por DM — te muestro el primer paso exacto según donde estás ahora mismo.`,
+    ],
+    leads: [
+      `Sígueme + comenta "ENVÍAME" — te mando por DM el marco gratuito de ${n} que uso con cada cliente.`,
+      `La guía completa de ${n} está en mi bio. Es gratuita. Los ${au || "que la usan"} avanzan más rápido que los que no.`,
+      `Comenta "GUÍA" y te mando el recurso de ${n} que la mayoría de ${au} tarda meses en encontrar por su cuenta.`,
+    ],
+    brand_awareness: [
+      `Si esto te llegó, sígueme — publico contenido de ${n} así cada semana.`,
+      `Comparte esto con un ${au1 || "persona"} que lo necesita escuchar ahora mismo.`,
+      `Guarda esto para la próxima vez que estés estancado en ${n}. Te lo agradecerás.`,
+    ],
+    authority: [
+      `Sígueme si quieres el tipo de insight de ${n} por el que la mayoría cobra.`,
+      `Guarda este marco — me tomó años entenderlo y 30 segundos compartirlo.`,
+      `Comenta "MARCO" y te mando la versión completa — va más profundo de lo que cabe en este video.`,
+    ],
+    engagement: [
+      `Comenta tu respuesta abajo — leo todas y respondo a las reales.`,
+      `Etiqueta a alguien que necesita ver esto. A ver en quién piensas.`,
+      `¿De acuerdo o en desacuerdo? Comenta tu opinión — tengo genuina curiosidad de dónde caen los ${au || "de esta audiencia"} en esto.`,
+    ],
+  };
+
   const ctaLeadGen = [
     `Comment "${n.toUpperCase()} GUIDE" and I'll DM you the free resource that covers this in full.`,
     `Follow + comment "SEND IT" and I'll send you the exact framework I use — free, no strings.`,
     `The free ${n} toolkit is linked in my bio. Grab it before I start charging for it.`,
     `DM me "START" and I'll walk you through the first step based on exactly where ${au || "you"} are right now.`,
+  ];
+
+  const ctaLeadGenES = [
+    `Comenta "${n.toUpperCase()} GUÍA" y te mando por DM el recurso gratuito que cubre esto completo.`,
+    `Sígueme + comenta "ENVÍAME" y te mando el marco exacto que uso — gratis, sin condiciones.`,
+    `El kit gratuito de ${n} está en mi bio. Tómalo antes de que empiece a cobrarlo.`,
+    `Escríbeme "EMPEZAR" y te guío por el primer paso según exactamente donde está ${au || "tu situación"} ahora mismo.`,
   ];
 
   const ctaSales = [
@@ -789,19 +1148,87 @@ app.post("/api/content-strategy/generate", (req, res) => {
     `${pr || "It"} closes ${["soon", "this week", "in 48 hours"][Math.floor(Math.random() * 3)]}. Link in bio if ${au || "you"}'re serious about the result.`,
   ];
 
+  const ctaSalesES = [
+    `${pr || "El sistema completo"} está disponible ahora. Enlace en bio — 2 minutos para empezar, resultados dentro de una semana.`,
+    `Si estás listo para dejar de dar vueltas a este problema en ${n}, ${pr || "la solución"} está en mi bio. El enlace está ahí.`,
+    `Comenta "LISTO" si ya terminaste con la versión lenta de ${n}. Te mando el enlace directo.`,
+    `${pr || "Cierra"} ${["pronto", "esta semana", "en 48 horas"][Math.floor(Math.random() * 3)]}. Enlace en bio si vas en serio con el resultado.`,
+  ];
+
+  const whyMixWorksES = {
+    sales: [
+      `Una estrategia de ${n} orientada a ventas pone el contenido de dolor al frente porque las decisiones de compra son impulsadas por la conciencia del problema, no por listas de características. ${au || "Tu audiencia"} no comprará ${pr || "tu oferta"} hasta que no haya reconocido completamente el costo de su situación actual. El contenido de dolor hace ese trabajo. El contenido de autoridad crea la credibilidad necesaria para que la solución sea creíble. El contenido de oportunidad cierra el ciclo haciendo que el momento se sienta urgente y específico.`,
+      `Para creadores de ${n} enfocados en ventas, el error más común es liderar con contenido de producto antes de que la audiencia sea consciente del problema. Esta mezcla corrige eso: el contenido de dolor crea el marco del problema, el contenido de autoridad establece confianza en la solución, y el contenido de historia hace que la transformación se sienta alcanzable para ${au || "tu audiencia específica"}.`,
+    ],
+    leads: [
+      `La generación de prospectos en ${n} depende de crear una brecha de información que solo tu lead magnet puede cerrar. El contenido de curiosidad es el motor — crea la sensación de que tienes respuestas que ${au || "tu audiencia"} aún no ha encontrado. El contenido de dolor identifica el problema específico que resuelve tu lead magnet. El contenido de autoridad hace que la suscripción se sienta como una decisión de bajo riesgo.`,
+      `La estrategia de generación de prospectos más efectiva para ${n} construye un viaje de confianza secuencial: la curiosidad atrae nuevas audiencias, el contenido de dolor los califica como conscientes del problema, y el contenido de historia los hace sentir comprendidos antes del llamado a la acción.`,
+    ],
+    brand_awareness: [
+      `La conciencia de marca en ${n} se construye a través de compartibilidad y distinción, no solo a través de consistencia. El contenido viral y de curiosidad gana distribución de audiencias que aún no te siguen — el algoritmo recompensa el contenido que crea comportamiento de descubrimiento. El contenido de historia construye la textura emocional que hace tu marca memorable.`,
+      `Para una meta de conciencia de marca en ${n}, la mezcla prioriza contenido que viaja — formatos virales, brechas de curiosidad, y contenido narrativo que ${au || "tu audiencia"} quiere compartir o guardar. El contenido de autoridad proporciona credibilidad para quienes te descubren a través de las piezas virales.`,
+    ],
+    authority: [
+      `La autoridad en ${n} se construye a través de una combinación específica: expertise profundo demostrado consistentemente, contenido de errores que señala comprensión matizada de donde ${au || "tu audiencia"} se complica, y contenido de historia que humaniza el expertise. Un enfoque de pura autoridad sin historia se vuelve académico. Sin contenido de errores, le falta la especificidad que señala profundidad genuina.`,
+      `Construir autoridad en ${n} requiere contenido que demuestre conocimiento, no que solo lo declare. El contenido de errores es particularmente poderoso porque señala que entiendes el terreno lo suficientemente bien para ver dónde otros se equivocan. El contenido de historia construye la confianza parasocial que hace que tu autoridad se sienta personalmente relevante.`,
+    ],
+    engagement: [
+      `El contenido de ${n} enfocado en engagement funciona a través de resonancia emocional y diseño de participación. Los formatos virales crean comportamiento de compartición, pero no construyen comunidad solos. El contenido de historia y de errores genera los comentarios que señalan conexión genuina — el algoritmo trata la velocidad de comentarios como una señal de calidad más fuerte que los me gusta o las vistas.`,
+      `La mezcla de engagement prioriza contenido que invita a una respuesta: desafíos, opiniones fuertes, preguntas y respuestas, e historias en las que las personas se reconocen. Para audiencias de ${n}, el contenido de errores consistentemente supera al contenido educativo en métricas de engagement porque crea la reacción de "soy yo".`,
+    ],
+  };
+
+  const audiencePsychologyES = {
+    sales: [
+      `${au || "Esta audiencia"} sigue una secuencia psicológica predecible antes de comprar en ${n}: reconocimiento del problema, conciencia de la solución, formación de confianza y urgencia. La mayoría de los creadores de ${n} saltan directamente a la conciencia de la solución, pero ${au || "tu audiencia"} no avanzará hasta sentir que su problema ha sido completamente visto. El contenido de dolor hace el trabajo pesado en el reconocimiento del problema.`,
+      `La psicología de ${au || "esta audiencia"} en ${n} está moldeada por intentos fallidos anteriores. Lo que están evaluando no es solo si ${pr || "tu producto"} funciona — es si funciona para alguien en su situación específica. El contenido de autoridad e historia responde esa pregunta haciendo que la transformación se sienta real y específica, no teórica.`,
+    ],
+    leads: [
+      `${au || "Tu audiencia"} se convierte en prospecto cuando se siente comprendida antes de sentirse vendida. En ${n}, la secuencia curiosidad-dolor funciona porque la curiosidad atrae, pero el dolor califica. Alguien que ve un video de curiosidad sobre ${n} está interesado. Alguien que ve un video de dolor y lo siente personalmente es un potencial cliente.`,
+      `La psicología de generación de prospectos para ${n} está basada en reciprocidad: ${au || "tu audiencia"} dará su información de contacto cuando crea que el valor del otro lado es real y específico. El contenido que crea esa creencia más efectivamente no es el más pulido — es el más preciso. El contenido que nombra correctamente la experiencia específica de ser ${au1 || "una persona en esta audiencia"} crea una señal de credibilidad instantánea.`,
+    ],
+    brand_awareness: [
+      `${au || "Tu audiencia"} descubre nuevos creadores de ${n} a través de dos mecanismos: empuje algorítmico (contenido de tendencia y viral) y compartición entre pares (contenido de historia y curiosidad que las personas quieren enviar a alguien que conocen). Construir conciencia de marca requiere aparecer en ambos canales.`,
+      `Para la conciencia de marca en ${n}, el impulsor psicológico es la identidad: ${au || "tu audiencia"} comparte contenido que refleja cómo se ven a sí mismos o cómo quieren ser vistos. El contenido que captura la experiencia específica de ser ${au1 || "una persona en este espacio"} se comparte como forma de autoexpresión.`,
+    ],
+    authority: [
+      `${au || "Tu audiencia"} en ${n} extiende confianza a figuras de autoridad a través de un mecanismo específico: necesitan sentir que has estado donde están ellos y entiendes lo que cuesta. La autoridad pura basada en credenciales es más débil en video de formato corto que la autoridad experiencial. El contenido de errores gana confianza demostrando que entiendes la forma exacta donde la gente se complica.`,
+      `La psicología de la autoridad en ${n} se construye sobre el reconocimiento de patrones: ${au || "tu audiencia"} evalúa constantemente si realmente sabes cómo es operar en su mundo. El contenido de autoridad que usa el lenguaje correcto, nombra los problemas correctos y demuestra el nivel correcto de especificidad crea una señal de reconocimiento instantánea.`,
+    ],
+    engagement: [
+      `${au || "Tu audiencia"} se involucra más activamente con contenido que crea la reacción de "eso soy exactamente yo". En ${n}, esto significa nombrar situaciones y sentimientos con suficiente especificidad para que las personas se sientan vistas personalmente. El contenido educativo amplio informa pero no activa el engagement.`,
+      `La psicología del engagement en ${n} es impulsada por la necesidad de reconocimiento comunitario — ${au || "tu audiencia"} comenta cuando se siente parte de una experiencia compartida. El contenido viral los introduce a la comunidad. El contenido de historia y de errores los hace sentir comprendidos dentro de ella. El contenido de desafío hace que la participación se sienta de bajo riesgo y socialmente gratificante.`,
+    ],
+  };
+
+  const contentDominantES = {
+    sales:           `El contenido de dolor debe dominar tu feed de ${n} al 30%. Es el mecanismo que hace que todo lo demás convierta. Sin él, incluso tu contenido de autoridad y oportunidad más sólido generará engagement pasivo en lugar de intención de compra. Cada publicación de dolor es trabajo de pre-venta que tu contenido de producto no puede hacer solo.`,
+    leads:           `El contenido de curiosidad al 30% debe liderar tu estrategia de ${n}. Crea la brecha de información que hace que ${au || "tu audiencia"} quiera lo que hay detrás de tu enlace. Cada publicación de curiosidad es un mecanismo de generación de prospectos — construye un pipeline de personas que creen que tienes respuestas que aún no han encontrado.`,
+    brand_awareness: `El contenido viral y de curiosidad debe dominar igualmente al 25% cada uno. El viral gana alcance de personas que no te conocen. La curiosidad gana seguidores de personas que acaban de encontrarte. Juntos crean un flujo consistente de exposición a nueva audiencia — que es el único mecanismo que hace que la conciencia de marca escale.`,
+    authority:       `El contenido de autoridad al 35% debe definir tu presencia en ${n}. Cada publicación educativa, marco e insight está componiendo tu expertise percibida. ${au || "Tu audiencia"} necesita encontrar tu profundidad múltiples veces antes de que la confianza necesaria para el estatus de autoridad se forme. La consistencia en esta categoría es la variable no negociable.`,
+    engagement:      `El contenido viral al 30% establece la base algorítmica para tu presencia en ${n}. Sin contenido consistente que impulse el alcance, incluso tus mejores publicaciones de historia y comunidad llegan a una audiencia que se reduce. El contenido viral es infraestructura — mantiene la distribución activa para que tu contenido de mayor conexión realmente llegue a las personas para las que está diseñado.`,
+  };
+
+  const activeWhyMix      = isES ? whyMixWorksES      : whyMixWorks;
+  const activeAudPsych    = isES ? audiencePsychologyES: audiencePsychology;
+  const activeContentDom  = isES ? contentDominantES   : contentDominant;
+  const activeCtaNiche    = isES ? ctaNicheMapES       : ctaNicheMap;
+  const activeCtaLeadGen  = isES ? ctaLeadGenES        : ctaLeadGen;
+  const activeCtaSales    = isES ? ctaSalesES          : ctaSales;
+
   res.json({
     contentMix,
     weeklySchedule,
     reasoning: {
-      whyMixWorks:       pick(whyMixWorks[g]      ?? whyMixWorks.sales),
-      audiencePsychology: pick(audiencePsychology[g] ?? audiencePsychology.sales),
-      contentDominant:   contentDominant[g]        ?? contentDominant.sales,
+      whyMixWorks:        pick(activeWhyMix[g]     ?? activeWhyMix.sales),
+      audiencePsychology: pick(activeAudPsych[g]   ?? activeAudPsych.sales),
+      contentDominant:    activeContentDom[g]       ?? activeContentDom.sales,
     },
     posting: postingRec,
     ctas: {
-      nicheSpecific: pick(ctaNicheMap[g] ?? ctaNicheMap.sales),
-      leadGen:       pick(ctaLeadGen),
-      sales:         pick(ctaSales),
+      nicheSpecific: pick(activeCtaNiche[g] ?? activeCtaNiche.sales),
+      leadGen:       pick(activeCtaLeadGen),
+      sales:         pick(activeCtaSales),
     },
   });
 });
