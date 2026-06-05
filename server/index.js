@@ -23,6 +23,42 @@ const distDir = join(__dirname, "..", "dist", "public");
 const FFMPEG = ffmpegStatic ?? null;
 console.log(`FFmpeg path: ${FFMPEG ?? "NOT FOUND — MP4 export will fail"}`);
 
+// ── probeVideo — parse codec info from ffmpeg -i stderr ───────────────────────
+// ffmpeg always exits non-zero when no output is given; the info is in stderr.
+async function probeVideo(filePath) {
+  if (!FFMPEG) return null;
+  let stderr = "";
+  try {
+    await execFileAsync(FFMPEG, ["-hide_banner", "-i", filePath], {
+      maxBuffer: 2 * 1024 * 1024,
+      timeout:   20_000,
+    });
+  } catch (err) {
+    stderr = (err?.stderr ?? "").trim();
+  }
+  if (!stderr) return null;
+
+  const fmtLine = stderr.match(/Input #\d+,\s*([^\n,]+)/);
+  const vidLine = stderr.match(/Stream #\d+:\d+[^:]*:\s*Video: ([^\n]+)/);
+  const audLine = stderr.match(/Stream #\d+:\d+[^:]*:\s*Audio: ([^\n]+)/);
+
+  const vidStr = vidLine?.[1] ?? "";
+  const audStr = audLine?.[1] ?? "";
+
+  const codecMatch   = vidStr.match(/^(\S+)/);
+  const profileMatch = vidStr.match(/\(([A-Za-z0-9 .:]+)\)/);
+  const pixFmtMatch  = vidStr.match(/\b(yuv\w+|rgb\w*|bgr\w*|gray\w*|nv\d+)\b/);
+  const audioMatch   = audStr.match(/^(\S+)/);
+
+  return {
+    container:    (fmtLine?.[1] ?? "unknown").trim(),
+    videoCodec:   codecMatch?.[1]   ?? "unknown",
+    videoProfile: profileMatch?.[1] ?? "—",
+    pixFmt:       pixFmtMatch?.[1]  ?? "—",
+    audioCodec:   audioMatch?.[1]   ?? "none",
+  };
+}
+
 
 const app = express();
 app.use(express.json());
@@ -845,6 +881,16 @@ app.post(
         outputPath,
       ], { maxBuffer: 100 * 1024 * 1024, timeout: 300_000 });
 
+      // Probe source BEFORE streaming so we can emit headers
+      const srcProbe = await probeVideo(inputPath);
+      if (srcProbe) {
+        res.setHeader("X-Vyron-Src-Container",   srcProbe.container);
+        res.setHeader("X-Vyron-Src-Video-Codec", srcProbe.videoCodec);
+        res.setHeader("X-Vyron-Src-Profile",     srcProbe.videoProfile);
+        res.setHeader("X-Vyron-Src-Pix-Fmt",     srcProbe.pixFmt);
+        res.setHeader("X-Vyron-Src-Audio-Codec", srcProbe.audioCodec);
+      }
+
       res.setHeader("Content-Type", "video/mp4");
       const stream = createReadStream(outputPath);
       stream.on("end", cleanup);
@@ -938,6 +984,16 @@ app.post(
         maxBuffer: 100 * 1024 * 1024,
         timeout:   360_000,
       });
+
+      // Probe enhanced output before streaming
+      const outProbe = await probeVideo(outputPath);
+      if (outProbe) {
+        res.setHeader("X-Vyron-Out-Container",   outProbe.container);
+        res.setHeader("X-Vyron-Out-Video-Codec", outProbe.videoCodec);
+        res.setHeader("X-Vyron-Out-Profile",     outProbe.videoProfile);
+        res.setHeader("X-Vyron-Out-Pix-Fmt",     outProbe.pixFmt);
+        res.setHeader("X-Vyron-Out-Audio-Codec", outProbe.audioCodec);
+      }
 
       const today = new Date();
       const ymd =

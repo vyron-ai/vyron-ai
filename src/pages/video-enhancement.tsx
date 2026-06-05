@@ -245,6 +245,10 @@ export default function VideoEnhancementPage() {
   const [enhVideoError,   setEnhVideoError]   = useState<string | null>(null);
   const [canPlayMp4,      setCanPlayMp4]      = useState<string>("");
   const [origConverting,  setOrigConverting]  = useState(false);
+
+  interface ProbeInfo { container: string; videoCodec: string; videoProfile: string; pixFmt: string; audioCodec: string; }
+  const [sourceProbe, setSourceProbe] = useState<ProbeInfo | null>(null);
+  const [outputProbe, setOutputProbe] = useState<ProbeInfo | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const xhrRef   = useRef<XMLHttpRequest | null>(null);
   const { toast } = useToast();
@@ -308,6 +312,16 @@ export default function VideoEnhancementPage() {
         xhr.send(f);
       });
 
+      // Read source codec info from response headers
+      const gh = (h: string) => xhr.getResponseHeader(h) ?? "—";
+      setSourceProbe({
+        container:    gh("X-Vyron-Src-Container"),
+        videoCodec:   gh("X-Vyron-Src-Video-Codec"),
+        videoProfile: gh("X-Vyron-Src-Profile"),
+        pixFmt:       gh("X-Vyron-Src-Pix-Fmt"),
+        audioCodec:   gh("X-Vyron-Src-Audio-Codec"),
+      });
+
       const typed = new Blob([rawBlob], { type: "video/mp4" });
       const url   = URL.createObjectURL(typed);
       console.log("[VYRON preview] original preview ready:", url, "size:", typed.size);
@@ -365,6 +379,7 @@ export default function VideoEnhancementPage() {
     setErrorMsg("");
     setEnhVideoError(null);
     setEnhancedBlobSize(0);
+    setOutputProbe(null);
 
     const params = new URLSearchParams({
       preset,
@@ -401,6 +416,17 @@ export default function VideoEnhancementPage() {
         setEnhancedBlobSize(typed.size);
         const url = URL.createObjectURL(typed);
         console.log("[VYRON enhance] enhanced blob URL ready:", url, "size:", typed.size);
+
+        // Read enhanced output codec info from response headers
+        const gh = (h: string) => xhr.getResponseHeader(h) ?? "—";
+        setOutputProbe({
+          container:    gh("X-Vyron-Out-Container"),
+          videoCodec:   gh("X-Vyron-Out-Video-Codec"),
+          videoProfile: gh("X-Vyron-Out-Profile"),
+          pixFmt:       gh("X-Vyron-Out-Pix-Fmt"),
+          audioCodec:   gh("X-Vyron-Out-Audio-Codec"),
+        });
+
         setEnhancedUrl(url);
         setEnhVideoError(null);
         setStatus("done");
@@ -737,6 +763,30 @@ export default function VideoEnhancementPage() {
                   ["enhanced MIME type",          enhancedUrl ? "video/mp4" : "—",  enhancedUrl ? "ok" : "info"],
                   ["enhanced blob size",          enhancedBlobSize > 0 ? fmtBytes(enhancedBlobSize) : "—", enhancedBlobSize > 0 ? "ok" : "info"],
                   ["enhanced video error",        enhVideoError ?? "none",          enhVideoError ? "err" : "ok"],
+
+                  ["─── source file info ───",    "",                               "info"],
+                  ...(sourceProbe
+                    ? [
+                        ["container",              sourceProbe.container,            "ok"]  as [string,string,string],
+                        ["video codec",            sourceProbe.videoCodec,           sourceProbe.videoCodec === "h264" ? "ok" : "err"]  as [string,string,string],
+                        ["video profile",          sourceProbe.videoProfile,         sourceProbe.videoProfile === "Baseline" ? "ok" : sourceProbe.videoProfile === "—" ? "info" : "warn"] as [string,string,string],
+                        ["pixel format",           sourceProbe.pixFmt,               sourceProbe.pixFmt === "yuv420p" ? "ok" : "err"]   as [string,string,string],
+                        ["audio codec",            sourceProbe.audioCodec,           sourceProbe.audioCodec === "aac" ? "ok" : "warn"]  as [string,string,string],
+                      ]
+                    : [["(upload a file to see info)", "", "info"]] as [string,string,string][]
+                  ),
+
+                  ["─── output file info ───",    "",                               "info"],
+                  ...(outputProbe
+                    ? [
+                        ["container",              outputProbe.container,            "ok"]  as [string,string,string],
+                        ["video codec",            outputProbe.videoCodec,           outputProbe.videoCodec === "h264" ? "ok" : "err"]  as [string,string,string],
+                        ["video profile",          outputProbe.videoProfile,         outputProbe.videoProfile === "Baseline" ? "ok" : outputProbe.videoProfile === "—" ? "info" : "warn"] as [string,string,string],
+                        ["pixel format",           outputProbe.pixFmt,               outputProbe.pixFmt === "yuv420p" ? "ok" : "err"]   as [string,string,string],
+                        ["audio codec",            outputProbe.audioCodec,           outputProbe.audioCodec === "aac" ? "ok" : "warn"]  as [string,string,string],
+                      ]
+                    : [["(enhance a video to see info)", "", "info"]] as [string,string,string][]
+                  ),
                 ];
 
                 const colourFor = (s: "ok"|"err"|"warn"|"info") =>
