@@ -658,13 +658,13 @@ export default function VideoEnhancementPage() {
           </div>
         )}
 
-        {/* ── Debug Preview panel ── */}
+        {/* ── Debug Preview panel — always visible ── */}
         {file && (
-          <details className="group">
-            <summary className="cursor-pointer select-none text-xs font-bold text-muted-foreground/50 uppercase tracking-wider px-1 hover:text-muted-foreground transition-colors">
+          <div>
+            <p className="text-xs font-bold text-yellow-400 uppercase tracking-wider px-1 mb-2">
               🔍 Debug Preview Panel
-            </summary>
-            <div className="mt-2 font-mono text-[11px] bg-black/60 border border-border/40 rounded-xl overflow-hidden">
+            </p>
+            <div className="font-mono text-[11px] bg-black/60 border border-yellow-400/30 rounded-xl overflow-hidden">
               {(() => {
                 const urlType = (u: string | null) => {
                   if (!u) return "—";
@@ -718,7 +718,7 @@ export default function VideoEnhancementPage() {
                 );
               })()}
             </div>
-          </details>
+          </div>
         )}
 
         {/* What this does — disclaimer */}
