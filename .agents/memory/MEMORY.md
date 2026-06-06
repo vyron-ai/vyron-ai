@@ -1,3 +1,5 @@
 - [Video enhancement H.264 compatibility](video-enhancement-compat.md) — enhance endpoint must use -level 4.1 (not 3.0) + even-dim scaling + AAC stereo 44.1kHz for Android WebView compat.
 - [Video thumbnail fallback pattern](video-thumbnail-fallback.md) — thumbnail extracted on-demand (only on video error) via /api/thumbnail/video; blob stored in state for deferred thumbnail fetch.
 - [Global Language + Stage Selectors](global-language-stage.md) — SettingsProvider (localStorage) + BusinessSettings component wired into all 5 AI modules; server endpoints accept language/businessStage; isES flag selects between EN/ES template maps.
+- [Server architecture](server-architecture.md) — Express server (server/index.js) is the single process for API + static files; workflow must build+start Express, not Vite alone.
+- [Context Engine V1](context-engine.md) — phrase rotation functions live in server/index.js before buildAudienceIntelligence; per-field limits (maxAu=2,maxN=3,maxPr=2); counters reset between fields.

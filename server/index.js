@@ -409,14 +409,113 @@ app.post("/api/content-planner/generate", (req, res) => {
       contentType,
       hookType,
       intensity,
-      title:       titles[i % titles.length],
+      title:       ctxApply(titles[i % titles.length],     n, au, pr, isES),
       objective:   objectives[i % objectives.length],
-      cta:         ctas[i % ctas.length],
+      cta:         ctxApply(ctas[i % ctas.length],          n, au, pr, isES),
     });
   }
 
   res.json({ entries, total, duration: dur, niche: n, product: pr, audience: au });
 });
+
+// ── VYRON Context Engine V1 ───────────────────────────────────────────────────
+// Prevents phrase repetition by building semantic variations of audience, niche,
+// and product inputs, then rotating them so no phrase repeats beyond a set limit.
+
+function ceSubject(phrase, isES) {
+  if (!phrase) return phrase;
+  const re = isES ? /^(.*?)\s+que\s+/i : /^(.*?)\s+who\s+/i;
+  const m  = phrase.match(re);
+  return m ? m[1].trim() : phrase;
+}
+
+function ceGoal(phrase, isES) {
+  const re = isES
+    ? /(?:quieren?|buscan?|desean?|necesitan?|quiere|busca|desea|necesita)\s+(.+)$/i
+    : /(?:want[s]?|seek[s]?|need[s]?|desire[s]?)\s+(.+)$/i;
+  const m = phrase.match(re);
+  return m ? m[1].trim() : null;
+}
+
+function ceAuVars(au, isES) {
+  if (!au) return [isES ? "tu audiencia" : "your audience"];
+  const subject = ceSubject(au, isES);
+  const goal    = ceGoal(au, isES);
+  const vars    = [au];
+  if (subject && subject !== au) vars.push(subject);
+  if (goal) {
+    if (isES) {
+      vars.push(`quienes buscan ${goal}`);
+      vars.push(`personas que priorizan ${goal}`);
+      vars.push(`quienes trabajan para lograr ${goal}`);
+      vars.push("tu cliente ideal");
+    } else {
+      vars.push(`those who want ${goal}`);
+      vars.push(`people focused on ${goal}`);
+      vars.push("your ideal client");
+    }
+  } else {
+    if (isES) {
+      vars.push(`profesionales en ${au}`);
+      vars.push("personas en este espacio");
+      vars.push("tu cliente ideal");
+    } else {
+      vars.push(`professionals in ${au}`);
+      vars.push("your ideal client");
+    }
+  }
+  return [...new Set(vars)].filter(Boolean);
+}
+
+function ceNVars(n, isES) {
+  if (!n) return [];
+  const words = n.split(/\s+/);
+  const short = words.length > 2 ? words.slice(0, 2).join(" ") : null;
+  const vars  = [n];
+  if (short) vars.push(short);
+  if (isES) { vars.push("este sector"); vars.push("este espacio"); vars.push("esta industria"); }
+  else       { vars.push("this space");  vars.push("this industry"); vars.push("this niche"); }
+  return [...new Set(vars)].filter(Boolean);
+}
+
+function cePrVars(pr, isES) {
+  if (!pr) return [];
+  const words = pr.split(/\s+/);
+  const short = words.length > 2 ? words.slice(0, 2).join(" ") : null;
+  const vars  = [pr];
+  if (short) vars.push(short);
+  if (isES) { vars.push("esta solución"); vars.push("este sistema"); vars.push("este servicio"); }
+  else       { vars.push("this solution"); vars.push("this system"); vars.push("this service"); }
+  return [...new Set(vars)].filter(Boolean);
+}
+
+function ceRotate(text, phrase, vars, maxKeep) {
+  if (!phrase || !text || vars.length < 2) return text;
+  const esc = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let count = 0, vi = 1;
+  return text.replace(new RegExp(esc, "g"), () => {
+    count++;
+    if (count <= maxKeep) return phrase;
+    const r = vars[vi % vars.length]; vi++;
+    return r || phrase;
+  });
+}
+
+function ctxApply(text, n, au, pr, isES, maxAu = 2, maxN = 3, maxPr = 2) {
+  if (!text || typeof text !== "string") return text;
+  text = ceRotate(text, au, ceAuVars(au, isES), maxAu);
+  text = ceRotate(text, n,  ceNVars(n,  isES),  maxN);
+  text = ceRotate(text, pr, cePrVars(pr, isES), maxPr);
+  return text;
+}
+
+function ctxBatch(fields, n, au, pr, isES, maxAu = 2, maxN = 3, maxPr = 2) {
+  const out = {};
+  for (const [k, v] of Object.entries(fields)) {
+    out[k] = typeof v === "string" ? ctxApply(v, n, au, pr, isES, maxAu, maxN, maxPr) : v;
+  }
+  return out;
+}
 
 // ── Context Intelligence Layer ────────────────────────────────────────────────
 function buildAudienceIntelligence(n, au, au1, pr, hookType, intensity, isES = false) {
@@ -818,22 +917,21 @@ app.post("/api/script/generate", (req, res) => {
   const activeTitleMap  = isES ? titleMapES  : titleMap;
   const activeHashtags  = isES ? hashtagSetsES : hashtagSets;
 
-  res.json({
-    // Audience intelligence
+  const rawOutput = {
     desires:          intel.desires,
     fears:            intel.fears,
     pains:            intel.pains,
     transformation:   intel.transformation,
-    // Neuro triggers
     sarTrigger:       pick(activeSarMap[hookType]    ?? activeSarMap.curiosity),
     painTrigger:      pick(activePainMap[intensity]  ?? activePainMap.medium),
     curiosityTrigger: pick(activeCurMap[hookType]    ?? activeCurMap.curiosity),
-    // Script & output
     script:           activeScriptMap[hookType]      ?? activeScriptMap.curiosity,
     cta:              pick(activeCtaMap[intensity]   ?? activeCtaMap.medium),
     title:            pick(activeTitleMap[hookType]  ?? activeTitleMap.curiosity),
     hashtags:         pick(activeHashtags),
-  });
+  };
+  // Apply VYRON Context Engine V1 — rotate phrase repetitions across all fields
+  res.json(ctxBatch(rawOutput, n, au, pr, isES));
 });
 
 // ── POST /api/content-strategy/generate ──────────────────────────────────────
@@ -1216,20 +1314,26 @@ app.post("/api/content-strategy/generate", (req, res) => {
   const activeCtaLeadGen  = isES ? ctaLeadGenES        : ctaLeadGen;
   const activeCtaSales    = isES ? ctaSalesES          : ctaSales;
 
+  const rawReasoning = {
+    whyMixWorks:        pick(activeWhyMix[g]     ?? activeWhyMix.sales),
+    audiencePsychology: pick(activeAudPsych[g]   ?? activeAudPsych.sales),
+    contentDominant:    activeContentDom[g]       ?? activeContentDom.sales,
+  };
+  const rawCtas = {
+    nicheSpecific: pick(activeCtaNiche[g] ?? activeCtaNiche.sales),
+    leadGen:       pick(activeCtaLeadGen),
+    sales:         pick(activeCtaSales),
+  };
+  const weeklyWithCtx = weeklySchedule.map(day => ({
+    ...day,
+    note: ctxApply(day.note, n, au, pr, isES, 1, 2, 1),
+  }));
   res.json({
     contentMix,
-    weeklySchedule,
-    reasoning: {
-      whyMixWorks:        pick(activeWhyMix[g]     ?? activeWhyMix.sales),
-      audiencePsychology: pick(activeAudPsych[g]   ?? activeAudPsych.sales),
-      contentDominant:    activeContentDom[g]       ?? activeContentDom.sales,
-    },
-    posting: postingRec,
-    ctas: {
-      nicheSpecific: pick(activeCtaNiche[g] ?? activeCtaNiche.sales),
-      leadGen:       pick(activeCtaLeadGen),
-      sales:         pick(activeCtaSales),
-    },
+    weeklySchedule: weeklyWithCtx,
+    reasoning:      ctxBatch(rawReasoning, n, au, pr, isES, 2, 3, 2),
+    posting:        postingRec,
+    ctas:           ctxBatch(rawCtas,      n, au, pr, isES, 1, 2, 1),
   });
 });
 

@@ -27,7 +27,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "fuser -k 5000/tcp 2>/dev/null; sleep 1; pnpm run dev"
+args = "fuser -k 5000/tcp 2>/dev/null; sleep 1; pnpm run build && node server/index.js"
 waitForPort = 5000
 
 [[ports]]
