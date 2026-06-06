@@ -721,6 +721,140 @@ function industryProfile(n, isES) {
   return isES ? _INDUSTRY_FALLBACK.es : _INDUSTRY_FALLBACK.en;
 }
 
+// ── VYRON Audience Lock Engine V2 ────────────────────────────────────────────
+// Prevents audience drift — keeps every generated field locked to the user's
+// exact audience profile. Variants preserve the subject + semantic goal.
+// Banned terms (empresarios, emprendedores, etc.) are blocked unless they
+// appear in the original audience input.
+
+const _AUDIENCE_BLACKLIST_ES = [
+  "empresario","empresarios","emprendedor","emprendedores",
+  "ejecutivo","ejecutivos","dueño de negocio","dueños de negocio",
+  "director","directores","fundador","fundadores",
+  "ceo","ceos","cliente ideal","clientes ideales",
+  "inversor","inversores","gerente","gerentes",
+];
+
+const _AUDIENCE_BLACKLIST_EN = [
+  "entrepreneur","entrepreneurs","business owner","business owners",
+  "executive","executives","founder","founders",
+  "ceo","ceos","ideal client","ideal clients",
+  "manager","managers","investor","investors",
+  "decision maker","decision makers",
+];
+
+// Subject-level safe synonym map — masculine/neutral only (safe after "los ___")
+const _SUBJECT_SYNONYMS = {
+  // Spanish
+  "jovenes":        ["jóvenes","jóvenes profesionales"],
+  "hombres":        ["hombres","hombres que buscan"],
+  "mujeres":        ["mujeres","mujeres que buscan"],
+  "madres":         ["madres","mamás"],
+  "padres":         ["padres","papás"],
+  "adultos":        ["adultos"],
+  "profesionales":  ["profesionales"],
+  "estudiantes":    ["estudiantes"],
+  "creadores":      ["creadores","creadores de contenido"],
+  "freelancers":    ["freelancers","independientes"],
+  "coaches":        ["coaches","mentores"],
+  "emprendedores":  ["emprendedores","dueños de negocio"],
+  "empresarios":    ["empresarios","dueños de empresa"],
+  // English
+  "people":         ["people","individuals"],
+  "men":            ["men","guys"],
+  "women":          ["women","ladies"],
+  "mothers":        ["mothers","moms"],
+  "professionals":  ["professionals","people"],
+  "students":       ["students","learners"],
+  "creators":       ["creators","content creators"],
+  "freelancers":    ["freelancers","independents"],
+  "coaches":        ["coaches","mentors"],
+};
+
+// Parse audience string into { subject, goal } — delegates to existing ceSubject/ceGoal
+function audienceLock(au, n, isES) {
+  if (!au) {
+    return { variants: [isES ? "tu audiencia" : "your audience"], subject: "", goal: "", blacklist: [] };
+  }
+
+  const normStr = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const auNorm  = normStr(au);
+
+  // Extract structured components from the audience phrase
+  const subject  = ceSubject(au, isES) || au;
+  const goal     = ceGoal(au, isES)    || "";
+
+  // Build per-input blacklist — only block terms NOT already in the original
+  const rawBL    = isES ? _AUDIENCE_BLACKLIST_ES : _AUDIENCE_BLACKLIST_EN;
+  const blacklist = rawBL.filter(term => !auNorm.includes(normStr(term)));
+
+  // Industry profile provides domain-specific goal rephrasing
+  const profile  = industryProfile(n, isES);
+
+  // Convert industry phrases from 2nd-person to 3rd-person
+  const to3rd = (ph) => (ph || "")
+    .replace(/\bverte\b/gi, "verse")
+    .replace(/\btu\b/gi,    "su")
+    .replace(/\btus\b/gi,   "sus")
+    .replace(/\bhacerte\b/gi, "hacerse")
+    .replace(/\bsentirte\b/gi,"sentirse");
+
+  const goalRephrases = (profile.phrases || []).slice(0, 5)
+    .map(ph => isES ? to3rd(ph) : ph)
+    .filter(Boolean);
+
+  // Find subject synonyms from the map (key match on normalized subject)
+  const subjNorm = normStr(subject);
+  let subjVariants = [subject];
+  for (const [key, vals] of Object.entries(_SUBJECT_SYNONYMS)) {
+    if (subjNorm === normStr(key) || subjNorm.startsWith(normStr(key))) {
+      subjVariants = vals;
+      break;
+    }
+  }
+
+  // Build variant pool — cross-product of subjects × connectors × goals (max 10)
+  const variants  = [au];
+  const notDupe   = (v) => !variants.some(x => normStr(x) === normStr(v));
+
+  if (goal) {
+    const connectors = isES
+      ? ["que quieren","que buscan","que desean","que necesitan"]
+      : ["who want to","who seek to","who want","looking to"];
+
+    const goalPool = [goal, ...goalRephrases.filter(g => normStr(g) !== normStr(goal))].slice(0, 4);
+
+    for (const s of subjVariants.slice(0, 3)) {
+      for (const c of connectors) {
+        for (const g of goalPool) {
+          if (variants.length >= 10) break;
+          const v = `${s} ${c} ${g}`;
+          if (notDupe(v)) variants.push(v);
+        }
+        if (variants.length >= 10) break;
+      }
+      if (variants.length >= 10) break;
+    }
+  }
+
+  return { variants: variants.slice(0, 10), subject, goal, blacklist };
+}
+
+// Post-generation purity scan — returns consistency score (0-100) and any violations
+function audiencePurityScan(outputObj, blacklist) {
+  const normStr = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const fullText = normStr(JSON.stringify(outputObj));
+  let violations  = 0;
+  const found     = [];
+  for (const term of blacklist) {
+    const t     = normStr(term).replace(/[\s-]+/g, "\\s+");
+    const regex = new RegExp("\\b" + t + "\\b", "g");
+    const count = (fullText.match(regex) || []).length;
+    if (count > 0) { violations += count; found.push(`${term}(×${count})`); }
+  }
+  return { score: Math.max(0, 100 - violations * 15), violations, contamination: found };
+}
+
 // ── VYRON Context Engine V2 ───────────────────────────────────────────────────
 // Generates rich semantic variations and enforces per-field + global phrase
 // limits so every output reads like a human strategist, not a template engine.
@@ -740,51 +874,12 @@ function ceGoal(phrase, isES) {
   return m ? m[1].trim() : null;
 }
 
-// Rich audience variation pool.
-// IMPORTANT: all Spanish variants must be noun phrases compatible with "los ___"
-// — never start with "quienes", "tu/su/mi", or feminine "personas" (causes "los quienes / los personas").
-function ceAuVars(au, isES) {
-  if (!au) return [isES ? "tu audiencia" : "your audience"];
-  const subject = ceSubject(au, isES);
-  const goal    = ceGoal(au, isES);
-  const unique  = (arr) => [...new Set(arr.filter(Boolean))];
-  if (isES) {
-    if (goal) {
-      const subj = (subject && subject !== au) ? subject : "clientes";
-      return unique([au, subj,
-        `clientes que quieren ${goal}`,
-        `clientes que buscan ${goal}`,
-        "clientes que cuidan su imagen",
-        "emprendedores que priorizan resultados",
-        "clientes ideales",
-        "clientes que buscan un cambio real",
-      ]);
-    }
-    const subj = (subject && subject !== au) ? subject : "clientes";
-    return unique([au, subj,
-      "clientes en este espacio",
-      "clientes que buscan resultados",
-      "clientes ideales",
-      "clientes con este perfil",
-      "clientes objetivo",
-    ]);
-  }
-  if (goal) {
-    const subj = (subject && subject !== au) ? subject : "clients";
-    return unique([au, subj,
-      `clients who want to ${goal}`,
-      `clients looking to ${goal}`,
-      `clients focused on ${goal}`,
-      "ideal clients",
-      "clients who care about results",
-    ]);
-  }
-  return unique([au,
-    "ideal clients",
-    "clients in this space",
-    "target clients",
-    "clients you serve",
-  ]);
+// Audience Lock Engine — returns only semantically safe variants of the original audience.
+// Never introduces banned business archetypes (empresarios, emprendedores, etc.)
+// unless the user typed them. Variants preserve the original subject + semantic goal.
+function ceAuVars(au, n, isES) {
+  const lock = audienceLock(au, n, isES);
+  return lock.variants.length ? lock.variants : [au || (isES ? "tu audiencia" : "your audience")];
 }
 
 // Industry-aware niche variation pool — uses domain-specific synonyms, not generic "sector/espacio"
@@ -812,7 +907,7 @@ function cePrVars(pr, isES) {
 // maxGlobal   = max times the ORIGINAL phrase appears across ALL fields combined.
 // After either limit is hit, the phrase is replaced with a cycling variation.
 function ctxBuild(n, au, pr, isES, maxPerField = 1, maxGlobal = 3) {
-  const auVars = ceAuVars(au, isES);
+  const auVars = ceAuVars(au, n, isES); // pass n so audienceLock can use industry profile
   const nVars  = ceNVars(n,  isES);
   const prVars = cePrVars(pr, isES);
   const s = { auG: 0, nG: 0, prG: 0, auVI: 1, nVI: 1, prVI: 1 };
@@ -1273,14 +1368,30 @@ app.post("/api/script/generate", (req, res) => {
     script:           activeScriptMap[hookType]      ?? activeScriptMap.curiosity,
   };
   // Apply Context Engine to body text — max 2 original occurrences globally across 8 fields
-  const body = ctxBatch(rawOutput, n, au, pr, isES, 2);
+  const body     = ctxBatch(rawOutput, n, au, pr, isES, 2);
   // Title + CTA use independent counters so they always get the original phrase once
-  res.json({
-    ...body,
-    cta:      ctxApply(pick(activeCtaMap[intensity]   ?? activeCtaMap.medium),      n, au, pr, isES),
-    title:    ctxApply(pick(activeTitleMap[hookType]  ?? activeTitleMap.curiosity), n, au, pr, isES),
-    hashtags: buildHashtags(n, au, pr, hookType, isES),
-  });
+  const cta      = ctxApply(pick(activeCtaMap[intensity]   ?? activeCtaMap.medium),      n, au, pr, isES);
+  const title    = ctxApply(pick(activeTitleMap[hookType]  ?? activeTitleMap.curiosity), n, au, pr, isES);
+  const hashtags = buildHashtags(n, au, pr, hookType, isES);
+
+  // ── Audience Lock Engine — purity scan + debug log ───────────────────────
+  const lockInfo = audienceLock(au, n, isES);
+  const purity   = audiencePurityScan({ ...body, cta, title }, lockInfo.blacklist);
+  console.log([
+    "╔══ AUDIENCE LOCK ENGINE ══════════════════════════════════════════",
+    `║  Original Audience : ${au}`,
+    `║  Detected Subject  : ${lockInfo.subject || "(plain)"}`,
+    `║  Detected Goal     : ${lockInfo.goal     || "(none)"}`,
+    `║  Safe Variants     : ${lockInfo.variants.length}`,
+    `║  Blocked Terms     : ${lockInfo.blacklist.length}`,
+    `║  Consistency Score : ${purity.score}/100`,
+    purity.contamination.length
+      ? `║  ⚠ Contamination   : ${purity.contamination.join(", ")}`
+      : "║  ✓ No contamination detected",
+    "╚══════════════════════════════════════════════════════════════════",
+  ].join("\n"));
+
+  res.json({ ...body, cta, title, hashtags, audienceConsistencyScore: purity.score });
 });
 
 // ── POST /api/content-strategy/generate ──────────────────────────────────────
