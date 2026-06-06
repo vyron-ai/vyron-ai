@@ -418,9 +418,9 @@ app.post("/api/content-planner/generate", (req, res) => {
   res.json({ entries, total, duration: dur, niche: n, product: pr, audience: au });
 });
 
-// ── VYRON Context Engine V1 ───────────────────────────────────────────────────
-// Prevents phrase repetition by building semantic variations of audience, niche,
-// and product inputs, then rotating them so no phrase repeats beyond a set limit.
+// ── VYRON Context Engine V2 ───────────────────────────────────────────────────
+// Generates rich semantic variations and enforces per-field + global phrase
+// limits so every output reads like a human strategist, not a template engine.
 
 function ceSubject(phrase, isES) {
   if (!phrase) return phrase;
@@ -432,89 +432,143 @@ function ceSubject(phrase, isES) {
 function ceGoal(phrase, isES) {
   const re = isES
     ? /(?:quieren?|buscan?|desean?|necesitan?|quiere|busca|desea|necesita)\s+(.+)$/i
-    : /(?:want[s]?|seek[s]?|need[s]?|desire[s]?)\s+(.+)$/i;
+    : /(?:want[s]?|seek[s]?|need[s]?|desire[s]?|look[s]?\s+to)\s+(.+)$/i;
   const m = phrase.match(re);
   return m ? m[1].trim() : null;
 }
 
+// Rich audience variation pool.
+// IMPORTANT: all Spanish variants must be noun phrases compatible with "los ___"
+// — never start with "quienes", "tu/su/mi", or feminine "personas" (causes "los quienes / los personas").
 function ceAuVars(au, isES) {
   if (!au) return [isES ? "tu audiencia" : "your audience"];
   const subject = ceSubject(au, isES);
   const goal    = ceGoal(au, isES);
-  const vars    = [au];
-  if (subject && subject !== au) vars.push(subject);
-  if (goal) {
-    if (isES) {
-      vars.push(`quienes buscan ${goal}`);
-      vars.push(`personas que priorizan ${goal}`);
-      vars.push(`quienes trabajan para lograr ${goal}`);
-      vars.push("tu cliente ideal");
-    } else {
-      vars.push(`those who want ${goal}`);
-      vars.push(`people focused on ${goal}`);
-      vars.push("your ideal client");
+  const unique  = (arr) => [...new Set(arr.filter(Boolean))];
+  if (isES) {
+    if (goal) {
+      const subj = (subject && subject !== au) ? subject : "clientes";
+      return unique([au, subj,
+        `clientes que quieren ${goal}`,
+        `clientes que buscan ${goal}`,
+        "clientes que cuidan su imagen",
+        "emprendedores que priorizan resultados",
+        "clientes ideales",
+        "clientes que buscan un cambio real",
+      ]);
     }
-  } else {
-    if (isES) {
-      vars.push(`profesionales en ${au}`);
-      vars.push("personas en este espacio");
-      vars.push("tu cliente ideal");
-    } else {
-      vars.push(`professionals in ${au}`);
-      vars.push("your ideal client");
-    }
+    const subj = (subject && subject !== au) ? subject : "clientes";
+    return unique([au, subj,
+      "clientes en este espacio",
+      "clientes que buscan resultados",
+      "clientes ideales",
+      "clientes con este perfil",
+      "clientes objetivo",
+    ]);
   }
-  return [...new Set(vars)].filter(Boolean);
+  if (goal) {
+    const subj = (subject && subject !== au) ? subject : "clients";
+    return unique([au, subj,
+      `clients who want to ${goal}`,
+      `clients looking to ${goal}`,
+      `clients focused on ${goal}`,
+      "ideal clients",
+      "clients who care about results",
+    ]);
+  }
+  return unique([au,
+    "ideal clients",
+    "clients in this space",
+    "target clients",
+    "clients you serve",
+  ]);
 }
 
+// Rich niche variation pool — avoids repeating the niche word every paragraph
 function ceNVars(n, isES) {
   if (!n) return [];
-  const words = n.split(/\s+/);
-  const short = words.length > 2 ? words.slice(0, 2).join(" ") : null;
-  const vars  = [n];
-  if (short) vars.push(short);
-  if (isES) { vars.push("este sector"); vars.push("este espacio"); vars.push("esta industria"); }
-  else       { vars.push("this space");  vars.push("this industry"); vars.push("this niche"); }
-  return [...new Set(vars)].filter(Boolean);
+  const short  = n.split(/\s+/).length > 2 ? n.split(/\s+/).slice(0, 2).join(" ") : null;
+  const unique = (arr) => [...new Set(arr.filter(Boolean))];
+  return unique(isES
+    ? [n, short, "este negocio", "este sector", "tu mercado", "tu marca", "este espacio", "la industria", "tu servicio"]
+    : [n, short, "this business", "this space", "your market", "this field", "the industry", "your niche"]
+  );
 }
 
+// Rich product/service variation pool
 function cePrVars(pr, isES) {
   if (!pr) return [];
-  const words = pr.split(/\s+/);
-  const short = words.length > 2 ? words.slice(0, 2).join(" ") : null;
-  const vars  = [pr];
-  if (short) vars.push(short);
-  if (isES) { vars.push("esta solución"); vars.push("este sistema"); vars.push("este servicio"); }
-  else       { vars.push("this solution"); vars.push("this system"); vars.push("this service"); }
-  return [...new Set(vars)].filter(Boolean);
+  const short  = pr.split(/\s+/).length > 2 ? pr.split(/\s+/).slice(0, 2).join(" ") : null;
+  const unique = (arr) => [...new Set(arr.filter(Boolean))];
+  return unique(isES
+    ? [pr, short, "esta experiencia", "este servicio", "esta solución", "el resultado", "este proceso", "este método"]
+    : [pr, short, "this service", "this solution", "the result", "this experience", "this approach", "this method"]
+  );
 }
 
-function ceRotate(text, phrase, vars, maxKeep) {
-  if (!phrase || !text || vars.length < 2) return text;
-  const esc = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  let count = 0, vi = 1;
-  return text.replace(new RegExp(esc, "g"), () => {
-    count++;
-    if (count <= maxKeep) return phrase;
-    const r = vars[vi % vars.length]; vi++;
-    return r || phrase;
-  });
+// Build a stateful applier for one full report.
+// maxPerField = max times the ORIGINAL phrase is kept per field.
+// maxGlobal   = max times the ORIGINAL phrase appears across ALL fields combined.
+// After either limit is hit, the phrase is replaced with a cycling variation.
+function ctxBuild(n, au, pr, isES, maxPerField = 1, maxGlobal = 3) {
+  const auVars = ceAuVars(au, isES);
+  const nVars  = ceNVars(n,  isES);
+  const prVars = cePrVars(pr, isES);
+  const s = { auG: 0, nG: 0, prG: 0, auVI: 1, nVI: 1, prVI: 1 };
+
+  function applyOne(text, phrase, vars, gk, vik) {
+    if (!phrase || !phrase.trim() || !text) return text;
+    const esc = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    let fc = 0;
+    return text.replace(new RegExp(esc, "gi"), () => {
+      fc++; s[gk]++;
+      if (fc <= maxPerField && s[gk] <= maxGlobal) return phrase;
+      const r = vars[s[vik] % vars.length]; s[vik]++;
+      return r || phrase;
+    });
+  }
+
+  return {
+    applyField(text) {
+      if (!text || typeof text !== "string") return text;
+      text = applyOne(text, au, auVars, "auG",  "auVI");
+      text = applyOne(text, n,  nVars,  "nG",   "nVI");
+      text = applyOne(text, pr, prVars, "prG",  "prVI");
+      return text;
+    },
+  };
 }
 
-function ctxApply(text, n, au, pr, isES, maxAu = 2, maxN = 3, maxPr = 2) {
-  if (!text || typeof text !== "string") return text;
-  text = ceRotate(text, au, ceAuVars(au, isES), maxAu);
-  text = ceRotate(text, n,  ceNVars(n,  isES),  maxN);
-  text = ceRotate(text, pr, cePrVars(pr, isES), maxPr);
-  return text;
+// Single-field application — fresh counter per call (used for Content Planner entries)
+function ctxApply(text, n, au, pr, isES) {
+  return ctxBuild(n, au, pr, isES, 1, 1).applyField(text || "");
 }
 
-function ctxBatch(fields, n, au, pr, isES, maxAu = 2, maxN = 3, maxPr = 2) {
+// Batch application — one shared global counter across all fields in the object
+function ctxBatch(fields, n, au, pr, isES, maxGlobal = 3) {
+  const ctx = ctxBuild(n, au, pr, isES, 1, maxGlobal);
   const out = {};
   for (const [k, v] of Object.entries(fields)) {
-    out[k] = typeof v === "string" ? ctxApply(v, n, au, pr, isES, maxAu, maxN, maxPr) : v;
+    out[k] = typeof v === "string" ? ctx.applyField(v) : v;
   }
   return out;
+}
+
+// Keyword-based hashtag builder — never concatenates full audience/product phrases
+function buildHashtags(n, au, pr, hookType, isES) {
+  const stopES = new Set(["que","con","los","las","del","para","una","uno","por","quien","quienes","quieren","buscan","desean","hacia","desde","entre","sobre","pero","como","sus","son","han","hay","muy","sin","ser","fue"]);
+  const stopEN = new Set(["the","and","for","who","that","with","are","from","want","seek","need","have","been","will","they","their","this","when","what","how","why","can","not","look","looks"]);
+  const stop   = isES ? stopES : stopEN;
+  const kw = (phrase) => (phrase || "")
+    .toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .split(/\s+/).map(w => w.replace(/[^a-z0-9]/g, ""))
+    .filter(w => w.length > 2 && !stop.has(w));
+  const tags = [...new Set([...kw(n).slice(0, 2), ...kw(pr).slice(0, 2), ...kw(au).slice(0, 1)])].map(t => "#" + t);
+  const ctx  = isES
+    ? ["#negocio","#estrategia","#contenido","#marketingdigital","#emprendimiento","#marca","#viral","#fyp"]
+    : ["#business","#marketing","#content","#growth","#entrepreneur","#brand","#viral","#fyp"];
+  for (const t of ctx) { if (tags.length >= 7) break; if (!tags.includes(t)) tags.push(t); }
+  return tags.slice(0, 7).join(" ");
 }
 
 // ── Context Intelligence Layer ────────────────────────────────────────────────
@@ -605,11 +659,13 @@ app.post("/api/script/generate", (req, res) => {
     return res.status(400).json({ error: "niche, product, and audience are required" });
   }
 
-  const n   = niche.trim();
-  const pr  = product.trim();
-  const au  = audience.trim();
-  const au1 = au.replace(/s$/i, "");
+  const n    = niche.trim();
+  const pr   = product.trim();
+  const au   = audience.trim();
   const isES = language !== "English";
+  // For "X que Y" phrases, au1 = the subject noun only; avoids "un jóvenes que quieren verse profesionale serio"
+  const _auSubj = ceSubject(au, isES);
+  const au1  = (_auSubj && _auSubj !== au) ? _auSubj.split(/\s+/)[0] : au.replace(/s$/i, "");
 
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
@@ -758,13 +814,7 @@ app.post("/api/script/generate", (req, res) => {
     ],
   };
 
-  // ── Hashtags ──────────────────────────────────────────────────────────────────
-  const tag  = (s) => "#" + s.replace(/\s+/g, "").toLowerCase();
-  const hashtagSets = [
-    `${tag(n)} ${tag(pr)} ${tag(au)} #contentcreator #${hookType}marketing #viral2025 #shortsvideo #fyp`,
-    `${tag(n)}tips ${tag(au)}life ${tag(pr)} #reels #tiktoktips #fyp #creatoreconomy #${intensity}hook`,
-    `${tag(n)}hacks ${tag(au)} #contentmarketing ${tag(pr)} #foryoupage #viral #shorts #neurohook`,
-  ];
+  // ── Hashtags — keyword-based, no full-phrase concatenation ──────────────────
 
   // ── Spanish templates ─────────────────────────────────────────────────────────
   const sarMapES = {
@@ -903,19 +953,12 @@ app.post("/api/script/generate", (req, res) => {
     ],
   };
 
-  const hashtagSetsES = [
-    `${tag(n)} ${tag(pr)} ${tag(au)} #creadoresdecontenido #marketingdigital #viral2025 #emprendimiento #fyp`,
-    `${tag(n)}tips ${tag(au)}latina ${tag(pr)} #reels #consejos #fyp #economiacreativa #negocios`,
-    `${tag(n)}hacks ${tag(au)} #contenidodigital ${tag(pr)} #parati #viralespanol #shorts #estrategia`,
-  ];
-
   const activeSarMap    = isES ? sarMapES    : sarMap;
   const activePainMap   = isES ? painMapES   : painMap;
   const activeCurMap    = isES ? curiosityMapES : curiosityMap;
   const activeScriptMap = isES ? scriptMapES : scriptMap;
   const activeCtaMap    = isES ? ctaMapES    : ctaMap;
   const activeTitleMap  = isES ? titleMapES  : titleMap;
-  const activeHashtags  = isES ? hashtagSetsES : hashtagSets;
 
   const rawOutput = {
     desires:          intel.desires,
@@ -926,12 +969,16 @@ app.post("/api/script/generate", (req, res) => {
     painTrigger:      pick(activePainMap[intensity]  ?? activePainMap.medium),
     curiosityTrigger: pick(activeCurMap[hookType]    ?? activeCurMap.curiosity),
     script:           activeScriptMap[hookType]      ?? activeScriptMap.curiosity,
-    cta:              pick(activeCtaMap[intensity]   ?? activeCtaMap.medium),
-    title:            pick(activeTitleMap[hookType]  ?? activeTitleMap.curiosity),
-    hashtags:         pick(activeHashtags),
   };
-  // Apply VYRON Context Engine V1 — rotate phrase repetitions across all fields
-  res.json(ctxBatch(rawOutput, n, au, pr, isES));
+  // Apply Context Engine to body text — max 2 original occurrences globally across 8 fields
+  const body = ctxBatch(rawOutput, n, au, pr, isES, 2);
+  // Title + CTA use independent counters so they always get the original phrase once
+  res.json({
+    ...body,
+    cta:      ctxApply(pick(activeCtaMap[intensity]   ?? activeCtaMap.medium),      n, au, pr, isES),
+    title:    ctxApply(pick(activeTitleMap[hookType]  ?? activeTitleMap.curiosity), n, au, pr, isES),
+    hashtags: buildHashtags(n, au, pr, hookType, isES),
+  });
 });
 
 // ── POST /api/content-strategy/generate ──────────────────────────────────────
@@ -947,11 +994,12 @@ app.post("/api/content-strategy/generate", (req, res) => {
   if (!niche.trim()) return res.status(400).json({ error: "niche is required" });
 
   const n   = niche.trim();
-  const pr  = product.trim();
-  const au  = audience.trim();
-  const au1 = au.replace(/s$/i, "");
-  const g   = goal.toLowerCase().replace(/[\s-]+/g, "_");
+  const pr   = product.trim();
+  const au   = audience.trim();
+  const g    = goal.toLowerCase().replace(/[\s-]+/g, "_");
   const isES = language !== "English";
+  const _auSubj2 = ceSubject(au, isES);
+  const au1  = (_auSubj2 && _auSubj2 !== au) ? _auSubj2.split(/\s+/)[0] : au.replace(/s$/i, "");
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
   // ── 1. Content mix ────────────────────────────────────────────────────────

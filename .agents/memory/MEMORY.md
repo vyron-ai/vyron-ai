@@ -2,4 +2,4 @@
 - [Video thumbnail fallback pattern](video-thumbnail-fallback.md) — thumbnail extracted on-demand (only on video error) via /api/thumbnail/video; blob stored in state for deferred thumbnail fetch.
 - [Global Language + Stage Selectors](global-language-stage.md) — SettingsProvider (localStorage) + BusinessSettings component wired into all 5 AI modules; server endpoints accept language/businessStage; isES flag selects between EN/ES template maps.
 - [Server architecture](server-architecture.md) — Express server (server/index.js) is the single process for API + static files; workflow must build+start Express, not Vite alone.
-- [Context Engine V1](context-engine.md) — phrase rotation functions live in server/index.js before buildAudienceIntelligence; per-field limits (maxAu=2,maxN=3,maxPr=2); counters reset between fields.
+- [Context Engine V2](context-engine-v2.md) — phrase-variation rules, Spanish grammar constraints for variants, script vs title/CTA separation pattern, au1 fix for complex phrases, buildHashtags keyword design.
