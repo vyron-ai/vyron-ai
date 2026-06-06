@@ -418,6 +418,309 @@ app.post("/api/content-planner/generate", (req, res) => {
   res.json({ entries, total, duration: dur, niche: n, product: pr, audience: au });
 });
 
+// ── VYRON Industry Intelligence Engine V1 ────────────────────────────────────
+// Detects the industry from a niche string and returns domain-specific vocabulary,
+// synonyms, and audience language. Makes every output sound like it was written
+// by a strategist who knows that niche — not a generic content generator.
+
+const _INDUSTRY_MAP = [
+  {
+    // ── Barbería / Salón / Grooming ─────────────────────────────────────────
+    match: ["barberia","barbero","peluqueria","salon de belleza","salon de peluqueria","estetica","grooming","barbershop","barber","hair salon","beauty salon","hairstylist","shave","afeitado","corte de pelo","belleza masculina"],
+    es: {
+      synonyms:       ["la imagen personal","el cuidado personal","el grooming","la apariencia"],
+      keywords:       ["imagen","presencia","apariencia","estilo","confianza","primera impresión","cuidado personal","autoridad visual"],
+      phrases:        ["verte mejor","proyectar seguridad","mejorar tu imagen","causar una mejor impresión","presencia profesional"],
+      desires:        "proyectar confianza, causar una primera impresión impactante y verse al nivel de quien ya son por dentro",
+      fears:          "verse descuidados, no causar buena impresión o que su apariencia los ponga en desventaja antes de abrir la boca",
+      pains:          "la desconexión entre cómo se sienten por dentro y cómo se presentan al mundo — una imagen que no refleja su nivel real",
+      transformation: "de verse del montón a proyectar autoridad visual — de invisible a memorable, de descuidado a siempre impecable",
+    },
+    en: {
+      synonyms:       ["personal image","personal care","grooming","appearance"],
+      keywords:       ["image","presence","appearance","style","confidence","first impression","personal care"],
+      phrases:        ["look better","project confidence","improve your image","make a great impression","professional presence"],
+      desires:        "to project confidence, make a powerful first impression and look like the person they already are on the inside",
+      fears:          "looking unkempt, making a bad first impression or letting their appearance put them at a disadvantage",
+      pains:          "the gap between how they feel inside and how they present to the world — an image that doesn't match their actual level",
+      transformation: "from blending in to projecting real authority — from overlooked to unforgettable, from inconsistent to always sharp",
+    },
+  },
+  {
+    // ── Gym / Fitness / Entrenamiento ───────────────────────────────────────
+    match: ["gym","gimnasio","fitness","entrenamiento","personal trainer","crossfit","deporte","ejercicio","musculacion","atletismo","fuerza","cardio","nutricion deportiva","workout","weightlifting"],
+    es: {
+      synonyms:       ["el entrenamiento","el fitness","la disciplina física","la salud física"],
+      keywords:       ["disciplina","energía","físico","rendimiento","hábitos","consistencia","fuerza","salud"],
+      phrases:        ["transformar tu cuerpo","ganar consistencia","mejorar tu rendimiento","construir hábitos sólidos","progresar de forma sostenida"],
+      desires:        "un físico que refleje su esfuerzo, hábitos que funcionen sin fuerza de voluntad heroica y el progreso visible que los mantenga motivados",
+      fears:          "estancarse, perder el progreso acumulado o dedicar meses de esfuerzo sin ver resultados reales",
+      pains:          "la inconsistencia que sabotea el progreso — empezar bien y abandonar, o esforzarse sin ver el físico que deberían tener",
+      transformation: "de inconsistente a imparable — de empezar y abandonar a construir el físico y los hábitos que se sostienen solos",
+    },
+    en: {
+      synonyms:       ["training","fitness","physical discipline","the gym"],
+      keywords:       ["discipline","energy","physique","performance","habits","consistency","strength","health"],
+      phrases:        ["transform your body","build consistency","improve performance","build solid habits","make real progress"],
+      desires:        "a physique that reflects their effort, habits that work without heroic willpower, and visible progress that keeps them motivated",
+      fears:          "plateauing, losing all accumulated progress, or putting in months of effort without seeing real results",
+      pains:          "the inconsistency that sabotages any progress — starting strong and falling off, or grinding without seeing the results they should",
+      transformation: "from inconsistent to unstoppable — from starting-and-quitting to building the physique and habits that sustain themselves",
+    },
+  },
+  {
+    // ── Dentista / Salud bucal ───────────────────────────────────────────────
+    match: ["dentista","dental","odontologia","ortodoncia","blanqueamiento","clinica dental","salud bucal","implante","dentist","orthodontic","teeth whitening"],
+    es: {
+      synonyms:       ["la salud bucal","la estética dental","el cuidado dental","la sonrisa"],
+      keywords:       ["sonrisa","confianza","estética dental","salud bucal","apariencia","autoestima","bienestar"],
+      phrases:        ["sonreír con confianza","mejorar tu sonrisa","sentirte seguro al sonreír","salud dental impecable"],
+      desires:        "sonreír sin inhibiciones, sentirse seguros en cualquier conversación y tener una sonrisa que los favorezca, no que los frene",
+      fears:          "que su sonrisa los haga sentir inseguros, que los demás lo noten o que un problema menor se convierta en uno grave",
+      pains:          "evitar sonreír libremente, cubrir la boca al reír o sentir que su sonrisa no refleja quiénes son en realidad",
+      transformation: "de esconder la sonrisa a mostrarla sin pensarlo — de inseguridad e incomodidad a confianza plena en cada conversación",
+    },
+    en: {
+      synonyms:       ["oral health","dental care","dental aesthetics","the smile"],
+      keywords:       ["smile","confidence","dental aesthetics","oral health","appearance","self-esteem","wellbeing"],
+      phrases:        ["smile with confidence","improve your smile","feel secure when smiling","flawless dental health"],
+      desires:        "to smile without inhibition, feel confident in any conversation and have a smile that works for them, not against them",
+      fears:          "that their smile makes them self-conscious, that others notice it, or that a small problem becomes a serious one",
+      pains:          "hiding their smile, covering their mouth when laughing, or feeling like their smile doesn't reflect who they really are",
+      transformation: "from hiding their smile to showing it without thinking — from insecurity to full confidence in every interaction",
+    },
+  },
+  {
+    // ── Restaurante / Gastronomía ────────────────────────────────────────────
+    match: ["restaurante","cocina","chef","gastronomia","cafeteria","cafe","catering","comida","bar","bistro","panaderia","pasteleria","restaurant","food","dining"],
+    es: {
+      synonyms:       ["la experiencia gastronómica","el servicio","la propuesta culinaria","el local"],
+      keywords:       ["experiencia","sabor","servicio","ambiente","fidelización","calidad","hospitalidad"],
+      phrases:        ["crear experiencias memorables","fidelizar clientes","diferenciarse por el servicio","llenar el local","generar reseñas de 5 estrellas"],
+      desires:        "un local lleno de clientes fieles que vuelven y refieren — no solo por la comida, sino por la experiencia que solo ellos ofrecen",
+      fears:          "mesas vacías, clientes que no regresan o que la competencia los opaque sin entender por qué",
+      pains:          "atraer clientes una vez pero no lograr que vuelvan — invertir en publicidad sin ver el retorno en ventas reales",
+      transformation: "de depender del volumen a tener una base de clientes fieles — de transacciones a una comunidad gastronómica real",
+    },
+    en: {
+      synonyms:       ["the dining experience","the service","the culinary offer","the venue"],
+      keywords:       ["experience","flavor","service","atmosphere","loyalty","quality","hospitality"],
+      phrases:        ["create memorable experiences","build customer loyalty","differentiate through service","fill tables","generate 5-star reviews"],
+      desires:        "a full house of loyal regulars who return and refer — not just for the food, but for the experience only they offer",
+      fears:          "empty tables, one-time visitors who never return, or competitors outshining them without understanding why",
+      pains:          "attracting customers once but failing to bring them back — spending on ads without seeing it return in real revenue",
+      transformation: "from volume-dependent to a loyal customer base — from transactions to a real dining community",
+    },
+  },
+  {
+    // ── Abogado / Legal ──────────────────────────────────────────────────────
+    match: ["abogado","derecho","juridico","legal","asesoria legal","bufete","firma legal","litigio","contrato","notario","fiscal","lawyer","attorney","law firm","legal services"],
+    es: {
+      synonyms:       ["la asesoría legal","la protección jurídica","el servicio legal","la defensa"],
+      keywords:       ["protección","seguridad jurídica","tranquilidad","defensa","riesgo legal","certeza","derechos"],
+      phrases:        ["proteger tu patrimonio","evitar riesgos legales","tener certeza jurídica","resolver sin complicaciones","dormir tranquilo"],
+      desires:        "certeza jurídica, protección real de lo que han construido y la tranquilidad de saber que están blindados ante cualquier riesgo",
+      fears:          "perder lo que han construido por un error legal evitable o enfrentar una situación crítica sin la preparación necesaria",
+      pains:          "la incertidumbre de no saber si están legalmente protegidos — operar con riesgo invisible o actuar tarde ante un problema crítico",
+      transformation: "de expuestos a protegidos — de operar con incertidumbre jurídica a tener certeza total sobre lo que construyen y cómo lo defienden",
+    },
+    en: {
+      synonyms:       ["legal advisory","legal protection","the legal service","the defense"],
+      keywords:       ["protection","legal security","peace of mind","defense","legal risk","certainty","rights"],
+      phrases:        ["protect your assets","avoid legal risks","have legal certainty","resolve without complications","sleep soundly"],
+      desires:        "legal certainty, real protection of what they've built, and the peace of mind of knowing they're fully shielded against any risk",
+      fears:          "losing what they've built through an avoidable legal mistake, or facing a critical situation without proper preparation",
+      pains:          "not knowing if they're legally protected — operating with invisible risk or acting too late when a problem becomes critical",
+      transformation: "from exposed to protected — from operating with legal uncertainty to having total clarity over what they're building and how it's defended",
+    },
+  },
+  {
+    // ── Marketing / Agencia / Digital ───────────────────────────────────────
+    match: ["marketing","agencia","publicidad","branding","redes sociales","social media","digital marketing","seo","google ads","contenido digital","influencer","agency","advertising","growth hacking"],
+    es: {
+      synonyms:       ["la estrategia de marketing","el crecimiento digital","la visibilidad","el posicionamiento"],
+      keywords:       ["crecimiento","posicionamiento","ventas","visibilidad","alcance","conversión","retorno","clientes"],
+      phrases:        ["atraer clientes de forma consistente","posicionarse como referente","convertir seguidores en clientes","generar ventas predecibles"],
+      desires:        "un flujo predecible de clientes calificados, posicionamiento claro y un sistema de ventas que funcione sin depender de su tiempo",
+      fears:          "invertir en publicidad sin retorno, quedar invisible mientras la competencia crece o no saber qué está fallando en la estrategia",
+      pains:          "tiempo y dinero invertido en marketing sin resultados claros — activos en redes pero sin clientes ni crecimiento real",
+      transformation: "de invisible a referente — de publicar sin rumbo a tener un sistema que atrae, convierte y retiene clientes de forma sistemática",
+    },
+    en: {
+      synonyms:       ["the marketing strategy","digital growth","visibility","positioning"],
+      keywords:       ["growth","positioning","sales","visibility","reach","conversion","return","clients"],
+      phrases:        ["attract clients consistently","position as a reference","convert followers into clients","generate predictable revenue"],
+      desires:        "a predictable flow of qualified clients, clear positioning, and a sales system that works without depending on their time",
+      fears:          "investing in ads without return, staying invisible while competitors grow, or not knowing what's broken in the strategy",
+      pains:          "time and money in marketing with no clear results — active online but not generating clients or real growth",
+      transformation: "from invisible to reference — from posting aimlessly to a system that attracts, converts and retains clients systematically",
+    },
+  },
+  {
+    // ── Inmobiliaria / Real Estate ───────────────────────────────────────────
+    match: ["inmobiliaria","bienes raices","propiedades","agente inmobiliario","real estate","propiedad","arriendo","alquiler","inversion inmobiliaria","hipoteca","realtor","housing","realestate"],
+    es: {
+      synonyms:       ["la inversión inmobiliaria","el patrimonio","los bienes raíces","las propiedades"],
+      keywords:       ["patrimonio","inversión","plusvalía","propiedad","rentabilidad","activos","estabilidad","independencia financiera"],
+      phrases:        ["construir patrimonio real","invertir con certeza","generar rentabilidad","multiplicar activos","asegurar el futuro"],
+      desires:        "patrimonio que se valorice, ingresos pasivos que den libertad y la certeza de haber tomado la decisión correcta antes de que sea tarde",
+      fears:          "comprar mal, perder dinero en una inversión que parecía segura o que el mercado los deje atrás mientras otros construyen patrimonio",
+      pains:          "la parálisis por análisis — saber que el ladrillo es buena inversión pero no tener claridad sobre cuándo, dónde ni cómo entrar correctamente",
+      transformation: "de ahorrador pasivo a inversionista activo — de dinero inactivo a activos que crecen y generan rentabilidad predecible",
+    },
+    en: {
+      synonyms:       ["real estate investment","wealth building","the property market","property"],
+      keywords:       ["wealth","investment","appreciation","property","return","assets","stability","financial independence"],
+      phrases:        ["build real wealth","invest with certainty","generate returns","multiply assets","secure the future"],
+      desires:        "wealth that appreciates, passive income that gives freedom, and certainty of having made the right move at the right time",
+      fears:          "buying wrong, losing money on an investment that seemed safe, or being left behind while others build wealth",
+      pains:          "analysis paralysis — knowing real estate is a good investment but lacking clarity on when, where and how to enter correctly",
+      transformation: "from passive saver to active investor — from idle money to assets that grow and generate predictable returns",
+    },
+  },
+  {
+    // ── Coaching / Educación / Desarrollo personal ───────────────────────────
+    match: ["coach","coaching","mentor","mentoria","educacion","formacion","cursos","academia","aprendizaje","desarrollo personal","capacitacion","training program","life coach","business coach"],
+    es: {
+      synonyms:       ["el coaching","la formación","el desarrollo personal","el programa"],
+      keywords:       ["transformación","crecimiento personal","claridad","enfoque","potencial","habilidades","mentoría","resultados"],
+      phrases:        ["desbloquear tu potencial","acelerar tu crecimiento","obtener claridad","pasar al siguiente nivel","construir habilidades reales"],
+      desires:        "transformación real y medible, claridad sobre su camino y la certeza de estar avanzando sistemáticamente hacia su mejor versión",
+      fears:          "invertir en formación y no aplicarla, quedarse en el mismo punto después de haberlo intentado todo o ser la excepción",
+      pains:          "saber qué necesitan cambiar pero no saber cómo — tener motivación sin el sistema que la convierta en resultados consistentes",
+      transformation: "de saber pero no aplicar a ejecutar con claridad — de potencial sin activar a crecimiento medible y sostenido semana a semana",
+    },
+    en: {
+      synonyms:       ["coaching","the training program","the development journey","the mentorship"],
+      keywords:       ["transformation","personal growth","clarity","focus","potential","skills","mentorship","results"],
+      phrases:        ["unlock your potential","accelerate your growth","gain clarity","move to the next level","build real skills"],
+      desires:        "real and measurable transformation, clarity on their path, and the certainty they're consistently moving toward their best version",
+      fears:          "investing in training and not applying it, staying in the same place after trying everything, or being the exception",
+      pains:          "knowing what they need to change but not knowing how — having motivation without the system to convert it into consistent results",
+      transformation: "from knowing but not applying to executing with clarity — from untapped potential to measurable, sustained growth every week",
+    },
+  },
+  {
+    // ── Finanzas / Inversiones / Dinero ──────────────────────────────────────
+    match: ["finanzas","inversiones","ahorro","financiero","banca","credito","prestamo","trading","bolsa","cripto","libertad financiera","riqueza","finance","investment","crypto","wealth management","financial planning"],
+    es: {
+      synonyms:       ["las finanzas personales","la gestión financiera","el dinero","los ingresos"],
+      keywords:       ["dinero","ingresos","ahorro","inversión","libertad financiera","flujo de caja","riqueza","independencia"],
+      phrases:        ["hacer crecer tu dinero","generar ingresos pasivos","construir riqueza real","dejar de intercambiar tiempo por dinero"],
+      desires:        "libertad financiera real — no preocuparse por el dinero, generar ingresos sin intercambiar tiempo y tener certeza sobre el futuro económico",
+      fears:          "trabajar toda la vida sin construir riqueza, tomar malas decisiones financieras o depender de un ingreso que podría desaparecer",
+      pains:          "ganar dinero pero no acumularlo — ingresos que llegan y se van sin construir el patrimonio que debería seguir de ese esfuerzo",
+      transformation: "de intercambiar tiempo por dinero a construir activos — de vivir al día a un sistema financiero que trabaja mientras ellos descansan",
+    },
+    en: {
+      synonyms:       ["personal finance","financial management","money","wealth"],
+      keywords:       ["money","income","savings","investment","financial freedom","cash flow","wealth","independence"],
+      phrases:        ["grow your money","generate passive income","build real wealth","stop trading time for money"],
+      desires:        "real financial freedom — not worrying about money, generating income without trading time, and certainty about their financial future",
+      fears:          "working their whole life without building wealth, making bad financial decisions, or depending on income that could disappear",
+      pains:          "earning money but not accumulating it — income that comes and goes without building the wealth that should follow from their effort",
+      transformation: "from trading time for money to building assets — from paycheck to paycheck to a financial system that works while they rest",
+    },
+  },
+  {
+    // ── Salud / Bienestar / Terapia ───────────────────────────────────────────
+    match: ["salud","bienestar","medico","terapeuta","psicologia","terapia","nutricion","nutricionista","wellness","clinica","ansiedad","estres","health","therapy","nutrition","wellbeing","psycholog"],
+    es: {
+      synonyms:       ["el bienestar","la salud integral","el cuidado personal","el equilibrio"],
+      keywords:       ["bienestar","salud","equilibrio","calidad de vida","energía","tranquilidad","vitalidad","salud mental"],
+      phrases:        ["sentirte bien de verdad","recuperar tu energía","vivir con equilibrio","priorizar tu salud","cuidarte sin culpa"],
+      desires:        "sentirse verdaderamente bien — con energía, equilibrio emocional y la certeza de estar cuidando su salud de forma proactiva",
+      fears:          "que un problema menor se convierta en grave por no atenderlo a tiempo, o que su calidad de vida se deteriore sin poder hacer nada",
+      pains:          "vivir con síntomas que afectan su calidad de vida sin saber exactamente qué los causa ni cómo resolverlos de forma definitiva",
+      transformation: "de gestionar síntomas a tener salud de verdad — de sobrevivir el día a vivir con la energía y equilibrio que merecen",
+    },
+    en: {
+      synonyms:       ["wellbeing","health","wellness","balance"],
+      keywords:       ["wellbeing","health","balance","quality of life","energy","peace of mind","vitality","mental health"],
+      phrases:        ["feel genuinely well","recover your energy","live in balance","prioritize your health","care for yourself without guilt"],
+      desires:        "to feel truly well — with energy, emotional balance and the certainty they're caring for their health proactively",
+      fears:          "a small problem becoming serious because they didn't address it in time, or their quality of life deteriorating",
+      pains:          "living with symptoms that affect their quality of life without knowing exactly what causes them or how to resolve them definitively",
+      transformation: "from managing symptoms to having real health — from surviving the day to living with the energy and balance they deserve",
+    },
+  },
+  {
+    // ── Tecnología / Software / Startups ──────────────────────────────────────
+    match: ["tecnologia","software","tech","app","aplicacion","desarrollo web","programacion","saas","automatizacion","startup","producto digital","inteligencia artificial","erp","crm","plataforma digital"],
+    es: {
+      synonyms:       ["la solución tecnológica","la plataforma","la automatización","el software"],
+      keywords:       ["eficiencia","automatización","escalabilidad","productividad","integración","datos","velocidad","innovación"],
+      phrases:        ["automatizar procesos","escalar sin fricción","ahorrar tiempo y recursos","tomar decisiones con datos","operar más rápido"],
+      desires:        "procesos automatizados que liberen su tiempo, capacidad de escalar sin añadir fricción y datos claros para mejores decisiones",
+      fears:          "invertir en tecnología que no se adopta, implementaciones que generan más problemas de los que resuelven o quedar obsoleto rápido",
+      pains:          "procesos manuales que consumen tiempo valioso, sistemas desconectados y decisiones tomadas sin datos reales o con información incompleta",
+      transformation: "de operación manual a sistemas que trabajan solos — de reactividad y caos operativo a control total con automatización real",
+    },
+    en: {
+      synonyms:       ["the tech solution","the platform","automation","the software"],
+      keywords:       ["efficiency","automation","scalability","productivity","integration","data","speed","innovation"],
+      phrases:        ["automate processes","scale without friction","save time and resources","make data-driven decisions","operate faster"],
+      desires:        "automated processes that free their time, the ability to scale without friction, and clear data for better decisions",
+      fears:          "investing in tech that doesn't get adopted, implementations that create more problems than they solve, or falling behind quickly",
+      pains:          "manual processes consuming valuable time, disconnected systems, and decisions made without real or complete data",
+      transformation: "from manual operations to systems that run themselves — from reactive chaos to total control with real automation",
+    },
+  },
+  {
+    // ── E-commerce / Tienda online ─────────────────────────────────────────────
+    match: ["ecommerce","tienda online","tienda virtual","venta online","dropshipping","shopify","marketplace","woocommerce","tienda digital","online store"],
+    es: {
+      synonyms:       ["la tienda online","el e-commerce","las ventas digitales","el comercio digital"],
+      keywords:       ["conversión","ventas","tráfico","retención","ingresos","ticket promedio","clientes recurrentes","escala"],
+      phrases:        ["convertir visitas en ventas","aumentar el ticket promedio","fidelizar compradores","escalar ingresos de forma predecible"],
+      desires:        "ventas predecibles, compradores que regresan solos y una tienda que genera ingresos sistemáticamente sin atención constante",
+      fears:          "invertir en tráfico que no convierte, acumular inventario sin rotación o competir solo por precio sin poder ganar",
+      pains:          "tráfico sin ventas — visitas que llegan pero no compran, o compradores que no vuelven a pesar de una buena primera experiencia",
+      transformation: "de tienda activa a motor de ingresos — de picos de tráfico impredecibles a un sistema que convierte y retiene de forma sostenida",
+    },
+    en: {
+      synonyms:       ["the online store","e-commerce","digital sales","the shop"],
+      keywords:       ["conversion","sales","traffic","retention","revenue","average order","repeat customers","scale"],
+      phrases:        ["convert visitors to sales","increase average order value","retain buyers","scale revenue predictably"],
+      desires:        "predictable sales, customers who return on their own, and a store that generates income systematically without constant attention",
+      fears:          "investing in traffic that doesn't convert, inventory piling up, or competing on price without a way to win",
+      pains:          "traffic without sales — visitors who arrive but don't buy, or buyers who never return despite a good first experience",
+      transformation: "from active store to revenue engine — from traffic spike dependency to a system that consistently converts and retains",
+    },
+  },
+];
+
+const _INDUSTRY_FALLBACK = {
+  es: {
+    synonyms:       ["este negocio","este servicio","tu propuesta"],
+    keywords:       ["resultados","crecimiento","confianza","valor","posicionamiento","clientes"],
+    phrases:        ["generar resultados consistentes","crear valor real","crecer de forma sostenida"],
+    desires:        "resultados concretos, crecimiento sostenido y la certeza de que lo que hacen funciona de forma predecible",
+    fears:          "invertir esfuerzo sin ver resultados claros o que la competencia avance mientras ellos se estancan",
+    pains:          "la falta de un sistema que genere resultados de forma consistente — mucho esfuerzo, pocos resultados medibles",
+    transformation: "de esfuerzo sin dirección a un sistema que genera resultados — del azar al control sobre los outcomes",
+  },
+  en: {
+    synonyms:       ["this business","this service","your offer"],
+    keywords:       ["results","growth","confidence","value","positioning","clients"],
+    phrases:        ["generate consistent results","create real value","grow sustainably"],
+    desires:        "concrete results, sustained growth, and the certainty that what they're doing works predictably",
+    fears:          "investing effort without clear results, or watching competitors advance while they stagnate",
+    pains:          "the lack of a system that generates results consistently — a lot of effort, few measurable outcomes",
+    transformation: "from directionless effort to a system that generates results — from depending on luck to controlling outcomes",
+  },
+};
+
+// Returns the industry profile for a niche string — falls back to generic vocabulary
+function industryProfile(n, isES) {
+  const norm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const nn   = norm(n);
+  for (const ind of _INDUSTRY_MAP) {
+    if (ind.match.some(w => nn.includes(norm(w)))) return isES ? ind.es : ind.en;
+  }
+  return isES ? _INDUSTRY_FALLBACK.es : _INDUSTRY_FALLBACK.en;
+}
+
 // ── VYRON Context Engine V2 ───────────────────────────────────────────────────
 // Generates rich semantic variations and enforces per-field + global phrase
 // limits so every output reads like a human strategist, not a template engine.
@@ -484,15 +787,13 @@ function ceAuVars(au, isES) {
   ]);
 }
 
-// Rich niche variation pool — avoids repeating the niche word every paragraph
+// Industry-aware niche variation pool — uses domain-specific synonyms, not generic "sector/espacio"
 function ceNVars(n, isES) {
   if (!n) return [];
-  const short  = n.split(/\s+/).length > 2 ? n.split(/\s+/).slice(0, 2).join(" ") : null;
-  const unique = (arr) => [...new Set(arr.filter(Boolean))];
-  return unique(isES
-    ? [n, short, "este negocio", "este sector", "tu mercado", "tu marca", "este espacio", "la industria", "tu servicio"]
-    : [n, short, "this business", "this space", "your market", "this field", "the industry", "your niche"]
-  );
+  const short   = n.split(/\s+/).length > 2 ? n.split(/\s+/).slice(0, 2).join(" ") : null;
+  const profile = industryProfile(n, isES);
+  const unique  = (arr) => [...new Set(arr.filter(Boolean))];
+  return unique([n, short, ...profile.synonyms]);
 }
 
 // Rich product/service variation pool
@@ -573,32 +874,34 @@ function buildHashtags(n, au, pr, hookType, isES) {
 
 // ── Context Intelligence Layer ────────────────────────────────────────────────
 function buildAudienceIntelligence(n, au, au1, pr, hookType, intensity, isES = false) {
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const pick    = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const profile = industryProfile(n, isES);
+  const [k0 = "resultados", k1 = "confianza", k2 = "crecimiento"] = profile.keywords;
 
   if (isES) {
     const desireVariantsES = [
-      `Los ${au} quieren algo más que mejores resultados en ${n} — buscan la transformación de identidad que llega cuando finalmente lo tienen bajo control. El deseo real es certeza: saber que tienen un sistema que funciona, que se acumula con el tiempo, y que no tienen que cuestionar cada movimiento. Quieren ser la persona que domina ${n}, no la que sigue intentando.`,
-      `Lo que impulsa a los ${au} en ${n} no es solo el resultado — es la predictibilidad. Buscan un proceso que produzca resultados de forma confiable. Detrás de eso hay un deseo más profundo: sentirse competentes y creíbles en su espacio. Quieren que ${n} sea una fuente de confianza, no un recordatorio constante de lo que aún no han logrado.`,
-      `En el fondo, lo que persiguen los ${au} en ${n} es progreso visible y medible. No solo buscan resultados — buscan la historia que podrán contar sobre sí mismos cuando lleguen. Quieren ser el ${au1} que descifró ${n} mientras todos los demás seguían atascados.`,
-      `Los ${au} buscan el momento en que ${n} deje de ser algo que tienen que empujar y empiece a funcionar por sí solo. Quieren el efecto de acumulación — impulso que no requiera esfuerzo heroico para sostenerse.`,
+      `Los ${au} buscan algo más que mejores resultados en ${n} — buscan ${profile.desires}. El deseo de fondo es certeza: saber que tienen un proceso que les da ${k0} y ${k1} de forma predecible. Quieren ser la referencia en su entorno, no seguir buscando la fórmula.`,
+      `Lo que impulsa a los ${au} en ${n} no es solo el resultado — es lo que ese resultado representa: ${k0}, ${k1} y la sensación de haber llegado a donde sabían que podían. Detrás hay un deseo más profundo: sentirse competentes y seguros. Quieren que ${n} sea una fuente de ${k1}, no un recordatorio de lo que aún no han logrado.`,
+      `En el fondo, lo que persiguen los ${au} en ${n} es progreso visible — específicamente: ${profile.desires}. No buscan solo resultados. Buscan la historia que podrán contar sobre sí mismos cuando lleguen.`,
+      `Los ${au} buscan el momento en que ${n} deje de ser algo que tienen que empujar y empiece a generar ${k0} sin esfuerzo heroico. Quieren el efecto acumulativo — ${k1} y ${k2} que no requieran reiniciar desde cero cada vez.`,
     ];
     const fearVariantsES = [
-      `El miedo más profundo de los ${au} no es el fracaso — es el tiempo desperdiciado seguido de la realización de que trabajaron en las cosas equivocadas en ${n} todo el tiempo. Justo después viene el miedo a verse ingenuos: la persona que siguió consejos que los ${au} más experimentados ya sabían que no funcionaban.`,
-      `Los ${au} temen en silencio que le estén perdiendo algo fundamental sobre ${n} que todos los demás ya comprenden, y que su ventana para adelantarse se está cerrando. El pensamiento de empezar de cero — abandonar el esfuerzo ya invertido — está en el fondo de cada decisión.`,
-      `El miedo que mantiene a los ${au} en su lugar es comprometerse visiblemente con un enfoque de ${n} y fallar públicamente. Prefieren esperar hasta estar seguros, lo que significa que a menudo esperan demasiado. Debajo de esa hesitación hay un miedo más personal: que su situación específica sea una excepción.`,
-      `Lo que los ${au} más quieren evitar en ${n} es sentirse estancados viendo cómo otros avanzan. Temen la versión donde miran atrás y ven que la oportunidad estuvo ahí, el conocimiento era accesible, y aun así no actuaron a tiempo.`,
+      `El miedo más profundo de los ${au} no es el fracaso aislado — es invertir tiempo real en ${n} y descubrir que estuvieron trabajando en las cosas equivocadas todo ese tiempo. Justo detrás: el miedo a ${profile.fears}. Quieren evitar ser esa historia.`,
+      `Los ${au} temen en silencio que ${profile.fears}. El pensamiento de empezar de cero — abandonar el esfuerzo ya invertido — está en el fondo de cada decisión que posponen.`,
+      `Lo que paraliza a los ${au} en ${n} es comprometerse visiblemente con un enfoque y que no funcione para su situación específica. Debajo de esa hesitación hay algo más personal: que su caso sea la excepción que confirma la regla.`,
+      `Lo que los ${au} más quieren evitar es que ${profile.fears}. Y junto a eso: mirar atrás en un año y ver que la oportunidad estuvo frente a ellos — que el conocimiento era accesible — y que no actuaron a tiempo.`,
     ];
     const painVariantsES = [
-      `Ahora mismo, los ${au} viven una fricción específica y agotadora: tienen acceso a más información sobre ${n} que nunca, y menos claridad sobre qué hacer realmente. Cada recurso nuevo agrega una decisión. Cada consejo contradice algo que leyeron la semana pasada. No están atascados porque no saben suficiente — están atascados porque saben demasiado y no pueden convertirlo en acción.`,
-      `La frustración que viven los ${au} en ${n} ahora mismo es la inconsistencia que no pueden explicar ni solucionar. Tienen días buenos y malos, sin entender de manera confiable el porqué. Los resultados parecen depender de variables que no pueden identificar ni controlar.`,
-      `Lo que los ${au} enfrentan diariamente en ${n} es la brecha entre lo que saben que deberían hacer y lo que realmente ejecutan. Pueden describir el enfoque correcto. Lo han leído. Pero cuando llega el momento de la implementación consistente, algo falla — motivación, claridad, estructura, o las tres cosas.`,
-      `La situación actual de la mayoría de ${au} en ${n} es una de ineficiencia invisible. Están ocupados, producen esfuerzo, y genuinamente creen que progresan — pero los resultados no lo reflejan. La frustración no es solo sobre resultados. Es sobre la desconexión entre el trabajo que ponen y el resultado que debería seguir lógicamente.`,
+      `Ahora mismo, los ${au} viven: ${profile.pains}. Tienen acceso a más información sobre ${n} que nunca, y menos claridad sobre qué hacer. Cada nuevo recurso agrega una decisión, cada consejo contradice algo que ya probaron.`,
+      `La frustración que viven los ${au} en ${n} ahora mismo es la inconsistencia que no pueden explicar ni resolver: ${profile.pains}. Los resultados parecen depender de variables que no pueden identificar ni controlar.`,
+      `Lo que los ${au} enfrentan diariamente en ${n} es la brecha entre lo que saben que deberían tener — ${k0}, ${k1} — y lo que realmente tienen hoy. Pueden describir cómo se vería el éxito. Pero la ejecución consistente falla cuando más importa.`,
+      `La situación actual de la mayoría de ${au} en ${n} es: ${profile.pains}. Están activos, ponen esfuerzo real, y creen que progresan — pero los resultados no lo reflejan. La frustración no es solo sobre resultados. Es sobre la desconexión entre el trabajo que ponen y lo que debería seguir lógicamente.`,
     ];
     const transformationVariantsES = [
-      `La transformación que buscan los ${au} no es solo mejores resultados en ${n} — es una relación completamente diferente con ${n}. Al otro lado de esa transformación, ${n} se siente liviano. El proceso es claro. El progreso es consistente y visible. La versión de sí mismos que están construyendo no tiene que pensar mucho en ${n} — simplemente funciona.`,
-      `Si ${pr} entrega lo que los ${au} realmente necesitan, terminan en una versión de su vida donde ${n} ya no es fuente de estrés ni incertidumbre. Quieren una realidad donde los resultados llegan de manera predecible, saben exactamente qué hacer, y el impulso siempre avanza — sin reiniciar desde cero cada pocas semanas.`,
-      `El estado final deseado por los ${au} en ${n} es engañosamente simple: quieren despertar y saber que su enfoque está funcionando. No a veces. No cuando las condiciones son perfectas. Funcionando como base — de forma consistente, sin esfuerzo heroico ni corrección constante. ${pr} es el puente hacia esa versión.`,
-      `Lo que los ${au} realmente buscan cuando invierten en ${n} es tiempo de vuelta y certeza hacia adelante. Quieren pasar de "creo que esto funciona" a "sé que esto funciona" — y desde ahí, a los resultados acumulativos que siguen de esa claridad.`,
+      `La transformación que buscan los ${au} no es solo mejores resultados en ${n} — es pasar a: ${profile.transformation}. Al otro lado, ${n} se siente diferente: ${k0} consistente, ${k1} real, y un proceso que no requiere empezar de cero constantemente.`,
+      `Si ${pr} entrega lo que los ${au} necesitan, terminan en: ${profile.transformation}. Un estado donde ${k0} llega de forma predecible, donde saben exactamente qué hacer, y donde el impulso siempre avanza sin reiniciar.`,
+      `El estado final deseado por los ${au} en ${n} es: ${profile.transformation}. No a veces. No cuando las condiciones son perfectas. Como base — de forma consistente, sin esfuerzo heroico. ${pr} es el puente hacia esa versión.`,
+      `Lo que los ${au} realmente quieren cuando invierten en ${n} es ${profile.desires} — y pasar de "creo que esto funciona" a "sé que esto funciona." Desde ahí, a los resultados acumulativos que siguen de esa claridad.`,
     ];
     return {
       desires:        pick(desireVariantsES),
@@ -608,32 +911,31 @@ function buildAudienceIntelligence(n, au, au1, pr, hookType, intensity, isES = f
     };
   }
 
+  // English — same pattern with English profile keywords
+  const [e0 = "results", e1 = "confidence", e2 = "growth"] = profile.keywords;
   const desireVariants = [
-    `${au} want more than better ${n} results — they want the identity shift that comes with having it handled. The real desire is confidence: knowing they have a system that works, knowing it compounds, and not having to second-guess every move. They want to become someone who has ${n} figured out, not someone who is still trying to figure it out. That distinction matters enormously to them.`,
-    `What drives ${au} in ${n} isn't just the outcome — it's predictability. They want a process that produces results reliably, regardless of motivation or conditions. Underneath that is a deeper desire: to feel like a competent, credible person in their space. They want ${n} to be a source of confidence, not a constant reminder of what they haven't cracked yet.`,
-    `At the core of what ${au} are chasing in ${n} is visible, measurable progress — the kind they can point to and say "this is working." They're not just pursuing results. They're pursuing the story they get to tell about themselves once those results arrive. They want to be the ${au1} who figured out ${n} while everyone else was still struggling with it.`,
-    `${au} are chasing a specific feeling: the moment when ${n} stops being something they have to push through and starts being something that runs on its own. They want the compounding effect. They want momentum that doesn't require heroic effort to sustain. And quietly, they want to feel like they made the right decision before it became obvious to everyone else.`,
+    `${au} want more than better ${n} results — they want ${profile.desires}. The real desire is certainty: knowing they have a system that gives them ${e0} and ${e1} predictably. They want to be the reference in their space, not still searching for the formula.`,
+    `What drives ${au} in ${n} isn't just the outcome — it's what it represents: ${e0}, ${e1} and the feeling of having arrived where they knew they could. Underneath is a deeper desire: to feel capable and certain. They want ${n} to be a source of ${e1}, not a constant reminder of what they haven't cracked yet.`,
+    `At the core of what ${au} are chasing in ${n} is visible, measurable progress — specifically: ${profile.desires}. Not just results. The story they get to tell about themselves once they arrive.`,
+    `${au} are chasing the moment when ${n} stops being something they push through and starts generating ${e0} without heroic effort. They want the compounding effect — ${e1} and ${e2} that doesn't require restarting from zero each time.`,
   ];
-
   const fearVariants = [
-    `The deepest fear for ${au} isn't failure in isolation — it's wasted time followed by the realization that they were working on the wrong things in ${n} the entire time. Close behind that is the fear of being seen as naive: the person who followed advice that more experienced ${au} already knew didn't work. They want to avoid being that story.`,
-    `${au} are quietly afraid of two things converging at once: that they're missing something fundamental about ${n} that everyone else already understands, and that their window to get ahead is closing while they're still in the learning phase. The thought of starting over — of abandoning invested effort — sits in the background of every decision they make.`,
-    `The fear that keeps ${au} in place is the fear of committing visibly to a ${n} approach and failing publicly. They'd rather wait until they're certain, which means they often wait too long. Underneath that hesitation is a more personal fear: that their specific situation is somehow an exception, and that what works for other ${au} simply won't work for them.`,
-    `What ${au} most want to avoid in ${n} is the feeling of being stuck while watching others move. They fear the version of events where they look back in a year and see that the opportunity was there, the knowledge was accessible, and they still didn't act on it in time. That future regret is more motivating — and more paralyzing — than the present challenge.`,
+    `The deepest fear for ${au} isn't isolated failure — it's investing real time in ${n} and discovering they were working on the wrong things the whole time. Close behind: the fear of ${profile.fears}. They want to avoid being that story.`,
+    `${au} are quietly afraid that ${profile.fears}. The thought of starting over — abandoning invested effort — sits in the background of every decision they postpone or avoid.`,
+    `What keeps ${au} in place is committing visibly to a ${n} approach and having it not work for their specific situation. Underneath that hesitation is something more personal: that their case is somehow the exception.`,
+    `What ${au} most want to avoid is ${profile.fears}. And alongside that: looking back in a year seeing the opportunity was there — the knowledge was accessible — and they still didn't act in time.`,
   ];
-
   const painVariants = [
-    `Right now, ${au} are experiencing a specific and exhausting friction: they have access to more ${n} information than ever before, and less clarity on what to actually do. Every new resource adds a decision. Every piece of advice contradicts something they read last week. They're not stuck because they don't know enough — they're stuck because they know too much and can't filter it into action.`,
-    `The frustration ${au} live with in ${n} right now is inconsistency that they can't explain or fix. They have good days and bad days, and no reliable understanding of why. Results seem to depend on variables they can't identify or control. They've tried multiple approaches, and none of them has stuck long enough to actually compound. The effort is real. The return isn't matching it.`,
-    `What ${au} deal with daily in ${n} is the gap between what they know they should be doing and what they're actually executing on. They can describe the right approach. They've read about it. But when it comes to consistent implementation, something breaks down — motivation, clarity, structure, or all three. That execution gap is the real pain, and almost nobody names it directly.`,
-    `The current situation for most ${au} in ${n} is one of invisible inefficiency. They're busy, they're producing effort, and they genuinely believe they're making progress — but the scoreboard doesn't reflect it. The frustration isn't just about results. It's about the disconnect between the work they're putting in and the outcome that should logically follow from it.`,
+    `Right now, ${au} are living: ${profile.pains}. They have more ${n} information than ever, and less clarity on what to actually do. Every new resource adds a decision. Every piece of advice contradicts something they already tried.`,
+    `The frustration ${au} live with in ${n} right now is inconsistency they can't explain or fix: ${profile.pains}. Results seem to depend on variables they can't identify or control.`,
+    `What ${au} deal with daily in ${n} is the gap between what they know they should have — ${e0}, ${e1} — and what they actually have today. They can describe what success looks like. But consistent execution breaks down when it matters most.`,
+    `The current situation for most ${au} in ${n} is: ${profile.pains}. They're active, putting in real effort, genuinely believing they're progressing — but the results don't reflect it. The frustration isn't just about outcomes. It's about the disconnect between their work and what should logically follow.`,
   ];
-
   const transformationVariants = [
-    `The transformation ${au} are looking for isn't just better ${n} results — it's a different relationship with ${n} entirely. On the other side of that transformation, ${n} feels light. The process is clear. Progress is consistent and visible. The version of themselves they're working toward doesn't have to think hard about ${n} — it just works, reliably, because the system underneath it is solid.`,
-    `If ${pr} delivers what ${au} actually need, they end up in a version of their life where ${n} is no longer a source of stress or uncertainty. The transformation they want is one where results come predictably, where they know exactly what to do when they sit down, and where the momentum is always moving forward — not restarting from zero every few weeks.`,
-    `The desired end state for ${au} in ${n} is deceptively simple: they want to wake up and know their approach is working. Not sometimes. Not when conditions are perfect. Working as a baseline — consistently, quietly, without requiring heroic effort or constant course-correction. ${pr} is the bridge between the version of ${n} they're living now and that version.`,
-    `What ${au} are really trying to buy when they invest in ${n} is time back and certainty forward. The transformation they want frees them from the constant loop of questioning whether they're doing the right things. They want to move from "I think this is working" to "I know this is working" — and from there, to the compounding results that follow from that clarity.`,
+    `The transformation ${au} are looking for isn't just better ${n} results — it's moving to: ${profile.transformation}. On the other side, ${n} feels different: consistent ${e0}, real ${e1}, a process that doesn't require restarting from zero.`,
+    `If ${pr} delivers what ${au} actually need, they end up in: ${profile.transformation}. A state where ${e0} comes predictably, where they know exactly what to do, and where momentum is always moving forward.`,
+    `The desired end state for ${au} in ${n} is: ${profile.transformation}. Not sometimes. Not when conditions are perfect. As a baseline — consistently, without heroic effort. ${pr} is the bridge.`,
+    `What ${au} are really trying to buy when they invest in ${n} is ${profile.desires} — and moving from "I think this is working" to "I know this is working." From there, to the compounding results that follow from that clarity.`,
   ];
 
   return {
