@@ -244,6 +244,7 @@ app.post("/api/content-planner/generate", (req, res) => {
   const au  = audience.trim();
   const dur = Math.min(Math.max(parseInt(duration) || 30, 7), 90);
   const isES = language !== "English";
+  const tr   = buildTransformation(n, pr, isES);
 
   const freqMap  = { daily: 7, "5x_week": 5, "3x_week": 3, "2x_week": 2 };
   const ppw      = freqMap[postingFrequency] ?? 7;
@@ -308,46 +309,46 @@ app.post("/api/content-planner/generate", (req, res) => {
 
   const titleTemplatesES = {
     curiosity: [
-      `El secreto de ${n} que los mejores nunca comparten`,
-      `Lo que nadie te dice sobre ${n}`,
-      `El lado oculto de ${n} que cambia todo`,
-      `Por qué la mayoría de los consejos de ${n} tienen este hueco`,
+      `La verdadera razón por la que en ${n} no llegan a ${tr.practicalOutcome} (y no es lo que piensas)`,
+      `Lo que nadie te dice sobre cómo conseguir ${tr.hiddenDesire} en ${n}`,
+      `El lado oculto de ${n} que separa a los que tienen ${tr.emotionalTransformation} de los que no`,
+      `Por qué la mayoría de las opciones de ${n} no entregan ${tr.practicalOutcome}`,
     ],
     pain: [
-      `Por qué tus resultados en ${n} siguen decepcionándote`,
-      `La verdadera razón por la que ${n} se siente tan difícil ahora`,
-      `¿Luchando con ${n}? Aquí está la respuesta honesta`,
-      `El problema de ${n} que nadie quiere admitir`,
+      `Por qué en ${n} todavía no tienes ${tr.practicalOutcome} — y el arreglo exacto`,
+      `La verdadera razón por la que ${tr.fearAvoided} en ${n}`,
+      `¿Todavía sin ${tr.practicalOutcome} en ${n}? Aquí está la respuesta honesta`,
+      `El problema de ${n} que impide ${tr.emotionalTransformation} y nadie quiere admitir`,
     ],
     story: [
-      `Cómo reconstruí mi ${n} desde cero`,
-      `Lo que ${n} me enseñó que ningún curso pudo`,
-      `El punto de inflexión en ${n} que no vi venir`,
-      `Mi mayor fracaso en ${n} — y lo que vino después`,
+      `Cómo pasé de querer ${tr.hiddenDesire} a tenerlo de verdad en ${n}`,
+      `Lo que finalmente me dio ${tr.practicalOutcome} en ${n} cuando las otras opciones no lo hicieron`,
+      `El punto de inflexión en ${n} que convierte a cualquiera en ${tr.identityShift}`,
+      `Mi mayor error en ${n} — y cómo finalmente conseguí ${tr.emotionalTransformation}`,
     ],
     authority: [
-      `El marco de ${n} que realmente aguanta`,
-      `Lo que los datos muestran sobre ${n}`,
-      `${n} bien hecho: lo que separa a los mejores`,
-      `Las claves no negociables de una estrategia sólida de ${n}`,
+      `El enfoque de ${n} que realmente entrega ${tr.practicalOutcome} de forma consistente`,
+      `Lo que los que ya tienen ${tr.emotionalTransformation} en ${n} hacen diferente`,
+      `${n} bien hecho: lo que separa a los que llegan a ${tr.socialTransformation}`,
+      `Las claves no negociables para conseguir ${tr.practicalOutcome} en ${n}`,
     ],
     mistake: [
-      `El error #1 de ${n} que probablemente estás cometiendo ahora`,
-      `Deja de hacer esto en tu ${n} de inmediato`,
-      `3 hábitos de ${n} que te están costando en silencio`,
-      `Este movimiento común de ${n} está empeorando las cosas`,
+      `El error #1 de ${n} que te mantiene sin ${tr.practicalOutcome}`,
+      `Deja de hacer esto en ${n} — está impidiendo ${tr.emotionalTransformation}`,
+      `3 decisiones de ${n} que te cuestan ${tr.practicalOutcome} en silencio`,
+      `Este movimiento común en ${n} es la razón por la que ${tr.fearAvoided}`,
     ],
     opportunity: [
-      `La oportunidad de ${n} que la mayoría ignora ahora`,
-      `Hay una brecha en ${n} ahora mismo — aprovéchala`,
-      `Por qué ahora es el mejor momento para apostarlo todo a ${n}`,
-      `El ángulo de ${n} que tu competencia todavía no encontró`,
+      `La oportunidad de ${n} para tener ${tr.practicalOutcome} que la mayoría ignora ahora`,
+      `Hay una ventana en ${n} ahora mismo para lograr ${tr.socialTransformation} — aprovéchala`,
+      `Por qué ahora es el mejor momento para conseguir ${tr.practicalOutcome} en ${n}`,
+      `El ángulo de ${n} para llegar a ${tr.emotionalTransformation} que tu competencia todavía no encontró`,
     ],
     viral: [
-      `El formato de ${n} que está explotando ahora (y por qué)`,
-      `Por qué esta tendencia de ${n} está reemplazando todo lo demás`,
-      `Todos hablan de esto en ${n} — aquí está la verdad`,
-      `El cambio en ${n} que tomó a todos por sorpresa`,
+      `El estándar de ${n} que ya entrega ${tr.practicalOutcome} (la mayoría no se ha actualizado)`,
+      `Por qué el enfoque antiguo de ${n} dejó de dar ${tr.emotionalTransformation}`,
+      `Todos hablan de ${tr.practicalOutcome} en ${n} — aquí está la verdad`,
+      `El cambio en ${n} que ya está produciendo ${tr.socialTransformation} tomó a todos por sorpresa`,
     ],
   };
 
@@ -378,13 +379,13 @@ app.post("/api/content-planner/generate", (req, res) => {
   };
 
   const ctaTemplatesES = {
-    curiosity:   ["Comenta 'CÓMO' y te mando el desglose completo", "Sígueme para la respuesta en la parte 2", "Guarda esto antes de que desaparezca"],
-    pain:        ["Comenta 'ESTANCADO' si esto eres tú ahora", "Escríbeme por DM — te muestro el primer paso", "Enlace en bio si estás listo para solucionar esto"],
-    story:       ["Comenta 'YO TAMBIÉN' si has estado aquí", "Sígueme para el próximo capítulo", "Comparte esto con alguien que lo necesita"],
-    authority:   ["Guarda este marco para después", "Sígueme si quieres el desglose completo", "Comenta 'MARCO' para la versión en PDF"],
-    mistake:     ["Comenta 'CULPABLE' si lo has hecho", "Sígueme — publico el arreglo cada semana", "Guarda esto antes de cometer el mismo error"],
-    opportunity: ["Comenta 'DENTRO' si quieres los detalles", "Enlace en bio — la ventana no va a quedar abierta", "Sígueme para detectar la próxima oportunidad temprano"],
-    viral:       ["Comparte esto con un creador que lo necesita", "Sígueme para lo que está funcionando ahora", "Duplícalo o une — dime tu perspectiva"],
+    curiosity:   [`Comenta 'CÓMO' y te mando el desglose completo de cómo conseguir ${tr.practicalOutcome}`, "Sígueme para la respuesta en la parte 2", "Guarda esto antes de que desaparezca"],
+    pain:        [`Comenta 'LISTO' si quieres ${tr.practicalOutcome} y todavía no lo tienes`, `Escríbeme por DM — te muestro el primer paso hacia ${tr.emotionalTransformation}`, "Enlace en bio si estás listo para solucionar esto"],
+    story:       [`Comenta 'YO TAMBIÉN' si todavía no tienes ${tr.practicalOutcome}`, "Sígueme para el próximo capítulo", "Comparte esto con alguien que lo necesita"],
+    authority:   [`Guarda esto si quieres ${tr.practicalOutcome} de forma consistente`, "Sígueme si quieres el desglose completo", `Comenta '${n.toUpperCase()}' para los detalles`],
+    mistake:     [`Comenta 'CULPABLE' si esto te ha impedido ${tr.practicalOutcome}`, `Sígueme — publico cómo conseguir ${tr.emotionalTransformation} cada semana`, "Guarda esto antes de cometer el mismo error"],
+    opportunity: [`Comenta 'DENTRO' si quieres ${tr.practicalOutcome} antes de que se cierre la ventana`, "Enlace en bio — la ventana no va a quedar abierta", "Sígueme para detectar la próxima oportunidad temprano"],
+    viral:       [`Comparte esto con alguien que quiere ${tr.practicalOutcome} en ${n}`, `Sígueme para lo que realmente entrega ${tr.emotionalTransformation} ahora`, "Duplícalo o une — dime tu perspectiva"],
   };
 
   const titleTemplates = isES ? titleTemplatesES : titleTemplatesEN;
@@ -967,36 +968,223 @@ function buildHashtags(n, au, pr, hookType, isES) {
   return tags.slice(0, 7).join(" ");
 }
 
+// ── VYRON Transformation Engine V1 ───────────────────────────────────────────
+// People don't buy the product — they buy the transformation.
+// Detects the transformation archetype from niche + product and returns 7 dimensions:
+// visibleProduct, hiddenDesire, emotionalTransformation, socialTransformation,
+// practicalOutcome, fearAvoided, identityShift.
+function buildTransformation(n, pr, isES) {
+  const text = ((n || "") + " " + (pr || "")).toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  const isAppearance = /corte|peluquer|barber|estilis|cabello|pelo|hair|nail|u[ñn]as|makeup|maquill|estetica|spa|aesthetic|lash|pest[aá]n|cejas?|brow|look|imagen personal/.test(text);
+  const isPhysical   = /gym|gimnasio|entrena|fitness|nutri|dieta|diet|ejercici|workout|train|weight|peso|musculo|muscle|cardio|hiit|crossfit|tonific/.test(text);
+  const isHealth     = /dent|sonris|blanque|whitening|cl[íi]nic|salud|health|limpieza dental|medic|doctor|odonto|mental|terapia|therapy|quiropract/.test(text);
+  const isExperience = /restaur|food|comida|chef|cater|event|experienc|baker|pasteler|coffee|caf[eé]|\bbar\b|cocina|brunch|sushi|pizz|helad/.test(text);
+  const isBusiness   = /marketing|publicidad|\bads\b|redes sociales|social media|contenido digital|\bcontent\b|\bbrand\b|agencia|agency|\bseo\b|\bemail\b|digital|ventas|sales|\bcrm\b|ecommerce|tienda/.test(text);
+  const isLegal      = /abogad|lawyer|legal|contable|contador|account|consultor|asesor|auditor|fiscal|seguro|insurance|notari/.test(text);
+  const isEducation  = /curso|course|coach|mentor[íi]a|mentor|escuela|school|academia|workshop|taller|certific|aprender|learn|formaci/.test(text);
+  const isProperty   = /inmobi|real estate|\bcasa\b|piso|apartamento|propert|arrendar|renta|alquiler/.test(text);
+
+  if (isES) {
+    if (isAppearance) return {
+      visibleProduct:          pr || n,
+      hiddenDesire:            "verse bien y causar una primera impresión que no pide disculpas",
+      emotionalTransformation: "seguridad, orgullo propio y sensación de control sobre su imagen",
+      socialTransformation:    "respeto inmediato, autoridad visual, ser recordado por cómo se presenta",
+      practicalOutcome:        "apariencia mejorada, presencia más fuerte, imagen profesional",
+      fearAvoided:             "verse descuidado o invisible — perder oportunidades por mala presentación",
+      identityShift:           "alguien que cuida su imagen con intención — visible en cada contexto",
+    };
+    if (isPhysical) return {
+      visibleProduct:          pr || n,
+      hiddenDesire:            "disciplina real, un cuerpo diferente, energía constante y atractivo renovado",
+      emotionalTransformation: "confianza, fuerza mental y la sensación de poder sobre sí mismo",
+      socialTransformation:    "presencia física notable, reconocimiento por el cambio visible, atractivo renovado",
+      practicalOutcome:        "composición corporal mejorada, energía sostenida, rendimiento físico superior",
+      fearAvoided:             "verse igual en un año — desperdiciar el potencial físico que ya tienen",
+      identityShift:           "alguien disciplinado — la versión física que siempre supieron que podían ser",
+    };
+    if (isHealth) return {
+      visibleProduct:          pr || n,
+      hiddenDesire:            "sonrisa segura, confianza social y sentirse saludable y atractivo",
+      emotionalTransformation: "seguridad, ligereza y ganas de mostrarse sin pensarlo dos veces",
+      socialTransformation:    "primera impresión limpia, accesibilidad, bienestar que se nota a simple vista",
+      practicalOutcome:        "salud mejorada, apariencia cuidada y sensación de bienestar real",
+      fearAvoided:             "vergüenza en situaciones sociales — una apariencia que apaga su presencia",
+      identityShift:           "alguien que cuida su salud y lo demuestra — sin excusas ni postergaciones",
+    };
+    if (isExperience) return {
+      visibleProduct:          pr || n,
+      hiddenDesire:            "un momento memorable, conexión real y sabor que queda en la memoria",
+      emotionalTransformation: "placer, bienestar y nostalgia positiva que quieren repetir",
+      socialTransformation:    "compartir algo especial, impresionar a quien invitan, crear recuerdos juntos",
+      practicalOutcome:        "experiencia superior, recuerdos creados, momento que realmente vale la pena",
+      fearAvoided:             "gastar en algo olvidable — decepcionar a quien llevan consigo",
+      identityShift:           "alguien que sabe elegir experiencias que realmente valen la pena",
+    };
+    if (isBusiness) return {
+      visibleProduct:          pr || n,
+      hiddenDesire:            "clientes que llegan solos, ventas predecibles y visibilidad que posiciona",
+      emotionalTransformation: "confianza en su negocio, claridad y alivio de saber que el sistema funciona",
+      socialTransformation:    "autoridad de marca, reconocimiento en su mercado, liderazgo percibido",
+      practicalOutcome:        "más clientes, más ventas y alcance que crece con cada publicación",
+      fearAvoided:             "quedar invisible mientras competidores capturan la atención que merecen ellos",
+      identityShift:           "un negocio que atrae — que no persigue clientes, sino que los recibe",
+    };
+    if (isLegal) return {
+      visibleProduct:          pr || n,
+      hiddenDesire:            "protección real, paz mental y certeza de que lo construido no está en riesgo",
+      emotionalTransformation: "tranquilidad, control y la sensación de tener las bases bien puestas",
+      socialTransformation:    "credibilidad, seriedad percibida y confianza que proyectan ante otros",
+      practicalOutcome:        "riesgo minimizado, procesos en orden y cumplimiento garantizado",
+      fearAvoided:             "perder lo construido — multas, problemas legales o fiscales evitables",
+      identityShift:           "alguien que opera con seriedad — cubierto, protegido, en orden",
+    };
+    if (isEducation) return {
+      visibleProduct:          pr || n,
+      hiddenDesire:            "habilidades reales, resultados medibles y la versión más capaz de sí mismos",
+      emotionalTransformation: "confianza, claridad y orgullo de dominar algo que antes parecía lejano",
+      socialTransformation:    "reconocimiento por su progreso y autoridad en lo que saben hacer",
+      practicalOutcome:        "habilidades aplicables, avance real y certificación que los respalda",
+      fearAvoided:             "invertir tiempo y dinero en formación que no cambia nada concreto",
+      identityShift:           "alguien que invirtió en sí mismo — y tiene resultados para demostrarlo",
+    };
+    if (isProperty) return {
+      visibleProduct:          pr || n,
+      hiddenDesire:            "estabilidad, un lugar propio y la sensación de haber llegado a algo sólido",
+      emotionalTransformation: "seguridad, orgullo y la tranquilidad de tener algo que les pertenece",
+      socialTransformation:    "estatus, independencia y ser propietario de algo que otros respetan",
+      practicalOutcome:        "propiedad propia, inversión sólida y espacio que refleja quiénes son",
+      fearAvoided:             "seguir pagando renta sin construir nada — dinero que se va sin retorno",
+      identityShift:           "alguien que tomó la decisión que la mayoría solo habla — y tiene el título para probarlo",
+    };
+    return {
+      visibleProduct:          pr || n,
+      hiddenDesire:            "resultados reales, claridad y la certeza de que su inversión vale",
+      emotionalTransformation: "confianza, alivio y la sensación de avanzar en la dirección correcta",
+      socialTransformation:    "reconocimiento, credibilidad y posicionamiento entre quienes los rodean",
+      practicalOutcome:        "resultados visibles, progreso medible y retorno real sobre su tiempo",
+      fearAvoided:             "invertir tiempo y dinero y quedar en el mismo lugar — sin avance visible",
+      identityShift:           "alguien que tomó acción cuando importaba — y tiene el progreso para mostrarlo",
+    };
+  }
+
+  // English
+  if (isAppearance) return {
+    visibleProduct:          pr || n,
+    hiddenDesire:            "looking great and making a first impression that doesn't need to apologize",
+    emotionalTransformation: "confidence, self-pride and control over how they present themselves",
+    socialTransformation:    "immediate respect, visual authority, being remembered for how they show up",
+    practicalOutcome:        "improved appearance, stronger presence, professional-looking image",
+    fearAvoided:             "looking careless or forgettable — losing opportunities because of poor presentation",
+    identityShift:           "someone who takes care of their image intentionally — visible in every room",
+  };
+  if (isPhysical) return {
+    visibleProduct:          pr || n,
+    hiddenDesire:            "real discipline, a different body, sustained energy and renewed attractiveness",
+    emotionalTransformation: "confidence, mental strength and the feeling of power over themselves",
+    socialTransformation:    "physical presence, recognition for visible change, renewed attractiveness",
+    practicalOutcome:        "improved body composition, sustained energy, real physical performance",
+    fearAvoided:             "looking the same in a year — wasting the physical potential they already have",
+    identityShift:           "someone disciplined — the physical version of themselves they always knew they could be",
+  };
+  if (isHealth) return {
+    visibleProduct:          pr || n,
+    hiddenDesire:            "a confident smile, social ease and feeling healthy and attractive",
+    emotionalTransformation: "confidence, lightness and showing up without thinking twice",
+    socialTransformation:    "clean first impression, approachability, visible wellbeing",
+    practicalOutcome:        "improved health, cared-for appearance and real sense of wellbeing",
+    fearAvoided:             "social embarrassment — an appearance that dims their presence",
+    identityShift:           "someone who takes care of their health and shows it — no excuses",
+  };
+  if (isExperience) return {
+    visibleProduct:          pr || n,
+    hiddenDesire:            "a memorable moment, real connection and flavors that stay with them",
+    emotionalTransformation: "pleasure, comfort and positive nostalgia they want to repeat",
+    socialTransformation:    "sharing something special, impressing those they invite, creating memories together",
+    practicalOutcome:        "superior experience, memories created, moment that truly delivers",
+    fearAvoided:             "spending on something forgettable — disappointing the people they bring",
+    identityShift:           "someone who knows how to choose experiences that are genuinely worth it",
+  };
+  if (isBusiness) return {
+    visibleProduct:          pr || n,
+    hiddenDesire:            "clients who arrive on their own, predictable sales and visibility that positions",
+    emotionalTransformation: "confidence in their business, clarity and the relief of knowing the system works",
+    socialTransformation:    "brand authority, recognition in their market, perceived leadership",
+    practicalOutcome:        "more clients, more sales and reach that grows with every post",
+    fearAvoided:             "staying invisible while competitors capture the attention that should be theirs",
+    identityShift:           "a business that attracts — that doesn't chase clients, but receives them",
+  };
+  if (isLegal) return {
+    visibleProduct:          pr || n,
+    hiddenDesire:            "real protection, peace of mind and certainty that what they've built is secure",
+    emotionalTransformation: "calm, control and the feeling of having solid foundations",
+    socialTransformation:    "credibility, perceived seriousness and trust they project to others",
+    practicalOutcome:        "risk minimized, processes in order and compliance guaranteed",
+    fearAvoided:             "losing what they've built — fines, legal or tax issues they could have prevented",
+    identityShift:           "someone who operates seriously — covered, protected, in order",
+  };
+  if (isEducation) return {
+    visibleProduct:          pr || n,
+    hiddenDesire:            "real skills, measurable results and the most capable version of themselves",
+    emotionalTransformation: "confidence, clarity and pride in mastering something that once felt out of reach",
+    socialTransformation:    "recognition for their progress and authority in what they know how to do",
+    practicalOutcome:        "applicable skills, real advancement and credentials that back them up",
+    fearAvoided:             "investing time and money in training that changes nothing",
+    identityShift:           "someone who invested in themselves — and has results to prove it",
+  };
+  return {
+    visibleProduct:          pr || n,
+    hiddenDesire:            "real results, clarity and certainty that their investment delivers",
+    emotionalTransformation: "confidence, relief and the feeling of moving in the right direction",
+    socialTransformation:    "recognition, credibility and positioning among those around them",
+    practicalOutcome:        "visible results, measurable progress and real return on their time",
+    fearAvoided:             "investing time and money and ending up in the same place — no visible progress",
+    identityShift:           "someone who took action when it mattered — and has the progress to show for it",
+  };
+}
+
 // ── Context Intelligence Layer ────────────────────────────────────────────────
-function buildAudienceIntelligence(n, au, au1, pr, hookType, intensity, isES = false) {
+function buildAudienceIntelligence(n, au, au1, pr, hookType, intensity, isES = false, tr = null) {
   const pick    = (arr) => arr[Math.floor(Math.random() * arr.length)];
   const profile = industryProfile(n, isES);
   const [k0 = "resultados", k1 = "confianza", k2 = "crecimiento"] = profile.keywords;
 
+  // Use transformation profile; fall back to industry profile language if not provided
+  const t = tr ?? {
+    hiddenDesire:            profile.desires,
+    emotionalTransformation: k1,
+    socialTransformation:    profile.transformation,
+    practicalOutcome:        profile.transformation,
+    fearAvoided:             profile.fears,
+    identityShift:           profile.desires,
+  };
+
   if (isES) {
     const desireVariantsES = [
-      `Los ${au} buscan algo más que mejores resultados en ${n} — buscan ${profile.desires}. El deseo de fondo es certeza: saber que tienen un proceso que les da ${k0} y ${k1} de forma predecible. Quieren ser la referencia en su entorno, no seguir buscando la fórmula.`,
-      `Lo que impulsa a los ${au} en ${n} no es solo el resultado — es lo que ese resultado representa: ${k0}, ${k1} y la sensación de haber llegado a donde sabían que podían. Detrás hay un deseo más profundo: sentirse competentes y seguros. Quieren que ${n} sea una fuente de ${k1}, no un recordatorio de lo que aún no han logrado.`,
-      `En el fondo, lo que persiguen los ${au} en ${n} es progreso visible — específicamente: ${profile.desires}. No buscan solo resultados. Buscan la historia que podrán contar sobre sí mismos cuando lleguen.`,
-      `Los ${au} buscan el momento en que ${n} deje de ser algo que tienen que empujar y empiece a generar ${k0} sin esfuerzo heroico. Quieren el efecto acumulativo — ${k1} y ${k2} que no requieran reiniciar desde cero cada vez.`,
+      `Los ${au} buscan algo más que un ${pr} — buscan ${t.hiddenDesire}. El resultado visible es ${t.practicalOutcome}, pero lo que realmente compran es ${t.emotionalTransformation}. El deseo de fondo es certeza: saber que tienen un servicio que les da ${k0} y ${k1} de forma predecible.`,
+      `Lo que impulsa a los ${au} en ${n} no es solo el servicio — es lo que ese servicio representa: ${t.emotionalTransformation}. Detrás de cada decisión, hay un deseo más profundo: ${t.hiddenDesire}. Quieren que ${n} sea una fuente de ${k1}, no un recordatorio de lo que aún no han logrado.`,
+      `En el fondo, lo que persiguen los ${au} en ${n} es ${t.hiddenDesire}. No buscan solo ${t.practicalOutcome}. Buscan la historia que podrán contar sobre sí mismos cuando lleguen: ${t.identityShift}.`,
+      `Los ${au} buscan el momento en que ${n} deje de ser algo que tienen que empujar y empiece a entregarles ${t.practicalOutcome} sin esfuerzo heroico. Lo que quieren al final es ${t.emotionalTransformation} — y ${k2} que no requiera reiniciar desde cero cada vez.`,
     ];
     const fearVariantsES = [
-      `El miedo más profundo de los ${au} no es el fracaso aislado — es invertir tiempo real en ${n} y descubrir que estuvieron trabajando en las cosas equivocadas todo ese tiempo. Justo detrás: el miedo a ${profile.fears}. Quieren evitar ser esa historia.`,
-      `Los ${au} temen en silencio que ${profile.fears}. El pensamiento de empezar de cero — abandonar el esfuerzo ya invertido — está en el fondo de cada decisión que posponen.`,
-      `Lo que paraliza a los ${au} en ${n} es comprometerse visiblemente con un enfoque y que no funcione para su situación específica. Debajo de esa hesitación hay algo más personal: que su caso sea la excepción que confirma la regla.`,
-      `Lo que los ${au} más quieren evitar es que ${profile.fears}. Y junto a eso: mirar atrás en un año y ver que la oportunidad estuvo frente a ellos — que el conocimiento era accesible — y que no actuaron a tiempo.`,
+      `El miedo más profundo de los ${au} no es gastar mal en ${n} — es ${t.fearAvoided}. Invierten en ${pr} sabiendo que la diferencia importa, pero temen que no sea suficiente para cambiar la percepción de quienes los rodean.`,
+      `Los ${au} temen en silencio que ${t.fearAvoided}. El pensamiento de invertir en ${pr} y no ver la diferencia reflejada en cómo los perciben está en el fondo de cada decisión que posponen.`,
+      `Lo que paraliza a los ${au} en ${n} es comprometerse con un cambio y que no sea suficientemente visible. Debajo de esa hesitación hay algo más personal: que su caso sea la excepción. Y debajo de eso: ${t.fearAvoided}.`,
+      `Lo que los ${au} más quieren evitar es ${t.fearAvoided}. Y junto a eso: mirar atrás en un año y ver que la oportunidad estuvo frente a ellos — que ${pr} era accesible — y que no actuaron a tiempo.`,
     ];
     const painVariantsES = [
-      `Ahora mismo, los ${au} viven: ${profile.pains}. Tienen acceso a más información sobre ${n} que nunca, y menos claridad sobre qué hacer. Cada nuevo recurso agrega una decisión, cada consejo contradice algo que ya probaron.`,
-      `La frustración que viven los ${au} en ${n} ahora mismo es la inconsistencia que no pueden explicar ni resolver: ${profile.pains}. Los resultados parecen depender de variables que no pueden identificar ni controlar.`,
-      `Lo que los ${au} enfrentan diariamente en ${n} es la brecha entre lo que saben que deberían tener — ${k0}, ${k1} — y lo que realmente tienen hoy. Pueden describir cómo se vería el éxito. Pero la ejecución consistente falla cuando más importa.`,
-      `La situación actual de la mayoría de ${au} en ${n} es: ${profile.pains}. Están activos, ponen esfuerzo real, y creen que progresan — pero los resultados no lo reflejan. La frustración no es solo sobre resultados. Es sobre la desconexión entre el trabajo que ponen y lo que debería seguir lógicamente.`,
+      `Ahora mismo, los ${au} viven una brecha: quieren ${t.practicalOutcome}, pero lo que ven cuando se presentan al mundo no refleja eso todavía. Tienen acceso a más opciones de ${n} que nunca, y menos claridad sobre cuál cambia algo real.`,
+      `La frustración que viven los ${au} en ${n} ahora mismo es la distancia entre quiénes son por dentro y cómo se presentan al mundo — la brecha entre querer ${t.practicalOutcome} y no verlo reflejado todavía.`,
+      `Lo que los ${au} enfrentan diariamente en ${n} es la brecha entre lo que saben que deberían tener — ${t.practicalOutcome} — y lo que realmente tienen hoy. Pueden describir cómo se vería el resultado ideal. Pero la ejecución consistente falla cuando más importa.`,
+      `La situación actual de la mayoría de ${au} en ${n} es: están activos, ponen esfuerzo real — pero los resultados no reflejan lo que buscan. La frustración no es solo sobre ${t.practicalOutcome}. Es sobre la desconexión entre la inversión que hacen y ${t.emotionalTransformation} que debería seguir lógicamente.`,
     ];
     const transformationVariantsES = [
-      `La transformación que buscan los ${au} no es solo mejores resultados en ${n} — es pasar a: ${profile.transformation}. Al otro lado, ${n} se siente diferente: ${k0} consistente, ${k1} real, y un proceso que no requiere empezar de cero constantemente.`,
-      `Si ${pr} entrega lo que los ${au} necesitan, terminan en: ${profile.transformation}. Un estado donde ${k0} llega de forma predecible, donde saben exactamente qué hacer, y donde el impulso siempre avanza sin reiniciar.`,
-      `El estado final deseado por los ${au} en ${n} es: ${profile.transformation}. No a veces. No cuando las condiciones son perfectas. Como base — de forma consistente, sin esfuerzo heroico. ${pr} es el puente hacia esa versión.`,
-      `Lo que los ${au} realmente quieren cuando invierten en ${n} es ${profile.desires} — y pasar de "creo que esto funciona" a "sé que esto funciona." Desde ahí, a los resultados acumulativos que siguen de esa claridad.`,
+      `La transformación que buscan los ${au} no es solo un ${pr} — es pasar de ${t.fearAvoided} a ${t.practicalOutcome}. Al otro lado: ${t.emotionalTransformation}. Un cambio que van a notar ellos, y que van a notar los que los rodean. De cualquiera a ${t.identityShift}.`,
+      `Si ${pr} entrega lo que los ${au} necesitan, terminan en: ${t.socialTransformation}. Un estado donde ${t.practicalOutcome} llega de forma predecible, donde saben exactamente qué esperar, y donde el impulso siempre avanza.`,
+      `El estado final deseado por los ${au} en ${n} es: ${t.emotionalTransformation}. No a veces. No cuando las condiciones son perfectas. Como base — de forma consistente. ${pr} es el puente hacia esa versión: ${t.identityShift}.`,
+      `Lo que los ${au} realmente quieren cuando invierten en ${n} es ${t.hiddenDesire} — y pasar de "creo que esto funciona" a "sé que esto funciona." Desde ahí, a los resultados acumulativos que siguen de esa claridad: ${t.practicalOutcome}.`,
     ];
     return {
       desires:        pick(desireVariantsES),
@@ -1006,33 +1194,32 @@ function buildAudienceIntelligence(n, au, au1, pr, hookType, intensity, isES = f
     };
   }
 
-  // English — same pattern with English profile keywords
+  // English — same pattern
   const [e0 = "results", e1 = "confidence", e2 = "growth"] = profile.keywords;
   const desireVariants = [
-    `${au} want more than better ${n} results — they want ${profile.desires}. The real desire is certainty: knowing they have a system that gives them ${e0} and ${e1} predictably. They want to be the reference in their space, not still searching for the formula.`,
-    `What drives ${au} in ${n} isn't just the outcome — it's what it represents: ${e0}, ${e1} and the feeling of having arrived where they knew they could. Underneath is a deeper desire: to feel capable and certain. They want ${n} to be a source of ${e1}, not a constant reminder of what they haven't cracked yet.`,
-    `At the core of what ${au} are chasing in ${n} is visible, measurable progress — specifically: ${profile.desires}. Not just results. The story they get to tell about themselves once they arrive.`,
-    `${au} are chasing the moment when ${n} stops being something they push through and starts generating ${e0} without heroic effort. They want the compounding effect — ${e1} and ${e2} that doesn't require restarting from zero each time.`,
+    `${au} want more than a ${pr} — they want ${t.hiddenDesire}. The visible result is ${t.practicalOutcome}, but what they're really buying is ${t.emotionalTransformation}. The core desire is certainty: knowing they have ${pr} that gives them ${e0} and ${e1} predictably.`,
+    `What drives ${au} in ${n} isn't just the service — it's what it represents: ${t.emotionalTransformation}. Behind every decision, there's a deeper desire: ${t.hiddenDesire}. They want ${n} to be a source of ${e1}, not a constant reminder of what they haven't cracked yet.`,
+    `At the core of what ${au} are chasing in ${n} is ${t.hiddenDesire}. Not just ${t.practicalOutcome}. The story they get to tell about themselves once they arrive: ${t.identityShift}.`,
+    `${au} are chasing the moment when ${n} stops being something they push through and starts delivering ${t.practicalOutcome} without heroic effort. What they want at the end is ${t.emotionalTransformation} — and ${e2} that doesn't require restarting from zero each time.`,
   ];
   const fearVariants = [
-    `The deepest fear for ${au} isn't isolated failure — it's investing real time in ${n} and discovering they were working on the wrong things the whole time. Close behind: the fear of ${profile.fears}. They want to avoid being that story.`,
-    `${au} are quietly afraid that ${profile.fears}. The thought of starting over — abandoning invested effort — sits in the background of every decision they postpone or avoid.`,
-    `What keeps ${au} in place is committing visibly to a ${n} approach and having it not work for their specific situation. Underneath that hesitation is something more personal: that their case is somehow the exception.`,
-    `What ${au} most want to avoid is ${profile.fears}. And alongside that: looking back in a year seeing the opportunity was there — the knowledge was accessible — and they still didn't act in time.`,
+    `The deepest fear for ${au} isn't wasting money on ${n} — it's ${t.fearAvoided}. They invest in ${pr} knowing the difference matters, but fear it won't be enough to shift how those around them see them.`,
+    `${au} are quietly afraid that ${t.fearAvoided}. The thought of investing in ${pr} and not seeing the difference reflected in how they're perceived sits in the background of every decision they postpone.`,
+    `What keeps ${au} from fully committing in ${n} is the fear that the change won't be visible enough. And underneath that: ${t.fearAvoided}.`,
+    `What ${au} most want to avoid is ${t.fearAvoided}. And alongside that: looking back in a year and realizing the opportunity was right in front of them — that ${pr} was within reach — and they didn't act.`,
   ];
   const painVariants = [
-    `Right now, ${au} are living: ${profile.pains}. They have more ${n} information than ever, and less clarity on what to actually do. Every new resource adds a decision. Every piece of advice contradicts something they already tried.`,
-    `The frustration ${au} live with in ${n} right now is inconsistency they can't explain or fix: ${profile.pains}. Results seem to depend on variables they can't identify or control.`,
-    `What ${au} deal with daily in ${n} is the gap between what they know they should have — ${e0}, ${e1} — and what they actually have today. They can describe what success looks like. But consistent execution breaks down when it matters most.`,
-    `The current situation for most ${au} in ${n} is: ${profile.pains}. They're active, putting in real effort, genuinely believing they're progressing — but the results don't reflect it. The frustration isn't just about outcomes. It's about the disconnect between their work and what should logically follow.`,
+    `Right now, ${au} are living a gap: they want ${t.practicalOutcome}, but how they show up in the world doesn't reflect that yet. They have more ${n} options than ever, and less clarity about which one actually changes something real.`,
+    `The frustration ${au} are living in ${n} right now is the distance between who they are on the inside and how they present to the world — the gap between wanting ${t.practicalOutcome} and not seeing it yet.`,
+    `What ${au} face daily in ${n} is the gap between what they know they should have — ${t.practicalOutcome} — and what they actually have today. They can describe what the ideal result looks like. But consistent execution fails when it matters most.`,
+    `The current situation for most ${au} in ${n} is: active, putting in real effort — but the results don't reflect what they're after. The frustration isn't just about ${t.practicalOutcome}. It's about the disconnect between the investment they make and ${t.emotionalTransformation} that should logically follow.`,
   ];
   const transformationVariants = [
-    `The transformation ${au} are looking for isn't just better ${n} results — it's moving to: ${profile.transformation}. On the other side, ${n} feels different: consistent ${e0}, real ${e1}, a process that doesn't require restarting from zero.`,
-    `If ${pr} delivers what ${au} actually need, they end up in: ${profile.transformation}. A state where ${e0} comes predictably, where they know exactly what to do, and where momentum is always moving forward.`,
-    `The desired end state for ${au} in ${n} is: ${profile.transformation}. Not sometimes. Not when conditions are perfect. As a baseline — consistently, without heroic effort. ${pr} is the bridge.`,
-    `What ${au} are really trying to buy when they invest in ${n} is ${profile.desires} — and moving from "I think this is working" to "I know this is working." From there, to the compounding results that follow from that clarity.`,
+    `The transformation ${au} are after isn't just a ${pr} — it's moving from ${t.fearAvoided} to ${t.practicalOutcome}. On the other side: ${t.emotionalTransformation}. A change they'll feel, and that those around them will notice. From anyone to ${t.identityShift}.`,
+    `If ${pr} delivers what ${au} need, they end up with: ${t.socialTransformation}. A state where ${t.practicalOutcome} happens predictably, where they know exactly what to expect, and where the momentum keeps building.`,
+    `The final state ${au} want from ${n} is: ${t.emotionalTransformation}. Not sometimes. Not when conditions are perfect. As a baseline — consistently. ${pr} is the bridge to that version: ${t.identityShift}.`,
+    `What ${au} really want when they invest in ${n} is ${t.hiddenDesire} — and going from "I think this works" to "I know this works." From there, to the compounding results that follow that clarity: ${t.practicalOutcome}.`,
   ];
-
   return {
     desires:        pick(desireVariants),
     fears:          pick(fearVariants),
@@ -1067,147 +1254,148 @@ app.post("/api/script/generate", (req, res) => {
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
   // Build audience intelligence first — everything downstream uses it
-  const intel = buildAudienceIntelligence(n, au, au1, pr, hookType, intensity, isES);
+  const tr    = buildTransformation(n, pr, isES);
+  const intel = buildAudienceIntelligence(n, au, au1, pr, hookType, intensity, isES, tr);
 
   // ── SAR Triggers — intelligence-aware, hook-type-driven ──────────────────────
   const sarMap = {
     curiosity: [
-      `STOP — you're about to scroll past the insight that answers why ${n} hasn't clicked for you yet.\nAGITATE — you already know more about ${n} than most ${au}. That's not the problem. The problem is that knowing and doing are completely different things, and the gap between them is exactly where ${au} stay stuck.\nRESOLVE — ${pr} closes that gap. Not with more information — with a system built for the way ${au} actually execute.`,
-      `STOP — the next ${n} tactic you try will probably fail. Not because you'll execute it wrong, but because it wasn't built for someone in your situation.\nAGITATE — ${au} spend months cycling through approaches that work in theory and fall apart in practice. Every failed attempt makes the next one harder to commit to.\nRESOLVE — ${pr} breaks that cycle by starting with what's actually true about how ${au} operate — then building the system from there.`,
+      `STOP — you're about to scroll past what separates ${au} who've already achieved ${tr.practicalOutcome} from those still trying to figure out how.\nAGITATE — you already know you want ${tr.hiddenDesire}. That's not the problem. The problem is that most options in ${n} weren't built for your specific profile — and ${tr.fearAvoided} is exactly what happens when you follow the wrong path.\nRESOLVE — ${pr} is built to deliver ${tr.practicalOutcome} specifically for ${au}. Not in theory. In practice.`,
+      `STOP — the next ${n} approach you try will probably fall short of ${tr.practicalOutcome}. Not because you'll execute it wrong, but because it wasn't built for someone in your situation.\nAGITATE — ${au} spend time looking for options that promise ${tr.hiddenDesire} and end up with something that doesn't show enough. Every attempt that doesn't deliver makes the next one harder to justify.\nRESOLVE — ${pr} breaks that cycle by delivering ${tr.practicalOutcome} in a way that's visible and consistent for ${au}.`,
     ],
     pain: [
-      `STOP — if you're a ${au1} putting real effort into ${n} and still not seeing the results that should follow, this is the conversation that reframes why.\nAGITATE — you're not lacking motivation. You're not lacking information. You're lacking a system that accounts for the specific way ${au} experience ${n} — the friction, the inconsistency, the gap between knowing and doing.\nRESOLVE — ${pr} is built around that gap. Not around the ${n} problem in theory — around the one ${au} actually live with.`,
-      `STOP — the ${n} loop that ${au} stay stuck in has a specific name: effort without compounding. You work. Nothing builds. You restart.\nAGITATE — that loop persists because the approach doesn't fit the person. Most ${n} systems were built for someone else's life, someone else's constraints, someone else's version of the problem.\nRESOLVE — ${pr} was built for yours. Here's what that changes.`,
+      `STOP — if you're a ${au1} who wants ${tr.hiddenDesire} and you're still not seeing it reflected in how you're perceived, this is the conversation that reframes why.\nAGITATE — you're not lacking motivation. You're not lacking intent. You're lacking the service that's actually designed to deliver ${tr.practicalOutcome} to ${au} — not the generic version, but the one that produces the visible change.\nRESOLVE — ${pr} is built around that. Not around ${n} in general — around ${tr.practicalOutcome} for the ${au} who actually need it.`,
+      `STOP — the loop ${au} stay stuck in has a specific name: effort without visible change. You invest. Nothing shifts enough. You look for something different.\nAGITATE — that loop persists because the option wasn't designed to produce ${tr.emotionalTransformation} for someone with your specific profile. Options built for everyone aren't optimized for anyone.\nRESOLVE — ${pr} was built for ${au} who want ${tr.hiddenDesire}. Here's what that changes.`,
     ],
     story: [
-      `STOP — six months ago I was a ${au1} who had consumed every piece of ${n} content available and still couldn't make it work consistently.\nAGITATE — the frustration isn't that the information doesn't exist. It's that all of it is built around a version of you that doesn't have your specific constraints, your specific goals, or your specific relationship with the problem.\nRESOLVE — building ${pr} was how I solved that for myself. Then I realized it solved it for other ${au} too.`,
-      `STOP — the moment my ${n} results changed wasn't when I learned something new. It was when I stopped doing something that felt productive but wasn't.\nAGITATE — most ${au} are doing a version of that same thing right now — something that looks like progress and isn't. It's incredibly hard to see from the inside.\nRESOLVE — ${pr} makes it visible. And once it's visible, everything shifts.`,
+      `STOP — there was a moment I was a ${au1} who wanted ${tr.hiddenDesire} and tried option after option in ${n} without seeing the change I was after.\nAGITATE — the frustration isn't that options don't exist. It's that they're designed for a version of you that doesn't have your specific circumstances or your specific target: ${tr.practicalOutcome}.\nRESOLVE — building ${pr} was how I solved that for myself. Then I realized it worked for other ${au} who wanted the same thing.`,
+      `STOP — the moment my ${n} results changed wasn't when I found more options. It was when I found the one actually designed to deliver ${tr.practicalOutcome} without compromise.\nAGITATE — most ${au} are using options that work for many — and that's precisely why they're not optimized to produce ${tr.emotionalTransformation} consistently.\nRESOLVE — ${pr} makes it visible. And once you see it, everything shifts.`,
     ],
     authority: [
-      `STOP — after working deeply in ${n}, one pattern repeats itself with almost every group of ${au}: they fail not because they lack drive, but because the playbook they're following was built for someone else.\nAGITATE — the mainstream ${n} approach assumes a set of conditions that don't apply to most ${au}. Following it produces inconsistent results and a growing sense that the problem is somehow personal.\nRESOLVE — ${pr} is built on what actually works when you strip away the assumptions. The results are different because the starting point is accurate.`,
-      `STOP — I've watched ${au} fail at ${n} for the same preventable reason so many times that it stopped feeling like coincidence.\nAGITATE — the gap isn't capability. It's that the tools and frameworks available were designed around a general audience — not around the specific realities that define how ${au} operate in ${n}.\nRESOLVE — ${pr} is built around those realities. That's the difference.`,
+      `STOP — after working deeply in ${n}, one pattern repeats with almost every group of ${au}: they don't achieve ${tr.practicalOutcome} not because they lack intent, but because the service they're using wasn't designed for their specific profile.\nAGITATE — the conventional approach in ${n} assumes conditions that don't apply to most ${au}. The result: ${tr.fearAvoided}, even when the effort is real.\nRESOLVE — ${pr} is built on what actually produces ${tr.socialTransformation} for ${au}.`,
+      `STOP — I've watched ${au} fail to get ${tr.practicalOutcome} for the same preventable reason so many times it stopped feeling like coincidence.\nAGITATE — the gap isn't capability. It's that available options in ${n} were designed for a general audience — not for the specific needs that define what ${au} require to achieve ${tr.emotionalTransformation}.\nRESOLVE — ${pr} is built around those specific needs.`,
     ],
     mistake: [
-      `STOP — ${au} are making a specific ${n} mistake right now that looks like the right move from the inside.\nAGITATE — it's not the obvious mistake. It's subtler: optimizing for the metric that's easy to track instead of the one that actually drives the result they want. It feels like progress. The scoreboard disagrees.\nRESOLVE — ${pr} starts by surfacing that mistake, because fixing it changes the entire trajectory of your ${n} results.`,
-      `STOP — there's a ${n} behavior that ${au} do consistently, that consistently undercuts their results, that almost nobody talks about directly.\nAGITATE — it's not laziness. It's not lack of knowledge. It's a structural misalignment between the action and the outcome — and it compounds quietly until the results make it impossible to ignore.\nRESOLVE — ${pr} is built to catch it early. Before months of effort go in the wrong direction.`,
+      `STOP — ${au} are making a specific ${n} mistake right now that's preventing them from getting ${tr.practicalOutcome}.\nAGITATE — it's not the obvious mistake. It's subtler: choosing by price or convenience instead of by real result. It feels like a reasonable decision. The scorecard — still not having ${tr.emotionalTransformation} — says otherwise.\nRESOLVE — ${pr} starts by delivering ${tr.practicalOutcome} visibly. That distinction alone changes the trajectory.`,
+      `STOP — there's a decision ${au} make consistently in ${n} that consistently keeps them from reaching ${tr.practicalOutcome}.\nAGITATE — it's not laziness. It's not lack of intent. It's choosing convenient over what actually produces ${tr.emotionalTransformation}. It compounds quietly until the gap is impossible to ignore.\nRESOLVE — ${pr} is built to deliver the real result from the start.`,
     ],
     opportunity: [
-      `STOP — there's a specific shift happening in ${n} right now that most ${au} are positioned to benefit from — and almost none of them know it yet.\nAGITATE — by the time this shift is obvious, the window will be crowded. That's how it always works. The ${au} who move now are the ones who look prescient in 12 months.\nRESOLVE — ${pr} maps exactly how to enter this window before it closes. This is the timing.`,
-      `STOP — the ${n} landscape has changed in a way that creates a real, specific advantage for ${au} who are paying attention.\nAGITATE — most ${au} are still using the playbook from 18 months ago. That playbook is saturating. The new lane is wide open — but only for a limited window.\nRESOLVE — ${pr} puts you in that lane with a clear path. Here's what that looks like.`,
+      `STOP — there's a specific window right now for ${au} who want ${tr.practicalOutcome} — and almost none of them are taking advantage of it yet.\nAGITATE — by the time this opportunity is obvious, the window will have closed. The ${au} who move now are the ones who will have ${tr.socialTransformation} in 12 months while others are still searching.\nRESOLVE — ${pr} maps exactly how to enter this window before it closes.`,
+      `STOP — ${n} is changing in a way that creates a real advantage for ${au} who are paying attention.\nAGITATE — most ${au} are still waiting for results from options that aren't designed to deliver ${tr.practicalOutcome} consistently. Meanwhile, those who shifted approach already have ${tr.emotionalTransformation}.\nRESOLVE — ${pr} puts you in that group with a clear path.`,
     ],
     viral: [
-      `STOP — the ${n} content format that ${au} are still using was performing 90 days ago. The algorithm has moved on.\nAGITATE — what's working now looks structurally different. It's built on different signals, different patterns, different viewer behavior. Copying the old format is actively working against you at this point.\nRESOLVE — ${pr} is built around what's working in ${n} right now — not what worked before, and not what everyone else is still copying.`,
-      `STOP — the reason some ${au} in ${n} are getting results that seem disproportionate to their effort isn't luck. There's a specific structural pattern behind it.\nAGITATE — most ${au} can see that something is working for others in ${n} but can't reverse-engineer why. That gap between observation and understanding is where the opportunity is sitting.\nRESOLVE — ${pr} maps that pattern into something ${au} can actually replicate. Here's the structure.`,
+      `STOP — the ${n} option ${au} still consider standard no longer produces ${tr.practicalOutcome} at the level it should. The standard has moved.\nAGITATE — what actually delivers ${tr.emotionalTransformation} now is built with different criteria, for different results. Staying with what everyone else is using is actively working against the goal.\nRESOLVE — ${pr} is built around what actually produces ${tr.practicalOutcome} right now.`,
+      `STOP — the reason some ${au} achieve ${tr.socialTransformation} with less apparent effort isn't luck. There's a specific structural pattern behind it.\nAGITATE — most ${au} can see that something is working differently for those who've already achieved it, but can't figure out why. That gap between observation and understanding is exactly where the advantage sits.\nRESOLVE — ${pr} maps that pattern into something ${au} can actually replicate.`,
     ],
   };
 
   // ── Pain Triggers — grounded in the pain analysis, intensity-scaled ──────────
   const painMap = {
     soft: [
-      `Most ${au} in ${n} are doing everything they know to do — and still feeling like something isn't quite landing. That feeling is real, and it usually points to a gap in the system rather than a gap in the person. The effort isn't the problem. The structure around it is.`,
-      `There's a specific moment that most ${au} in ${n} recognize: you put in real work, you follow real advice, and the results are still inconsistent in a way you can't fully explain. That inconsistency isn't random. It has a cause — and it's usually not the one that gets talked about.`,
+      `Most ${au} in ${n} are looking for ${tr.practicalOutcome} — and still feeling like something isn't quite landing. That feeling is real, and it usually points to the option they're using not being designed specifically to produce ${tr.emotionalTransformation}. The effort isn't the problem. The alignment between service and result is.`,
+      `There's a specific moment most ${au} in ${n} recognize: you invest in something, you trust the process — and the results are inconsistent in a way you can't quite explain. That inconsistency isn't random. The cause is usually that the service wasn't optimized to deliver ${tr.practicalOutcome} for your specific situation.`,
     ],
     medium: [
-      `You're a ${au1} who's been putting genuine effort into ${n} — and the results don't reflect that effort in the way they should. That's not a motivation problem or a knowledge problem. It's a structural problem. The approach you're using was built for someone else's version of this situation.`,
-      `${au} spend months circling the same friction in ${n}: effort that doesn't compound, strategies that work until they don't, and results that are never quite consistent enough to build on. The content exists. The tools exist. Something is still missing — and it's not what most people think it is.`,
+      `You're a ${au1} who wants ${tr.hiddenDesire} — and you're still not seeing it reflected the way it should be. That's not a motivation problem or an intent problem. It's an alignment problem: the approach you're using was built for someone else with a different goal.`,
+      `${au} spend time circling the same friction in ${n}: investments that don't produce ${tr.practicalOutcome} consistently, options that work until they don't, and results that are never visible enough to build on.`,
     ],
     aggressive: [
-      `Here's what's actually happening for ${au} in ${n} right now: the approach isn't working, and every week that passes is a week someone else uses to pull further ahead. There's no version of this where waiting produces a different result. The gap doesn't close on its own.`,
-      `If your ${n} results were where they should be, you wouldn't be watching this. You're stuck — and the specific kind of stuck that ${au} experience in ${n} doesn't fix itself. It requires a different approach, not more effort on the same one.`,
+      `Here's what's actually happening for ${au} in ${n} right now: without ${tr.practicalOutcome}, every week that passes is a week where ${tr.fearAvoided}. There's no version of this where waiting produces a different result. The gap doesn't close on its own.`,
+      `If you already had ${tr.practicalOutcome}, you wouldn't be watching this. You're at the point where ${au} recognize they need a different approach — not more effort on the same one. ${pr} is that different approach.`,
     ],
   };
 
   // ── Curiosity Triggers — grounded in desire and transformation ────────────────
   const curiosityMap = {
     curiosity: [
-      `What if the reason ${n} hasn't worked the way you expected it to is something completely different from what you've been trying to fix? Most ${au} are solving the visible problem. The actual problem is one layer underneath it.`,
-      `There's a pattern that separates ${au} who get consistent ${n} results from those who stay stuck — and it has almost nothing to do with the tactics they're using. The variable that actually matters is one almost nobody talks about directly.`,
+      `What if the reason you haven't achieved ${tr.practicalOutcome} yet has nothing to do with what you've been adjusting? Most ${au} are solving the visible problem. The real problem — why ${tr.fearAvoided} — is one layer underneath it.`,
+      `There's a pattern that separates ${au} who already have ${tr.emotionalTransformation} from those still searching — and it has almost nothing to do with how many times they tried. The variable that actually matters is the one almost nobody mentions directly.`,
     ],
     pain: [
-      `The real cost of another 6 months of the same ${n} results isn't just time. For ${au}, it's the compounding effect of momentum not building — of confidence eroding quietly in the background while the effort continues at the front.`,
-      `What if the thing keeping ${au} stuck in ${n} isn't a missing piece of information, but a specific structural decision they made early on that's been shaping everything since? That's what nobody wants to say out loud — because fixing it means acknowledging it first.`,
+      `The real cost of another period without ${tr.practicalOutcome} isn't just time. For ${au}, it's the compounding effect of ${tr.fearAvoided} — growing quietly in the background while effort continues at the front.`,
+      `What if what's keeping ${au} from reaching ${tr.identityShift} isn't missing information, but a structural decision they made early that's been shaping everything since?`,
     ],
     story: [
-      `The shift in my ${n} results didn't happen when I found a better strategy. It happened when I stopped doing something that felt like the right move but was quietly preventing everything else from working. I kept that to myself for months before I realized most ${au} were doing the exact same thing.`,
-      `I've had this conversation with dozens of ${au} who are stuck in ${n} — and the thing that surprises them every time isn't the solution. It's realizing that the problem wasn't what they thought it was. That reframe alone changes everything.`,
+      `The shift that helped ${au} achieve ${tr.practicalOutcome} didn't happen when they found more options in ${n}. It happened when they found the right one — the one actually designed to produce ${tr.emotionalTransformation} in their specific situation.`,
+      `I've had this conversation with dozens of ${au} who wanted ${tr.hiddenDesire} — and what surprises them every time isn't the solution. It's realizing the problem wasn't what they thought it was. That reframe alone changes everything.`,
     ],
     authority: [
-      `Most ${n} frameworks are built around assumptions that don't apply to ${au} — and the people who built them don't know it, because they've never operated inside the specific constraints that define your situation. That's the data point that changes how everything else lands.`,
-      `I've tracked ${n} outcomes across enough ${au} to see a pattern that doesn't show up in any of the popular advice: the ones who win aren't doing more. They're doing one specific thing differently that makes everything else more efficient. That thing is almost never what they credit publicly.`,
+      `Most ${n} options are built around assumptions that don't apply to ${au} looking for ${tr.practicalOutcome} — and the people who built them don't know it, because they've never operated inside the specific needs that define your situation.`,
+      `I've tracked results in ${n} with enough ${au} to see a pattern that doesn't show up in any popular advice: those who achieve ${tr.socialTransformation} aren't doing more. They're doing one specific thing differently that makes everything else more efficient.`,
     ],
     mistake: [
-      `The most expensive ${n} mistake ${au} make isn't the obvious one. It's the one that looks like discipline, looks like consistency, looks like the right move — and is actively preventing the result they're working toward.`,
-      `${au} who are stuck in ${n} typically have one thing in common: a decision they made early that made sense at the time and has been quietly compounding in the wrong direction ever since. Seeing it is the hardest part. After that, fixing it is straightforward.`,
+      `The most expensive ${n} mistake ${au} make isn't the obvious one. It's the one that looks like discipline, looks like consistency, looks like the right move — and is actively preventing ${tr.practicalOutcome}.`,
+      `${au} who still don't have ${tr.emotionalTransformation} usually have one thing in common: a decision they made early that made sense at the time and has been compounding in the wrong direction since.`,
     ],
     opportunity: [
-      `The specific window that just opened in ${n} is the kind that only makes sense in retrospect — when the people who moved early are talking about why they did it, and everyone else is wishing they'd paid closer attention when it mattered.`,
-      `There's a gap in ${n} right now that ${au} with the right approach can step into before it gets crowded. The reason most won't is not that they can't see it — it's that acting before it's obvious requires a different relationship with uncertainty than most people have built.`,
+      `The specific window to achieve ${tr.practicalOutcome} in ${n} is the kind that only makes sense in retrospect — when those who moved early are explaining why they did it, and everyone else wishes they'd paid attention when it mattered.`,
+      `There's a space in ${n} right now that ${au} with the right approach can use to achieve ${tr.socialTransformation} before it gets crowded. The reason most won't isn't that they can't see it.`,
     ],
     viral: [
-      `The ${n} content pattern that's replacing the old formula is already outperforming it consistently — and most ${au} haven't reverse-engineered why yet. The gap between those who see it and those who don't is exactly where the advantage currently sits.`,
-      `Why are some ${au} in ${n} generating results that seem disproportionate to their effort or their following? The answer isn't a secret. It's a structural pattern that looks obvious once someone shows it to you — and invisible until they do.`,
+      `The pattern in ${n} that's already delivering ${tr.practicalOutcome} consistently — and most ${au} haven't figured out why yet. The gap between those who see it and those who don't is exactly where the advantage currently sits.`,
+      `Why are some ${au} in ${n} achieving ${tr.socialTransformation} with less apparent effort? The answer isn't a secret. It's a structural pattern that looks obvious once someone shows it to you — and invisible until they do.`,
     ],
   };
 
   // ── Main Script — intelligence-grounded, hook-type-driven ─────────────────────
   const scriptMap = {
-    curiosity: `Here's something that almost never gets said directly about ${n}:\n\nThe ${au} who get consistent results aren't doing more — they're doing less of the wrong things. The curiosity gap in ${n} isn't between those who know more and those who know less. It's between those who've found the one structural piece that makes everything else efficient, and those who are still solving around it.\n\nWhat ${au} actually want — and what most ${n} advice never gives them — is a process that compounds without requiring heroic effort to sustain. Not a new tactic. A system where the effort they're already putting in actually lands.\n\n${pr} is built around that. It takes what you're already doing in ${n} and restructures it around the variable that actually drives results for ${au} in your situation.`,
-    pain: `If you're a ${au1} who's been putting real effort into ${n} and the results still don't reflect that effort — the problem isn't you.\n\nThe ${n} space is filled with frameworks and systems that work for someone. Just not for ${au} with your specific constraints, your specific goals, and the specific version of ${n} you're trying to make work.\n\nWhat that creates is the worst kind of stuck: the kind where you're doing the right things in theory, and the scoreboard still doesn't move. The effort is real. The approach just isn't calibrated for your situation.\n\n${pr} was built to fix that calibration. Not by adding more to your process — by aligning what you're already doing with what actually moves the needle for ${au} like you.`,
-    story: `Six months ago I was a ${au1} who had the knowledge, the effort, and the tools — and still couldn't make ${n} produce consistent results.\n\nThe thing I eventually figured out wasn't a new strategy. It was that the strategies I was using were built around a set of assumptions that didn't apply to my situation. Once I saw that, I rebuilt the approach from scratch — around the actual constraints of someone who operates the way I do.\n\nThat's what became ${pr}. And what surprised me was that when I showed it to other ${au}, it worked for them too. Because the structural issue wasn't unique to me. It was the same gap that most ${au} hit in ${n} — and almost nobody names directly.\n\nIf the description of where I was sounds familiar, here's what changed.`,
-    authority: `After working deeply in ${n}, one thing becomes impossible to ignore:\n\n${au} who struggle aren't struggling because they lack drive or information. They're struggling because the frameworks they're using were built for a generalized version of the problem — not for the specific constraints, goals, and conditions that define how ${au} actually experience ${n}.\n\nThat mismatch is invisible until you see it. And once you see it, every piece of generic ${n} advice starts to read differently.\n\n${pr} is built from the ground up around what ${au} actually need — not what a general audience needs. The difference in results isn't because the underlying ${n} principles are different. It's because they're being applied accurately, to the right version of the problem, in the right sequence.`,
-    mistake: `The most common ${n} mistake among ${au} isn't the obvious one.\n\nIt's subtler: optimizing consistently for the metric that's easy to track, while the metric that actually drives the result you want quietly stays flat. It feels like progress because you're producing output. But output and outcome are different — and in ${n}, conflating them is what keeps ${au} in the same position month after month.\n\nHere's how it compounds: you get better at the visible metric. You feel like things are improving. The underlying result doesn't change. Eventually the disconnect becomes undeniable — and then you restart.\n\n${pr} starts by surfacing which metric is actually moving your ${n} results, and which one is just making the effort feel worthwhile. That distinction alone changes the direction of everything that follows.`,
-    opportunity: `Right now there's a structural shift happening in ${n} that most ${au} are positioned to benefit from — and most of them don't know it yet.\n\nThe playbook that worked 12 to 18 months ago is saturating. The returns are compressing. And in the space that's opening up, the advantage goes to ${au} who move before the opportunity is obvious — before it gets competitive, before it gets crowded, before the window shrinks to a fraction of what it is right now.\n\nThis is that moment. Not in theory. Specifically, right now.\n\n${pr} maps the exact path into this window for ${au} in ${n} — what to do, in what order, and why the timing makes it work.`,
-    viral: `The ${n} content formula that ${au} are still using was the right one — 90 days ago.\n\nThe algorithm has moved on. Viewer behavior has moved on. What's producing results now looks structurally different from what used to work, and the ${au} who've made the shift are getting results that look disproportionate to their size or effort.\n\nIt's not disproportionate. It's just that they're working with the current model while everyone else is still running the last one.\n\n${pr} is built around the current model. Not the theory of what might work in ${n} — the structure of what's actually producing results for ${au} right now. Here's what that looks like in practice.`,
+    curiosity: `Here's something that almost never gets said directly about ${n}:\n\nWhat ${au} who've already achieved ${tr.practicalOutcome} have in common isn't that they tried more — it's that they found the right approach. The curiosity gap in ${n} isn't between those who want it more and those who want it less. It's between those who found a service designed to deliver ${tr.emotionalTransformation} specifically for ${au}, and those who are still cycling through options that weren't built for their situation.\n\nWhat ${au} actually want — and what most ${n} options never deliver — is ${tr.hiddenDesire}. Not a generic result. ${tr.practicalOutcome} that holds up and compounds.\n\n${pr} is built around that. It starts with ${tr.hiddenDesire} — and delivers ${tr.emotionalTransformation} in a way that's visible to them and to everyone around them.`,
+    pain: `If you're a ${au1} who wants ${tr.hiddenDesire} and you're still not seeing it reflected the way it should be — the problem isn't you.\n\nThe ${n} space is full of options that work for someone. Just not specifically designed to deliver ${tr.practicalOutcome} to ${au} with your profile, your expectations, and your awareness of the difference that actually matters.\n\nWhat that creates is the most frustrating kind of situation: you invest, you try, and the result isn't what you were after — and ${tr.fearAvoided}. The intent is real. The alignment between service and transformation just isn't there.\n\n${pr} was built to close that alignment. Not by being a generic option — by being designed around ${tr.practicalOutcome} for ${au} who know exactly what they're looking for.`,
+    story: `There was a point when I was a ${au1} who wanted ${tr.hiddenDesire} — and kept trying options in ${n} that delivered something, but not ${tr.emotionalTransformation}.\n\nThe shift didn't happen when I found more options. It happened when I found one actually designed to deliver ${tr.practicalOutcome} — built around my specific situation, not around a general audience.\n\nThat's what became ${pr}. And what surprised me was that when other ${au} tried it, the same shift happened for them. Because the problem wasn't unique to me. Most ${au} who don't have ${tr.practicalOutcome} are in the same place — using options that weren't built to take them where they want to go.\n\nIf the description of where I was sounds familiar, here's what changed.`,
+    authority: `After working deeply in ${n}, one thing becomes impossible to ignore:\n\n${au} who don't achieve ${tr.practicalOutcome} aren't failing because they lack drive. They're failing because the options they're using weren't designed for their specific profile — the specific version of ${tr.hiddenDesire} that defines what they're actually looking for.\n\nThat mismatch is invisible until you see it. And once you see it, every generic ${n} option starts to read differently.\n\n${pr} is built from the ground up around what ${au} actually need to achieve ${tr.emotionalTransformation}. The difference in results isn't because the underlying need in ${n} is different. It's because ${pr} is applied accurately, to the right version of the transformation, for the right person.`,
+    mistake: `The most common ${n} mistake among ${au} isn't the obvious one.\n\nIt's subtler: choosing by convenience or familiarity instead of by what actually produces ${tr.practicalOutcome}. It feels like a reasonable decision. But options chosen for convenience weren't designed to deliver ${tr.emotionalTransformation} — and the gap becomes undeniable when ${tr.fearAvoided}.\n\nHere's how it compounds: you invest, you try, you decide it was close enough. The underlying transformation doesn't happen. Eventually the disconnect becomes impossible to ignore — and then you look for something different.\n\n${pr} starts by being designed around ${tr.practicalOutcome} specifically. That distinction alone changes the direction of everything that follows.`,
+    opportunity: `Right now there's a real opportunity for ${au} who want ${tr.practicalOutcome} — and most of them haven't moved on it yet.\n\nThe ${n} options that were standard are no longer delivering ${tr.emotionalTransformation} at the level ${au} expect. The gap is real, and it's widening. In that gap, the advantage goes to ${au} who find the right approach before the window closes.\n\nThis is that moment. Not in theory. Specifically, right now.\n\n${pr} maps the exact path to ${tr.socialTransformation} for ${au} in ${n} — and why this is the right timing to make that move.`,
+    viral: `The standard ${n} option ${au} were using to get ${tr.practicalOutcome} has shifted. What was delivering ${tr.emotionalTransformation} before isn't delivering it at the same level now.\n\nThe ${au} who've already made the shift are getting results that look different — ${tr.socialTransformation} that stands out. It's not luck. It's that they found the option designed for where the standard is now, not where it was.\n\nThat's what ${pr} is built around. Not the version of ${n} that was good enough before — the version that actually delivers ${tr.practicalOutcome} now. Here's what that looks like in practice.`,
   };
 
   // ── CTA — intensity-scaled ────────────────────────────────────────────────────
   const ctaMap = {
     soft: [
-      `If this resonated, follow for more ${n} content built specifically for ${au}. New posts every week.`,
-      `Save this if you're a ${au1} working on your ${n} approach — you'll want to come back to it.`,
-      `Try ${pr} and see if it's the right fit for your ${n} goals. Link in bio.`,
+      `If this resonated, follow for more ${n} content built specifically for ${au} who want ${tr.practicalOutcome}. New posts every week.`,
+      `Save this if you're a ${au1} looking for ${tr.hiddenDesire} — you'll want to come back to it.`,
+      `Try ${pr} and see the difference for yourself. Link in bio.`,
     ],
     medium: [
-      `Comment "${n.toUpperCase()}" below and I'll send you the full breakdown — free.`,
-      `Follow if you're a ${au1} who's serious about ${n} results. I don't post filler.`,
+      `Comment "${n.toUpperCase()}" below and I'll send you the full breakdown on how ${pr} delivers ${tr.practicalOutcome} — free.`,
+      `Follow if you're a ${au1} who's serious about ${tr.emotionalTransformation}. I don't post filler.`,
       `${pr} is open right now. Link in bio — takes less than 2 minutes to get started.`,
     ],
     aggressive: [
-      `${au} who act on this today will be in a completely different position in 90 days. Link in bio. Don't overthink it.`,
-      `Stop watching. Start doing. ${pr} — link in bio. This is the system.`,
-      `Comment "READY" if you're done letting ${n} stay stuck. I'll send you the first step right now.`,
+      `${au} who book ${pr} today will have ${tr.practicalOutcome} before the month is over. Link in bio. Don't overthink it.`,
+      `Stop searching. Start seeing the difference. ${pr} — link in bio. This is how ${tr.emotionalTransformation} happens.`,
+      `Comment "READY" if you're done waiting for ${tr.practicalOutcome}. I'll send you the first step right now.`,
     ],
   };
 
   // ── Titles — hook-type-driven ─────────────────────────────────────────────────
   const titleMap = {
     curiosity: [
-      `The ${n} method ${au} keep overlooking (it's not what you think)`,
-      `Why everything you know about ${n} might be working against you`,
+      `The real reason ${au} don't have ${tr.practicalOutcome} yet (it's not what you think)`,
+      `Why most ${n} options fail to deliver ${tr.emotionalTransformation} — and what does`,
     ],
     pain: [
-      `Why ${au} stay stuck in ${n} — and the exact fix`,
-      `The real reason your ${n} results aren't moving (honest answer)`,
+      `Why ${au} stay stuck without ${tr.practicalOutcome} — and the exact fix`,
+      `Still missing ${tr.practicalOutcome}? The honest answer is here`,
     ],
     story: [
-      `How I went from lost ${au1} to consistent ${n} results using ${pr}`,
-      `What changed my ${n} results after months of going nowhere`,
+      `How I went from wanting ${tr.hiddenDesire} to actually having it — with ${pr}`,
+      `What finally delivered ${tr.practicalOutcome} after options that didn't`,
     ],
     authority: [
-      `What ${n} experts know that ${au} don't (real talk)`,
-      `The ${n} framework that actually holds up when you look at the data`,
+      `What ${au} with ${tr.emotionalTransformation} know that most don't`,
+      `The ${n} approach that actually delivers ${tr.practicalOutcome} consistently`,
     ],
     mistake: [
-      `The #1 ${n} mistake ${au} make (and how to stop immediately)`,
+      `The #1 ${n} mistake that keeps ${au} from ${tr.practicalOutcome}`,
       `You're probably making this ${n} mistake right now — here's the fix`,
     ],
     opportunity: [
-      `The ${n} opportunity ${au} are sleeping on right now`,
-      `There's a gap in ${n} that ${au} can still enter — here's how`,
+      `The ${n} window to achieve ${tr.socialTransformation} — most ${au} are missing it`,
+      `${tr.practicalOutcome} is within reach for ${au} right now — here's how`,
     ],
     viral: [
-      `The ${n} content shift that's already happening (most ${au} are late)`,
-      `Why the old ${n} formula stopped working for ${au} — new approach inside`,
+      `The ${n} standard that's already shifted (most ${au} haven't caught up)`,
+      `Why the old ${n} approach stopped delivering ${tr.emotionalTransformation} — new standard inside`,
     ],
   };
 
@@ -1216,137 +1404,137 @@ app.post("/api/script/generate", (req, res) => {
   // ── Spanish templates ─────────────────────────────────────────────────────────
   const sarMapES = {
     curiosity: [
-      `PARA — estás a punto de pasar por alto el insight que explica por qué ${n} todavía no hace clic para ti.\nAGITA — ya sabes más sobre ${n} que la mayoría de ${au}. Ese no es el problema. El problema es que saber y ejecutar son cosas completamente distintas, y esa brecha es exactamente donde los ${au} se quedan estancados.\nRESOLUCIÓN — ${pr} cierra esa brecha. No con más información — con un sistema construido para la forma en que los ${au} realmente ejecutan.`,
-      `PARA — el próximo método de ${n} que pruebes probablemente fallará. No porque lo ejecutes mal, sino porque no fue construido para alguien en tu situación.\nAGITA — los ${au} pasan meses probando enfoques que funcionan en teoría y se derrumban en la práctica. Cada intento fallido hace que el siguiente sea más difícil.\nRESOLUCIÓN — ${pr} rompe ese ciclo empezando por lo que realmente es verdad sobre cómo operan los ${au}.`,
+      `PARA — estás a punto de pasar por alto lo que separa a los ${au} que ya tienen ${tr.practicalOutcome} de los que todavía buscan cómo lograrlo.\nAGITA — ya sabes que quieres ${tr.hiddenDesire}. Ese no es el problema. El problema es que la mayoría de las opciones en ${n} no fueron construidas para tu perfil específico — y ${tr.fearAvoided} es exactamente lo que pasa cuando sigues el camino equivocado.\nRESOLUCIÓN — ${pr} está diseñado para entregar ${tr.practicalOutcome} específicamente a los ${au}. No en teoría. En la práctica.`,
+      `PARA — la próxima opción de ${n} que pruebes probablemente no llegará a ${tr.practicalOutcome}. No porque la ejecutes mal, sino porque no fue construida para alguien en tu situación.\nAGITA — los ${au} pasan tiempo buscando opciones que prometen ${tr.hiddenDesire} y terminan con algo que no muestra suficiente. Cada intento que no entrega hace que el siguiente sea más difícil de justificar.\nRESOLUCIÓN — ${pr} rompe ese ciclo entregando ${tr.practicalOutcome} de una manera que es visible y consistente para los ${au}.`,
     ],
     pain: [
-      `PARA — si eres un ${au1} que pone esfuerzo real en ${n} y todavía no ves los resultados que deberían seguir, esta es la conversación que reencuadra el porqué.\nAGITA — no te falta motivación. No te falta información. Te falta un sistema que contemple la forma específica en que los ${au} experimentan ${n} — la fricción, la inconsistencia, la brecha entre saber y hacer.\nRESOLUCIÓN — ${pr} está construido alrededor de esa brecha. No alrededor del problema de ${n} en teoría — alrededor del que los ${au} realmente viven.`,
-      `PARA — el ciclo de ${n} en el que los ${au} se quedan atascados tiene un nombre específico: esfuerzo sin acumulación. Trabajas. Nada se construye. Reinicias.\nAGITA — ese ciclo persiste porque el enfoque no encaja con la persona. La mayoría de los sistemas de ${n} fueron construidos para la vida de otra persona, las limitaciones de otra persona.\nRESOLUCIÓN — ${pr} fue construido para las tuyas. Esto es lo que cambia.`,
+      `PARA — si eres un ${au1} que quiere ${tr.hiddenDesire} y todavía no lo ves reflejado en cómo te perciben, esta es la conversación que reencuadra el porqué.\nAGITA — no te falta motivación. No te falta intención. Te falta el servicio que está realmente diseñado para entregar ${tr.practicalOutcome} a los ${au} — no la versión genérica, sino la que produce el cambio visible.\nRESOLUCIÓN — ${pr} está construido alrededor de eso. No alrededor de ${n} en general — alrededor de ${tr.practicalOutcome} para los ${au} que realmente lo necesitan.`,
+      `PARA — el ciclo en el que los ${au} se quedan atascados tiene un nombre específico: inversión sin cambio visible. Inviertes. Nada cambia suficiente. Buscas algo diferente.\nAGITA — ese ciclo persiste porque la opción no fue diseñada para producir ${tr.emotionalTransformation} para alguien con tu perfil específico. Las opciones construidas para todos no están optimizadas para nadie.\nRESOLUCIÓN — ${pr} fue construido para los ${au} que quieren ${tr.hiddenDesire}. Esto es lo que cambia.`,
     ],
     story: [
-      `PARA — hace seis meses era un ${au1} que había consumido todo el contenido de ${n} disponible y todavía no podía hacerlo funcionar de forma consistente.\nAGITA — la frustración no es que la información no exista. Es que toda está construida para una versión de ti que no tiene tus limitaciones específicas.\nRESOLUCIÓN — construir ${pr} fue cómo lo resolví para mí. Luego me di cuenta de que también funcionaba para otros ${au}.`,
-      `PARA — el momento en que mis resultados en ${n} cambiaron no fue cuando aprendí algo nuevo. Fue cuando dejé de hacer algo que se sentía productivo pero no lo era.\nAGITA — la mayoría de los ${au} están haciendo una versión de eso ahora mismo — algo que parece progreso y no lo es. Es muy difícil verlo desde adentro.\nRESOLUCIÓN — ${pr} lo hace visible. Y una vez que es visible, todo cambia.`,
+      `PARA — hubo un momento en que era un ${au1} que quería ${tr.hiddenDesire} y probó opción tras opción en ${n} sin ver el cambio que buscaba.\nAGITA — la frustración no es que las opciones no existan. Es que están diseñadas para una versión de ti que no tiene tus circunstancias específicas ni tu objetivo: ${tr.practicalOutcome}.\nRESOLUCIÓN — ${pr} fue cómo lo resolví para mí. Luego me di cuenta de que también funcionaba para otros ${au} que querían lo mismo.`,
+      `PARA — el momento en que mis resultados en ${n} cambiaron no fue cuando encontré más opciones. Fue cuando encontré la que estaba realmente diseñada para entregar ${tr.practicalOutcome} sin compromiso.\nAGITA — la mayoría de los ${au} usan opciones que funcionan para muchos — y eso es exactamente por qué no están optimizadas para producir ${tr.emotionalTransformation} de forma consistente.\nRESOLUCIÓN — ${pr} lo hace visible. Y una vez que lo ves, todo cambia.`,
     ],
     authority: [
-      `PARA — después de trabajar profundamente en ${n}, un patrón se repite casi con cada grupo de ${au}: fallan no porque les falta impulso, sino porque el método que siguen fue construido para otra persona.\nAGITA — el enfoque convencional de ${n} asume condiciones que no aplican a la mayoría de ${au}. Seguirlo produce resultados inconsistentes y una sensación creciente de que el problema es personal.\nRESOLUCIÓN — ${pr} está construido sobre lo que realmente funciona cuando quitas las suposiciones.`,
-      `PARA — he visto a los ${au} fallar en ${n} por la misma razón prevenible tantas veces que dejó de parecer coincidencia.\nAGITA — la brecha no es capacidad. Es que las herramientas disponibles fueron diseñadas para una audiencia general — no para las realidades específicas que definen cómo operan los ${au} en ${n}.\nRESOLUCIÓN — ${pr} está construido alrededor de esas realidades. Esa es la diferencia.`,
+      `PARA — después de trabajar profundamente en ${n}, un patrón se repite casi con cada grupo de ${au}: no logran ${tr.practicalOutcome} no porque les falte intención, sino porque el servicio que están usando no fue diseñado para su perfil específico.\nAGITA — el enfoque convencional de ${n} asume condiciones que no aplican a la mayoría de ${au}. El resultado: ${tr.fearAvoided}, incluso cuando el esfuerzo es real.\nRESOLUCIÓN — ${pr} está construido sobre lo que realmente produce ${tr.socialTransformation} para los ${au}.`,
+      `PARA — he visto a los ${au} no llegar a ${tr.practicalOutcome} por la misma razón prevenible tantas veces que dejó de parecer coincidencia.\nAGITA — la brecha no es capacidad. Es que las opciones disponibles en ${n} fueron diseñadas para una audiencia general — no para las necesidades específicas que definen lo que los ${au} necesitan para lograr ${tr.emotionalTransformation}.\nRESOLUCIÓN — ${pr} está construido alrededor de esas necesidades específicas.`,
     ],
     mistake: [
-      `PARA — los ${au} están cometiendo un error específico en ${n} ahora mismo que parece el movimiento correcto desde adentro.\nAGITA — no es el error obvio. Es más sutil: optimizar para la métrica fácil de rastrear en lugar de la que realmente impulsa el resultado que quieren. Se siente como progreso. El marcador dice lo contrario.\nRESOLUCIÓN — ${pr} empieza revelando ese error, porque corregirlo cambia toda la trayectoria de tus resultados en ${n}.`,
-      `PARA — hay una conducta en ${n} que los ${au} hacen constantemente, que constantemente socava sus resultados, y sobre la que casi nadie habla directamente.\nAGITA — no es pereza. No es falta de conocimiento. Es un desalineamiento estructural entre la acción y el resultado — y se acumula silenciosamente.\nRESOLUCIÓN — ${pr} está construido para detectarlo temprano. Antes de que meses de esfuerzo vayan en la dirección equivocada.`,
+      `PARA — los ${au} están cometiendo un error específico en ${n} que les está impidiendo tener ${tr.practicalOutcome}.\nAGITA — no es el error obvio. Es más sutil: elegir por precio o conveniencia en lugar de por resultado real. Se siente como una decisión razonable. El marcador — no tener todavía ${tr.emotionalTransformation} — dice lo contrario.\nRESOLUCIÓN — ${pr} empieza entregando ${tr.practicalOutcome} de forma visible. Esa distinción sola cambia la trayectoria.`,
+      `PARA — hay una decisión que los ${au} toman consistentemente en ${n} que consistentemente les impide llegar a ${tr.practicalOutcome}.\nAGITA — no es pereza. No es falta de intención. Es elegir lo conveniente sobre lo que realmente produce ${tr.emotionalTransformation}. Se acumula silenciosamente hasta que la brecha es imposible de ignorar.\nRESOLUCIÓN — ${pr} está construido para entregar el resultado real desde el inicio.`,
     ],
     opportunity: [
-      `PARA — ahora mismo hay un cambio específico en ${n} del que la mayoría de ${au} están posicionados para beneficiarse — y casi ninguno de ellos lo sabe todavía.\nAGITA — cuando esta oportunidad sea obvia, la ventana ya estará llena. Los ${au} que se mueven ahora son los que en 12 meses parecerán clarividentes.\nRESOLUCIÓN — ${pr} mapea exactamente cómo entrar en esta ventana antes de que se cierre. Este es el momento.`,
-      `PARA — el panorama de ${n} ha cambiado de una manera que crea una ventaja real y específica para los ${au} que están prestando atención.\nAGITA — la mayoría de los ${au} todavía usan el método de hace 18 meses. Ese método está saturado. El nuevo carril está completamente abierto — pero solo por una ventana limitada.\nRESOLUCIÓN — ${pr} te pone en ese carril con un camino claro.`,
+      `PARA — ahora mismo hay una ventana específica para los ${au} que quieren ${tr.practicalOutcome} — y casi ninguno de ellos la está aprovechando todavía.\nAGITA — cuando esta oportunidad sea obvia, la ventana ya se habrá cerrado. Los ${au} que se mueven ahora son los que en 12 meses tendrán ${tr.socialTransformation} mientras otros todavía buscan.\nRESOLUCIÓN — ${pr} mapea exactamente cómo entrar en esta ventana antes de que se cierre.`,
+      `PARA — ${n} está cambiando de una manera que crea una ventaja real para los ${au} que están prestando atención.\nAGITA — la mayoría de los ${au} todavía esperan resultados de opciones que no están diseñadas para entregar ${tr.practicalOutcome} de forma consistente. Mientras tanto, los que ya cambiaron de enfoque tienen ${tr.emotionalTransformation}.\nRESOLUCIÓN — ${pr} te pone en ese grupo con un camino claro.`,
     ],
     viral: [
-      `PARA — el formato de contenido de ${n} que los ${au} todavía usan funcionaba hace 90 días. El algoritmo ha seguido adelante.\nAGITA — lo que está funcionando ahora tiene una estructura diferente. Está construido sobre señales y comportamientos distintos. Copiar el formato antiguo está trabajando activamente en tu contra.\nRESOLUCIÓN — ${pr} está construido alrededor de lo que está funcionando en ${n} ahora mismo — no lo que funcionó antes.`,
-      `PARA — la razón por la que algunos ${au} en ${n} obtienen resultados que parecen desproporcionados a su esfuerzo no es suerte. Hay un patrón estructural específico detrás de eso.\nAGITA — la mayoría de los ${au} puede ver que algo está funcionando para otros en ${n} pero no pueden entender por qué. Esa brecha entre observación y comprensión es donde se asienta la oportunidad.\nRESOLUCIÓN — ${pr} mapea ese patrón en algo que los ${au} pueden replicar.`,
+      `PARA — la opción de ${n} que los ${au} todavía consideran estándar ya no produce ${tr.practicalOutcome} al nivel que debería. El estándar se ha movido.\nAGITA — lo que realmente entrega ${tr.emotionalTransformation} ahora está construido con criterios diferentes, para resultados diferentes. Quedarse con lo que todos los demás usan está trabajando activamente en contra del objetivo.\nRESOLUCIÓN — ${pr} está construido alrededor de lo que realmente produce ${tr.practicalOutcome} ahora.`,
+      `PARA — la razón por la que algunos ${au} logran ${tr.socialTransformation} con menos esfuerzo aparente no es suerte. Hay un patrón estructural específico detrás.\nAGITA — la mayoría de los ${au} puede ver que algo está funcionando diferente para quienes ya lo tienen, pero no puede entender por qué. Esa brecha entre observación y comprensión es exactamente donde se asienta la ventaja.\nRESOLUCIÓN — ${pr} mapea ese patrón en algo que los ${au} pueden replicar.`,
     ],
   };
 
   const painMapES = {
     soft: [
-      `La mayoría de los ${au} en ${n} están haciendo todo lo que saben — y aun así sienten que algo no está aterrizando. Esa sensación es real, y generalmente señala una brecha en el sistema, no en la persona. El esfuerzo no es el problema. La estructura alrededor de él lo es.`,
-      `Hay un momento específico que la mayoría de los ${au} en ${n} reconocen: pones trabajo real, sigues consejos reales, y los resultados siguen siendo inconsistentes de una manera que no puedes explicar del todo. Esa inconsistencia no es aleatoria. Tiene una causa — y generalmente no es la que se habla.`,
+      `La mayoría de los ${au} en ${n} buscan ${tr.practicalOutcome} — y aun así sienten que algo no está aterrizando. Esa sensación es real, y generalmente señala que la opción que están usando no fue diseñada específicamente para producir ${tr.emotionalTransformation}. El esfuerzo no es el problema. El alineamiento entre servicio y resultado lo es.`,
+      `Hay un momento específico que la mayoría de los ${au} en ${n} reconocen: inviertes en algo, confías en el proceso — y los resultados son inconsistentes de una manera que no puedes explicar. Esa inconsistencia no es aleatoria. La causa generalmente es que el servicio no estaba optimizado para entregar ${tr.practicalOutcome} para tu situación específica.`,
     ],
     medium: [
-      `Eres un ${au1} que ha puesto esfuerzo genuino en ${n} — y los resultados no reflejan ese esfuerzo de la manera que deberían. No es un problema de motivación ni de conocimiento. Es un problema estructural. El enfoque que estás usando fue construido para la situación de otra persona.`,
-      `Los ${au} pasan meses girando alrededor de la misma fricción en ${n}: esfuerzo que no se acumula, estrategias que funcionan hasta que no funcionan, y resultados que nunca son suficientemente consistentes para construir sobre ellos.`,
+      `Eres un ${au1} que quiere ${tr.hiddenDesire} — y todavía no lo estás viendo reflejado como debería. No es un problema de motivación ni de intención. Es un problema de alineamiento: el enfoque que estás usando fue construido para otra persona con un objetivo diferente.`,
+      `Los ${au} pasan tiempo girando alrededor de la misma fricción en ${n}: inversiones que no producen ${tr.practicalOutcome} de forma consistente, opciones que funcionan hasta que no funcionan, y resultados que nunca son suficientemente visibles para construir sobre ellos.`,
     ],
     aggressive: [
-      `Esto es lo que realmente está pasando para los ${au} en ${n} ahora mismo: el enfoque no está funcionando, y cada semana que pasa es una semana que alguien más usa para avanzar más. No hay versión de esto donde esperar produzca un resultado diferente. La brecha no se cierra sola.`,
-      `Si tus resultados en ${n} estuvieran donde deberían estar, no estarías viendo esto. Estás estancado — y el tipo específico de estancamiento que los ${au} experimentan en ${n} no se soluciona solo. Requiere un enfoque diferente, no más esfuerzo en el mismo.`,
+      `Esto es lo que realmente está pasando para los ${au} en ${n} ahora mismo: sin ${tr.practicalOutcome}, cada semana que pasa es una semana donde ${tr.fearAvoided}. No hay versión de esto donde esperar produzca un resultado diferente. La brecha no se cierra sola.`,
+      `Si ya tuvieras ${tr.practicalOutcome}, no estarías viendo esto. Estás en el punto donde los ${au} reconocen que necesitan un enfoque diferente — no más esfuerzo en el mismo. ${pr} es ese enfoque diferente.`,
     ],
   };
 
   const curiosityMapES = {
     curiosity: [
-      `¿Y si la razón por la que ${n} no ha funcionado como esperabas es algo completamente diferente a lo que has estado intentando solucionar? La mayoría de los ${au} están resolviendo el problema visible. El problema real está una capa por debajo.`,
-      `Hay un patrón que separa a los ${au} que obtienen resultados consistentes en ${n} de los que se quedan estancados — y no tiene casi nada que ver con las tácticas que están usando. La variable que realmente importa es la que casi nadie menciona directamente.`,
+      `¿Y si la razón por la que todavía no tienes ${tr.practicalOutcome} no tiene nada que ver con lo que has estado ajustando? La mayoría de los ${au} están resolviendo el problema visible. El problema real — por qué ${tr.fearAvoided} — está una capa por debajo.`,
+      `Hay un patrón que separa a los ${au} que ya tienen ${tr.emotionalTransformation} de los que todavía buscan — y no tiene casi nada que ver con cuántas veces intentaron. La variable que realmente importa es la que casi nadie menciona directamente.`,
     ],
     pain: [
-      `El costo real de otros 6 meses de los mismos resultados en ${n} no es solo tiempo. Para los ${au}, es el efecto acumulado del impulso que no se construye — de la confianza que se erosiona silenciosamente en el fondo mientras el esfuerzo continúa al frente.`,
-      `¿Y si lo que mantiene a los ${au} estancados en ${n} no es una pieza de información que falta, sino una decisión estructural que tomaron al principio que ha estado dando forma a todo lo demás? Eso es lo que nadie quiere decir en voz alta — porque solucionar lo requiere reconocerlo primero.`,
+      `El costo real de otro período sin ${tr.practicalOutcome} no es solo tiempo. Para los ${au}, es el efecto acumulado de ${tr.fearAvoided} — creciendo silenciosamente en el fondo mientras el esfuerzo continúa al frente.`,
+      `¿Y si lo que mantiene a los ${au} lejos de ${tr.identityShift} no es información que falta, sino una decisión estructural que tomaron al principio que ha estado dando forma a todo desde entonces?`,
     ],
     story: [
-      `El cambio en mis resultados de ${n} no ocurrió cuando encontré una mejor estrategia. Ocurrió cuando dejé de hacer algo que parecía el movimiento correcto pero silenciosamente evitaba que todo lo demás funcionara. Guardé eso para mí durante meses antes de darme cuenta de que la mayoría de los ${au} estaban haciendo exactamente lo mismo.`,
-      `He tenido esta conversación con decenas de ${au} que están estancados en ${n} — y lo que los sorprende cada vez no es la solución. Es darse cuenta de que el problema no era lo que pensaban que era. Solo ese reencuadre cambia todo.`,
+      `El cambio que llevó a los ${au} a tener ${tr.practicalOutcome} no ocurrió cuando encontraron más opciones en ${n}. Ocurrió cuando encontraron la correcta — la que realmente fue diseñada para producir ${tr.emotionalTransformation} en su situación específica.`,
+      `He tenido esta conversación con decenas de ${au} que querían ${tr.hiddenDesire} — y lo que los sorprende cada vez no es la solución. Es darse cuenta de que el problema no era lo que pensaban que era. Solo ese reencuadre cambia todo.`,
     ],
     authority: [
-      `La mayoría de los marcos de ${n} están construidos alrededor de suposiciones que no aplican a los ${au} — y las personas que los construyeron no lo saben, porque nunca han operado dentro de las limitaciones específicas que definen tu situación.`,
-      `He rastreado resultados de ${n} en suficientes ${au} para ver un patrón que no aparece en ninguno de los consejos populares: los que ganan no están haciendo más. Están haciendo una cosa específica diferente que hace que todo lo demás sea más eficiente.`,
+      `La mayoría de las opciones de ${n} están construidas alrededor de suposiciones que no aplican a los ${au} que buscan ${tr.practicalOutcome} — y quienes las construyeron no lo saben, porque nunca operaron dentro de las necesidades específicas que definen tu situación.`,
+      `He rastreado resultados en ${n} con suficientes ${au} para ver un patrón que no aparece en ningún consejo popular: los que logran ${tr.socialTransformation} no están haciendo más. Están haciendo una cosa específica diferente que hace que todo lo demás sea más eficiente.`,
     ],
     mistake: [
-      `El error más costoso de ${n} que cometen los ${au} no es el obvio. Es el que parece disciplina, parece consistencia, parece el movimiento correcto — y está activamente impidiendo el resultado hacia el que están trabajando.`,
-      `Los ${au} que están estancados en ${n} típicamente tienen algo en común: una decisión que tomaron temprano que tenía sentido en ese momento y que ha estado acumulándose silenciosamente en la dirección equivocada desde entonces.`,
+      `El error más costoso de ${n} que cometen los ${au} no es el obvio. Es el que parece disciplina, parece consistencia, parece el movimiento correcto — y está activamente impidiendo ${tr.practicalOutcome}.`,
+      `Los ${au} que todavía no tienen ${tr.emotionalTransformation} típicamente tienen algo en común: una decisión que tomaron temprano que tenía sentido en ese momento y que ha estado acumulándose en la dirección equivocada desde entonces.`,
     ],
     opportunity: [
-      `La ventana específica que acaba de abrirse en ${n} es el tipo que solo tiene sentido en retrospectiva — cuando las personas que se movieron temprano están hablando de por qué lo hicieron, y todos los demás desearían haber prestado más atención cuando importaba.`,
-      `Hay una brecha en ${n} ahora mismo en la que los ${au} con el enfoque correcto pueden entrar antes de que se llene. La razón por la que la mayoría no lo hará no es que no puedan verla — es que actuar antes de que sea obvio requiere una relación diferente con la incertidumbre.`,
+      `La ventana específica para lograr ${tr.practicalOutcome} en ${n} es el tipo que solo tiene sentido en retrospectiva — cuando los que se movieron temprano explican por qué lo hicieron, y todos los demás desearían haber prestado atención cuando importaba.`,
+      `Hay un espacio en ${n} ahora mismo en el que los ${au} con el enfoque correcto pueden lograr ${tr.socialTransformation} antes de que se llene. La razón por la que la mayoría no lo hará no es que no puedan verlo.`,
     ],
     viral: [
-      `El patrón de contenido de ${n} que está reemplazando a la fórmula anterior ya la está superando consistentemente — y la mayoría de los ${au} aún no han entendido por qué. La brecha entre los que lo ven y los que no es exactamente donde se asienta la ventaja ahora mismo.`,
-      `¿Por qué algunos ${au} en ${n} están generando resultados que parecen desproporcionados a su esfuerzo o su audiencia? La respuesta no es un secreto. Es un patrón estructural que parece obvio una vez que alguien te lo muestra — e invisible hasta que lo hace.`,
+      `El patrón en ${n} que ya está entregando ${tr.practicalOutcome} de forma consistente — y la mayoría de los ${au} aún no han entendido por qué. La brecha entre los que lo ven y los que no es exactamente donde se asienta la ventaja ahora mismo.`,
+      `¿Por qué algunos ${au} en ${n} logran ${tr.socialTransformation} con menos esfuerzo aparente? La respuesta no es un secreto. Es un patrón estructural que parece obvio una vez que alguien te lo muestra — e invisible hasta que lo hace.`,
     ],
   };
 
   const scriptMapES = {
-    curiosity: `Esto es algo que casi nunca se dice directamente sobre ${n}:\n\nLos ${au} que obtienen resultados consistentes no están haciendo más — están haciendo menos de las cosas equivocadas. La brecha en ${n} no está entre los que saben más y los que saben menos. Está entre los que han encontrado la pieza estructural que hace que todo lo demás sea eficiente, y los que todavía están trabajando alrededor de ella.\n\nLo que los ${au} realmente quieren — y lo que la mayoría de los consejos de ${n} nunca les da — es un proceso que se acumula sin requerir esfuerzo heroico para sostenerse. No una táctica nueva. Un sistema donde el esfuerzo que ya están poniendo en ${n} realmente aterriza.\n\n${pr} está construido alrededor de eso. Toma lo que ya estás haciendo en ${n} y lo reestructura alrededor de la variable que realmente impulsa resultados para los ${au} en tu situación.`,
-    pain: `Si eres un ${au1} que ha puesto esfuerzo real en ${n} y los resultados todavía no reflejan ese esfuerzo — el problema no eres tú.\n\nEl espacio de ${n} está lleno de marcos y sistemas que funcionan para alguien. Solo no para los ${au} con tus limitaciones específicas, tus metas específicas, y la versión específica de ${n} que estás intentando hacer funcionar.\n\nLo que eso crea es el peor tipo de estancamiento: el tipo donde estás haciendo las cosas correctas en teoría, y el marcador todavía no se mueve. El esfuerzo es real. El enfoque simplemente no está calibrado para tu situación.\n\n${pr} fue construido para corregir esa calibración. No añadiendo más a tu proceso — alineando lo que ya estás haciendo con lo que realmente mueve la aguja para los ${au} como tú.`,
-    story: `Hace seis meses era un ${au1} que tenía el conocimiento, el esfuerzo y las herramientas — y todavía no podía hacer que ${n} produjera resultados consistentes.\n\nLo que finalmente entendí no fue una nueva estrategia. Fue que las estrategias que estaba usando estaban construidas alrededor de un conjunto de suposiciones que no aplicaban a mi situación. Una vez que lo vi, reconstruí el enfoque desde cero — alrededor de las limitaciones reales de alguien que opera como yo.\n\nEso es lo que se convirtió en ${pr}. Y lo que me sorprendió fue que cuando se lo mostré a otros ${au}, también funcionó para ellos. Porque el problema estructural no era único para mí. Era la misma brecha que la mayoría de los ${au} encuentran en ${n} — y que casi nadie nombra directamente.\n\nSi la descripción de dónde estaba te resulta familiar, esto es lo que cambió.`,
-    authority: `Después de trabajar profundamente en ${n}, una cosa se vuelve imposible de ignorar:\n\nLos ${au} que tienen dificultades no las tienen porque les falte impulso o información. Las tienen porque los marcos que están usando fueron construidos para una versión generalizada del problema — no para las limitaciones, metas y condiciones específicas que definen cómo los ${au} realmente experimentan ${n}.\n\nEsa discrepancia es invisible hasta que la ves. Y una vez que la ves, cada pieza de consejo genérico sobre ${n} empieza a leerse diferente.\n\n${pr} está construido desde cero alrededor de lo que los ${au} realmente necesitan — no lo que necesita una audiencia general. La diferencia en resultados no es porque los principios subyacentes de ${n} sean diferentes. Es porque se están aplicando con precisión, al problema correcto, en la secuencia correcta.`,
-    mistake: `El error más común de ${n} entre los ${au} no es el obvio.\n\nEs más sutil: optimizar consistentemente para la métrica fácil de rastrear, mientras la métrica que realmente impulsa el resultado que quieres se mantiene plana en silencio. Se siente como progreso porque estás produciendo output. Pero output y resultado son cosas diferentes — y en ${n}, confundirlos es lo que mantiene a los ${au} en la misma posición mes tras mes.\n\nAsí es como se acumula: te vuelves mejor en la métrica visible. Sientes que las cosas están mejorando. El resultado subyacente no cambia. Eventualmente la desconexión se vuelve innegable — y entonces reinicias.\n\n${pr} empieza revelando cuál métrica está realmente moviendo tus resultados en ${n}, y cuál simplemente hace que el esfuerzo parezca que vale la pena. Esa distinción sola cambia la dirección de todo lo que sigue.`,
-    opportunity: `Ahora mismo hay un cambio estructural ocurriendo en ${n} del que la mayoría de los ${au} están posicionados para beneficiarse — y la mayoría de ellos no lo saben todavía.\n\nEl método que funcionó hace 12 a 18 meses está saturado. Los retornos se están comprimiendo. Y en el espacio que se está abriendo, la ventaja va para los ${au} que se mueven antes de que la oportunidad sea obvia — antes de que se vuelva competitiva, antes de que se llene, antes de que la ventana se reduzca a una fracción de lo que es ahora.\n\nEste es ese momento. No en teoría. Específicamente, ahora mismo.\n\n${pr} mapea el camino exacto hacia esta ventana para los ${au} en ${n} — qué hacer, en qué orden, y por qué el momento lo hace funcionar.`,
-    viral: `La fórmula de contenido de ${n} que los ${au} todavía están usando era la correcta — hace 90 días.\n\nEl algoritmo ha seguido adelante. El comportamiento de los espectadores ha seguido adelante. Lo que está produciendo resultados ahora parece estructuralmente diferente de lo que solía funcionar, y los ${au} que han hecho el cambio están obteniendo resultados que parecen desproporcionados a su tamaño o esfuerzo.\n\nNo es desproporcionado. Es que están trabajando con el modelo actual mientras todos los demás siguen ejecutando el anterior.\n\n${pr} está construido alrededor del modelo actual. No la teoría de lo que podría funcionar en ${n} — la estructura de lo que realmente está produciendo resultados para los ${au} ahora mismo.`,
+    curiosity: `Esto es algo que casi nunca se dice directamente sobre ${n}:\n\nLo que los ${au} que ya tienen ${tr.practicalOutcome} tienen en común no es que intentaron más — es que encontraron el enfoque correcto. La brecha en ${n} no está entre los que quieren más y los que quieren menos. Está entre los que encontraron un servicio diseñado para entregar ${tr.emotionalTransformation} específicamente a los ${au}, y los que siguen probando opciones que no fueron construidas para su situación.\n\nLo que los ${au} realmente quieren — y lo que la mayoría de las opciones de ${n} nunca les da — es ${tr.hiddenDesire}. No un resultado genérico. ${tr.practicalOutcome} que se sostiene y se nota.\n\n${pr} está construido alrededor de eso. Empieza con ${tr.hiddenDesire} — y entrega ${tr.emotionalTransformation} de una manera que es visible para ellos y para todos los que los rodean.`,
+    pain: `Si eres un ${au1} que quiere ${tr.hiddenDesire} y todavía no lo estás viendo reflejado como debería — el problema no eres tú.\n\nEl espacio de ${n} está lleno de opciones que funcionan para alguien. Solo no específicamente diseñadas para entregar ${tr.practicalOutcome} a los ${au} con tu perfil, tus expectativas, y tu conciencia de la diferencia que realmente importa.\n\nLo que eso crea es la situación más frustrante: inviertes, pruebas, y el resultado no es lo que buscabas — y ${tr.fearAvoided}. La intención es real. El alineamiento entre servicio y transformación simplemente no está ahí.\n\n${pr} fue construido para cerrar ese alineamiento. No siendo una opción genérica — siendo diseñado alrededor de ${tr.practicalOutcome} para los ${au} que saben exactamente lo que buscan.`,
+    story: `Hubo un punto en que era un ${au1} que quería ${tr.hiddenDesire} — y seguía probando opciones en ${n} que entregaban algo, pero no ${tr.emotionalTransformation}.\n\nEl cambio no ocurrió cuando encontré más opciones. Ocurrió cuando encontré una realmente diseñada para entregar ${tr.practicalOutcome} — construida alrededor de mi situación específica, no de una audiencia general.\n\nEso es lo que se convirtió en ${pr}. Y lo que me sorprendió fue que cuando otros ${au} lo probaron, el mismo cambio ocurrió para ellos. Porque el problema no era único para mí. La mayoría de los ${au} que no tienen ${tr.practicalOutcome} están en el mismo lugar — usando opciones que no fueron construidas para llevarlos a donde quieren ir.\n\nSi la descripción de dónde estaba te resulta familiar, esto es lo que cambió.`,
+    authority: `Después de trabajar profundamente en ${n}, una cosa se vuelve imposible de ignorar:\n\nLos ${au} que no logran ${tr.practicalOutcome} no fallan porque les falte impulso. Fallan porque las opciones que están usando no fueron diseñadas para su perfil específico — la versión específica de ${tr.hiddenDesire} que define lo que realmente buscan.\n\nEsa discrepancia es invisible hasta que la ves. Y una vez que la ves, cada opción genérica de ${n} empieza a leerse diferente.\n\n${pr} está construido desde cero alrededor de lo que los ${au} realmente necesitan para lograr ${tr.emotionalTransformation}. La diferencia en resultados no es porque la necesidad subyacente en ${n} sea diferente. Es porque ${pr} se aplica con precisión, a la versión correcta de la transformación, para la persona correcta.`,
+    mistake: `El error más común de ${n} entre los ${au} no es el obvio.\n\nEs más sutil: elegir por conveniencia o familiaridad en lugar de por lo que realmente produce ${tr.practicalOutcome}. Se siente como una decisión razonable. Pero las opciones elegidas por conveniencia no fueron diseñadas para entregar ${tr.emotionalTransformation} — y la brecha se vuelve innegable cuando ${tr.fearAvoided}.\n\nAsí es como se acumula: inviertes, pruebas, decides que estuvo suficientemente bien. La transformación subyacente no ocurre. Eventualmente la desconexión se vuelve imposible de ignorar — y entonces buscas algo diferente.\n\n${pr} empieza siendo diseñado alrededor de ${tr.practicalOutcome} específicamente. Esa distinción sola cambia la dirección de todo lo que sigue.`,
+    opportunity: `Ahora mismo hay una oportunidad real para los ${au} que quieren ${tr.practicalOutcome} — y la mayoría de ellos todavía no se han movido.\n\nLas opciones de ${n} que eran estándar ya no están entregando ${tr.emotionalTransformation} al nivel que los ${au} esperan. La brecha es real, y se está ampliando. En esa brecha, la ventaja va para los ${au} que encuentran el enfoque correcto antes de que la ventana se cierre.\n\nEste es ese momento. No en teoría. Específicamente, ahora mismo.\n\n${pr} mapea el camino exacto hacia ${tr.socialTransformation} para los ${au} en ${n} — y por qué este es el momento correcto para hacer ese movimiento.`,
+    viral: `La opción estándar de ${n} que los ${au} usaban para conseguir ${tr.practicalOutcome} ha cambiado. Lo que antes entregaba ${tr.emotionalTransformation} ya no lo entrega al mismo nivel.\n\nLos ${au} que ya hicieron el cambio están obteniendo resultados que se ven diferentes — ${tr.socialTransformation} que se nota. No es suerte. Es que encontraron la opción diseñada para donde está el estándar ahora, no donde estaba antes.\n\nEso es lo que ${pr} está construido alrededor. No la versión de ${n} que era suficientemente buena antes — la versión que realmente entrega ${tr.practicalOutcome} ahora.`,
   };
 
   const ctaMapES = {
     soft: [
-      `Si esto resonó, sigue para más contenido de ${n} construido específicamente para ${au}. Publicaciones nuevas cada semana.`,
-      `Guarda esto si eres un ${au1} trabajando en tu enfoque de ${n} — querrás volver a verlo.`,
-      `Prueba ${pr} y ve si es el ajuste correcto para tus metas de ${n}. Enlace en bio.`,
+      `Si esto resonó, sigue para más contenido de ${n} construido específicamente para ${au} que quieren ${tr.practicalOutcome}. Publicaciones nuevas cada semana.`,
+      `Guarda esto si eres un ${au1} que busca ${tr.hiddenDesire} — querrás volver a verlo.`,
+      `Prueba ${pr} y ve la diferencia por ti mismo. Enlace en bio.`,
     ],
     medium: [
-      `Comenta "${n.toUpperCase()}" abajo y te envío el desglose completo — gratis.`,
-      `Sígueme si eres un ${au1} serio sobre resultados en ${n}. No publico relleno.`,
+      `Comenta "${n.toUpperCase()}" abajo y te envío el desglose completo de cómo ${pr} entrega ${tr.practicalOutcome} — gratis.`,
+      `Sígueme si eres un ${au1} serio sobre ${tr.emotionalTransformation}. No publico relleno.`,
       `${pr} está disponible ahora. Enlace en bio — menos de 2 minutos para empezar.`,
     ],
     aggressive: [
-      `Los ${au} que actúan hoy van a estar en una posición completamente diferente en 90 días. Enlace en bio. No lo pienses demasiado.`,
-      `Deja de ver. Empieza a hacer. ${pr} — enlace en bio. Este es el sistema.`,
-      `Comenta "LISTO" si ya terminaste de dejar que ${n} se quede estancado. Te envío el primer paso ahora mismo.`,
+      `Los ${au} que reservan ${pr} hoy van a tener ${tr.practicalOutcome} antes de que termine el mes. Enlace en bio. No lo pienses demasiado.`,
+      `Deja de buscar. Empieza a ver la diferencia. ${pr} — enlace en bio. Así es como ocurre ${tr.emotionalTransformation}.`,
+      `Comenta "LISTO" si ya terminaste de esperar ${tr.practicalOutcome}. Te envío el primer paso ahora mismo.`,
     ],
   };
 
   const titleMapES = {
     curiosity: [
-      `El método de ${n} que los ${au} siguen ignorando (y no es lo que piensas)`,
-      `Por qué todo lo que sabes sobre ${n} puede estar trabajando en tu contra`,
+      `La verdadera razón por la que los ${au} todavía no tienen ${tr.practicalOutcome} (y no es lo que piensas)`,
+      `Por qué la mayoría de las opciones de ${n} no entregan ${tr.emotionalTransformation} — y cuál sí`,
     ],
     pain: [
-      `Por qué los ${au} se quedan estancados en ${n} — y el arreglo exacto`,
-      `La verdadera razón por la que tus resultados en ${n} no avanzan (respuesta honesta)`,
+      `Por qué los ${au} se quedan sin ${tr.practicalOutcome} — y el arreglo exacto`,
+      `¿Todavía sin ${tr.practicalOutcome}? La respuesta honesta está aquí`,
     ],
     story: [
-      `Cómo pasé de ${au1} perdido a resultados consistentes en ${n} con ${pr}`,
-      `Qué cambió mis resultados en ${n} después de meses sin avanzar`,
+      `Cómo pasé de querer ${tr.hiddenDesire} a tenerlo de verdad — con ${pr}`,
+      `Lo que finalmente entregó ${tr.practicalOutcome} cuando otras opciones no lo hicieron`,
     ],
     authority: [
-      `Lo que los expertos en ${n} saben que los ${au} no saben (conversación real)`,
-      `El marco de ${n} que realmente aguanta cuando miras los datos`,
+      `Lo que los ${au} con ${tr.emotionalTransformation} saben que la mayoría no sabe`,
+      `El enfoque de ${n} que realmente entrega ${tr.practicalOutcome} de forma consistente`,
     ],
     mistake: [
-      `El error #1 de ${n} que los ${au} cometen (y cómo parar de inmediato)`,
+      `El error #1 en ${n} que mantiene a los ${au} sin ${tr.practicalOutcome}`,
       `Probablemente estás cometiendo este error de ${n} ahora mismo — aquí está el arreglo`,
     ],
     opportunity: [
-      `La oportunidad de ${n} que los ${au} están ignorando ahora mismo`,
-      `Hay una brecha en ${n} que los ${au} todavía pueden aprovechar — así es cómo`,
+      `La ventana en ${n} para lograr ${tr.socialTransformation} — la mayoría de ${au} la están perdiendo`,
+      `${tr.practicalOutcome} está al alcance de los ${au} ahora mismo — así es cómo`,
     ],
     viral: [
-      `El cambio de contenido en ${n} que ya está ocurriendo (la mayoría de ${au} van tarde)`,
-      `Por qué la fórmula antigua de ${n} dejó de funcionar para los ${au} — nuevo enfoque adentro`,
+      `El estándar de ${n} que ya cambió (la mayoría de ${au} no se han actualizado)`,
+      `Por qué el enfoque antiguo de ${n} dejó de entregar ${tr.emotionalTransformation} — nuevo estándar adentro`,
     ],
   };
 
