@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ interface CalendarEntry {
   contentType: string;
   hookType:    HookType;
   intensity:   Intensity;
+  angle?:      string;
   title:       string;
   objective:   string;
   cta:         string;
@@ -208,6 +209,8 @@ const GOAL_OPTIONS = [
   { value: "community",       label: "Community Building" },
 ];
 
+const STORAGE_KEY = "vyron_content_planner_state";
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function ContentPlannerPage() {
   const [niche,     setNiche]     = useState("");
@@ -223,6 +226,22 @@ export default function ContentPlannerPage() {
 
   const { language, businessStage } = useVyronSettings();
   const canGenerate = niche.trim().length > 0;
+
+  // Restore state when returning from Script Engine
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (s.niche)     setNiche(s.niche);
+      if (s.product)   setProduct(s.product);
+      if (s.audience)  setAudience(s.audience);
+      if (s.goal)      setGoal(s.goal);
+      if (s.frequency) setFrequency(s.frequency);
+      if (s.duration)  setDuration(s.duration);
+      if (s.result)    setResult(s.result);
+    } catch { /* ignore parse errors */ }
+  }, []);
 
   const handleGenerate = async () => {
     if (!canGenerate) return;
@@ -253,13 +272,21 @@ export default function ContentPlannerPage() {
   };
 
   const handleGenerateScript = (entry: CalendarEntry) => {
+    // Persist current planner state so it's restored when user navigates back
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+        niche, product, audience, goal, frequency, duration, result,
+      }));
+    } catch { /* ignore storage errors */ }
+
     const params = new URLSearchParams({
-      niche:     niche.trim(),
-      product:   product.trim(),
-      audience:  audience.trim(),
-      hookType:  entry.hookType,
-      intensity: entry.intensity,
-      topic:     entry.title,
+      niche:         niche.trim(),
+      product:       product.trim(),
+      audience:      audience.trim(),
+      hookType:      entry.hookType,
+      intensity:     entry.intensity,
+      topic:         entry.title,
+      autoGenerate:  "true",
     });
     navigate(`/script-engine?${params.toString()}`);
   };

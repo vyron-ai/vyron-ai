@@ -164,21 +164,46 @@ export default function ScriptEnginePage() {
   const { language, businessStage } = useVyronSettings();
   const [topic, setTopic] = useState("");
 
-  // Pre-populate from Content Planner deep-link
+  // Pre-populate from Content Planner deep-link — auto-generate if flagged
   useEffect(() => {
-    const params   = new URLSearchParams(window.location.search);
-    const n  = params.get("niche");
-    const pr = params.get("product");
-    const au = params.get("audience");
-    const h  = params.get("hookType") as HookType | null;
-    const it = params.get("intensity") as Intensity | null;
-    const t  = params.get("topic");
+    const params = new URLSearchParams(window.location.search);
+    const n  = params.get("niche")    || "";
+    const pr = params.get("product")  || "";
+    const au = params.get("audience") || "";
+    const h  = (params.get("hookType")  || "curiosity") as HookType;
+    const it = (params.get("intensity") || "medium")    as Intensity;
+    const t  = params.get("topic")    || "";
+    const auto = params.get("autoGenerate") === "true";
+
     if (n)  setNiche(n);
     if (pr) setProduct(pr);
     if (au) setAudience(au);
-    if (h  && HOOK_TYPES.some((x) => x.value === h))   setHookType(h);
-    if (it && INTENSITIES.some((x) => x.value === it)) setIntensity(it);
+    if (HOOK_TYPES.some((x) => x.value === h))   setHookType(h);
+    if (INTENSITIES.some((x) => x.value === it)) setIntensity(it);
     if (t)  setTopic(t);
+
+    // Auto-generate: call API directly with URL values (state updates are async)
+    if (auto && n && pr && au) {
+      setLoading(true);
+      fetch("/api/script/generate", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          niche:         n,
+          product:       pr,
+          audience:      au,
+          hookType:      HOOK_TYPES.some((x) => x.value === h) ? h : "curiosity",
+          intensity:     INTENSITIES.some((x) => x.value === it) ? it : "medium",
+          language,
+          businessStage,
+        }),
+      })
+        .then((res) => (res.ok ? res.json() : Promise.reject()))
+        .then((data) => setResult(data))
+        .catch(() => toast({ description: "Error al generar el script. Inténtalo de nuevo.", variant: "destructive" }))
+        .finally(() => setLoading(false));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const canGenerate = niche.trim() && product.trim() && audience.trim();
