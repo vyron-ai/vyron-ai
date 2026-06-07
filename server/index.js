@@ -246,6 +246,7 @@ app.post("/api/content-planner/generate", (req, res) => {
   const isES = language !== "English";
   const tr   = buildTransformation(n, pr, isES);
   const si   = buildStageIntelligence(businessStage, n, pr, au, isES);
+  const sp   = buildStagePlannerData(businessStage, n, pr, au, isES);
 
   const freqMap  = { daily: 7, "5x_week": 5, "3x_week": 3, "2x_week": 2 };
   const ppw      = freqMap[postingFrequency] ?? 7;
@@ -403,23 +404,23 @@ app.post("/api/content-planner/generate", (req, res) => {
     const dayNum      = total === 1 ? 1 : Math.round((i / (total - 1)) * (dur - 1)) + 1;
     const hookType    = hookTypes[i % hookTypes.length];
     const contentType = contentTypes[i % contentTypes.length];
-    const titles      = titleTemplates[hookType] ?? titleTemplates.curiosity;
     const intensity   = intensityCycle[i % intensityCycle.length];
-    // Every 5th entry uses a stage-specific topic title for strong stage differentiation
-    const useStageTitle = (i % 5 === 2) && si.plannerTopics.length > 0;
-    const rawTitle    = useStageTitle
-      ? si.plannerTopics[Math.floor(i / 5) % si.plannerTopics.length]
-      : titles[i % titles.length];
-    // Stage CTA pool used for all entries — stage psychology determines the right ask
+    // Stage-specific topic map — every entry uses stage-calibrated topic for this hookType
+    const stageTopics = sp.topicMap[hookType] ?? sp.topicMap.curiosity;
+    const rawTitle    = stageTopics[i % stageTopics.length];
+    // Stage CTA pool — stage psychology determines the right ask
     const rawCta      = si.ctaPool[i % si.ctaPool.length];
+    // Stage-specific objective — replaces generic goal-based objective
+    const rawObjective = sp.objectivePool[i % sp.objectivePool.length];
     entries.push({
       day:         dayNum,
       contentType,
       hookType,
       intensity,
-      title:       ctxApply(rawTitle,   n, au, pr, isES),
-      objective:   objectives[i % objectives.length],
-      cta:         ctxApply(rawCta,     n, au, pr, isES),
+      angle:       sp.angle,
+      title:       ctxApply(rawTitle,      n, au, pr, isES),
+      objective:   rawObjective,
+      cta:         ctxApply(rawCta,        n, au, pr, isES),
     });
   }
 
@@ -1397,6 +1398,364 @@ function buildStageIntelligence(stage, n, pr, au, isES) {
     ],
     strategyFocus: `Micro business strategy: fast, local results. WhatsApp, referrals, reactivating past clients, daily visibility on a low budget. Every post should be practical and executable the same day — nothing theoretical, nothing requiring significant budget. The goal is local sales this week, not long-term positioning yet.`,
     weeklyNote: `[Micro Business] Practical and executable today — local sales, WhatsApp, or repeat clients. No theory, no big budget required.`,
+  };
+}
+
+// ── Business Stage Planner Intelligence ──────────────────────────────────────
+// Per-hookType topic maps, stage objectives, and angle tag for Content Planner.
+// Called alongside buildStageIntelligence — keeps each function focused.
+function buildStagePlannerData(stage, n, pr, au, isES) {
+  const s = (stage || "Microempresa").toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  const isPrincipiante = /principiante|beginner|starter/.test(s);
+  const isPequena      = /peque[ñn]|small/.test(s);
+  const isMediana      = /mediana|medium/.test(s);
+  const isGrande       = /grande|large|corp|enterprise/.test(s);
+
+  if (isES) {
+    if (isPrincipiante) return {
+      angle: "Primer cliente · Claridad · Confianza inicial",
+      objectivePool: [
+        "Generar confianza inicial con primeros clientes",
+        "Reducir barrera de entrada al primer resultado",
+        "Construir claridad sobre el primer paso concreto",
+        "Conseguir el primer cliente con acción simple hoy",
+      ],
+      topicMap: {
+        curiosity: [
+          `Por qué conseguir el primer cliente de ${n} es más simple de lo que parece`,
+          `El paso que nadie explica al empezar en ${n} desde cero`,
+          `Lo que de verdad necesitas para empezar en ${n} (no es lo que supones)`,
+          `El secreto de claridad para empezar hoy en ${n} sin experiencia`,
+        ],
+        pain: [
+          `Por qué todavía no tienes tu primer cliente de ${n} — y el arreglo simple`,
+          `El bloqueo de claridad que paraliza a quienes empiezan en ${n}`,
+          `¿Sin clientes todavía? La causa más común al empezar en ${n}`,
+          `La razón por la que empezar en ${n} parece difícil cuando en realidad no lo es`,
+        ],
+        story: [
+          `Cómo conseguí mis primeros clientes de ${n} sin experiencia previa`,
+          `De cero a primeros clientes en ${n}: lo que realmente funcionó`,
+          `Mi primer error al empezar en ${n} — y lo que aprendí sobre claridad`,
+          `El primer resultado de ${n} que me dio la confianza inicial para continuar`,
+        ],
+        authority: [
+          `La guía más simple para empezar en ${n} y conseguir los primeros clientes`,
+          `Lo que hacen los que consiguen su primer cliente de ${n} rápido`,
+          `El proceso de primer cliente de ${n} que funciona desde el día uno`,
+          `Cómo construir confianza inicial con los primeros clientes de ${n}`,
+        ],
+        mistake: [
+          `El error #1 de los que empiezan en ${n} y no consiguen su primer cliente`,
+          `Esto que hacen los principiantes en ${n} sabotea la confianza inicial`,
+          `La decisión más común al empezar en ${n} que retrasa el primer resultado`,
+          `Deja de hacer esto si estás empezando en ${n} — te está costando claridad`,
+        ],
+        opportunity: [
+          `La ventana para conseguir tu primer cliente de ${n} está abierta ahora`,
+          `Por qué ahora es el mejor momento para empezar en ${n} con claridad`,
+          `El ángulo de ${n} para primeros clientes que tu competencia no está usando`,
+          `La oportunidad de primer resultado en ${n} que los que empiezan no ven todavía`,
+        ],
+        viral: [
+          `El primer paso en ${n} que todos los principiantes están empezando a usar`,
+          `Por qué empezar en ${n} con este enfoque cambia los primeros resultados`,
+          `Todos hablan de cómo empezar en ${n} — aquí está lo que realmente da primeros clientes`,
+          `El cambio de mentalidad para empezar en ${n} que más claridad está dando ahora`,
+        ],
+      },
+    };
+
+    if (isPequena) return {
+      angle: "Sistema · Posicionamiento · Proceso repetible",
+      objectivePool: [
+        "Posicionar la marca en el nicho local",
+        "Construir captación de leads sistemática",
+        "Establecer proceso de contenido repetible",
+        "Reforzar reputación y diferenciación en el mercado",
+      ],
+      topicMap: {
+        curiosity: [
+          `El sistema de contenido que posiciona tu ${n} sin esfuerzo heroico`,
+          `Lo que separa un ${n} con reputación sólida de uno que no consigue leads`,
+          `Por qué tu ${n} necesita un proceso de captación, no más posts sueltos`,
+          `El calendario de contenido de ${n} que captura prospectos cada semana`,
+        ],
+        pain: [
+          `Por qué tu ${n} tiene visibilidad pero sin captación de leads real`,
+          `La razón por la que tu ${n} funciona a veces pero no de forma consistente`,
+          `El problema de posicionamiento que tienen los ${n} con potencial pero sin sistema`,
+          `¿Reputación de ${n} inconsistente? Aquí está el sistema que lo corrige`,
+        ],
+        story: [
+          `Cómo construí un sistema de contenido que posiciona mi ${n} consistentemente`,
+          `El calendario de ${n} que convirtió mi operación en un proceso repetible`,
+          `Cómo pasé de resultados aleatorios a captación de leads sistemática en ${n}`,
+          `Lo que cambié en mi ${n} para tener reputación sin depender de mí todo el tiempo`,
+        ],
+        authority: [
+          `El sistema de contenido de ${n} que funciona sin depender de ti`,
+          `Cómo diseñar un proceso repetible de captación para tu ${n}`,
+          `Lo que hacen los ${n} que tienen reputación sólida y leads constantes`,
+          `El calendario de posicionamiento de ${n} que funciona 7 días a la semana`,
+        ],
+        mistake: [
+          `El error de contenido que tienen los ${n} sin sistema de captación de leads`,
+          `Por qué tu ${n} no tiene leads consistentes aunque generas buen contenido`,
+          `La razón por la que tu ${n} no tiene reputación local sólida todavía`,
+          `Deja de publicar sin calendario — está saboteando el posicionamiento de tu ${n}`,
+        ],
+        opportunity: [
+          `La ventana de posicionamiento en ${n} que las pequeñas empresas no están usando`,
+          `Por qué ahora es el momento de construir el sistema de captación de tu ${n}`,
+          `El ángulo de diferenciación en ${n} que tu competencia no está usando todavía`,
+          `La oportunidad de reputación en ${n} para pequeñas empresas que nadie está aprovechando`,
+        ],
+        viral: [
+          `El sistema de ${n} que todas las pequeñas empresas están empezando a copiar`,
+          `Por qué los ${n} con sistema de contenido tienen más leads que los que publican más`,
+          `Todos hablan de contenido para ${n} — esto es lo que realmente construye reputación`,
+          `El cambio de ${n} de resultados aleatorios a proceso repetible que todos deberían conocer`,
+        ],
+      },
+    };
+
+    if (isMediana) return {
+      angle: "Conversión · CRM · Optimización de equipo",
+      objectivePool: [
+        "Optimizar conversión del equipo de ventas",
+        "Mejorar seguimiento y CRM del proceso",
+        "Identificar cuellos de botella en la conversión",
+        "Automatizar pasos manuales que bloquean ventas",
+      ],
+      topicMap: {
+        curiosity: [
+          `Lo que el CRM de tu ${n} te está diciendo que no estás leyendo`,
+          `Por qué tu equipo de ${n} tiene actividad pero baja conversión real`,
+          `El dato de ${n} que revela dónde se pierden las oportunidades antes de verlo`,
+          `Lo que separa el proceso de ventas de ${n} que convierte del que no`,
+        ],
+        pain: [
+          `Por qué tu equipo de ${n} trabaja más pero convierte igual o menos`,
+          `La razón por la que tu ${n} pierde oportunidades en el seguimiento`,
+          `¿CRM de ${n} que no da datos útiles? Aquí está el problema real`,
+          `El cuello de botella de conversión que tiene todo ${n} con equipo`,
+        ],
+        story: [
+          `Cómo optimizamos el seguimiento de nuestra ${n} y la conversión subió significativamente`,
+          `Lo que implementamos en el CRM de la ${n} que cambió los números del mes`,
+          `Cómo automatizamos el seguimiento en ${n} y el equipo convirtió más sin más esfuerzo`,
+          `El diagnóstico de conversión de ${n} que encontró dónde se perdía el 30% de las oportunidades`,
+        ],
+        authority: [
+          `El proceso de CRM para ${n} con equipo que mejora conversión sin más esfuerzo`,
+          `Cómo diseñar un sistema de seguimiento en ${n} que recupera oportunidades perdidas`,
+          `Las métricas de ${n} que realmente predicen el resultado de conversión del mes`,
+          `El flujo de automatización en ${n} que elimina los pasos manuales que bloquean ventas`,
+        ],
+        mistake: [
+          `El error de CRM que cometen los ${n} con equipo y pierden conversión`,
+          `Por qué tu equipo de ${n} no está haciendo el seguimiento en el momento correcto`,
+          `La automatización que falta en tu proceso de ${n} está costando clientes cada semana`,
+          `Deja de medir esto en tu ${n} — no predice conversión real del equipo`,
+        ],
+        opportunity: [
+          `La automatización de ${n} que tu equipo puede implementar esta semana para mejorar conversión`,
+          `Por qué ahora es el momento de auditar el proceso de seguimiento de tu ${n}`,
+          `El ángulo de CRM en ${n} que tu competencia con equipo no está optimizando todavía`,
+          `La ventana de optimización de conversión en ${n} que se cierra con cada semana que pasa`,
+        ],
+        viral: [
+          `El proceso de ${n} que está cambiando cómo los equipos gestionan la conversión`,
+          `Por qué los ${n} con equipos optimizados están convirtiendo más con el mismo esfuerzo`,
+          `Todos hablan de CRM para ${n} — esto es lo que realmente mueve la conversión`,
+          `El cambio de automatización en ${n} que mejoró los números de conversión del mes`,
+        ],
+      },
+    };
+
+    if (isGrande) return {
+      angle: "Escala · Consistencia de marca · Liderazgo ejecutivo",
+      objectivePool: [
+        "Escalar con consistencia de marca entre departamentos",
+        "Optimizar rentabilidad a escala operativa",
+        "Mejorar coordinación de campañas multicanal",
+        "Informar decisiones ejecutivas con métricas claras",
+      ],
+      topicMap: {
+        curiosity: [
+          `El dashboard ejecutivo de ${n} que revela dónde se pierde rentabilidad a escala`,
+          `Lo que la consistencia de marca en ${n} entre departamentos realmente requiere`,
+          `Por qué las campañas multicanal de ${n} pierden efectividad sin este sistema`,
+          `El dato ejecutivo de ${n} que el liderazgo no está leyendo y cuesta margen`,
+        ],
+        pain: [
+          `Por qué tu operación de ${n} crece pero la rentabilidad no escala igual`,
+          `La razón por la que la consistencia de marca de ${n} se diluye entre departamentos`,
+          `¿Campañas de ${n} sin coherencia entre canales? Aquí está la causa sistémica`,
+          `El problema de escalabilidad que tienen los ${n} grandes con múltiples equipos`,
+        ],
+        story: [
+          `Cómo rediseñamos el sistema de ${n} para escalar sin perder consistencia de marca`,
+          `Lo que implementamos en el dashboard de ${n} que cambió las decisiones del equipo directivo`,
+          `Cómo coordinamos las campañas de ${n} entre departamentos sin perder coherencia de marca`,
+          `El diagnóstico ejecutivo de ${n} que reveló dónde se perdía rentabilidad a escala`,
+        ],
+        authority: [
+          `El sistema de dashboard ejecutivo para ${n} que ya escalan con múltiples departamentos`,
+          `Cómo diseñar la consistencia de marca de ${n} entre departamentos a escala`,
+          `Las métricas ejecutivas de ${n} que realmente informan decisiones de liderazgo`,
+          `El modelo de campañas multicanal de ${n} que mantiene coherencia a escala corporativa`,
+        ],
+        mistake: [
+          `El error de escalabilidad que cometen los ${n} grandes y pierden rentabilidad`,
+          `Por qué tu ${n} pierde consistencia de marca entre departamentos al escalar`,
+          `La brecha de coordinación entre campañas de ${n} que cuesta margen cada mes`,
+          `Deja de medir esto en tu ${n} a nivel ejecutivo — no informa decisiones reales`,
+        ],
+        opportunity: [
+          `La ventana de optimización de rentabilidad en ${n} a escala que el liderazgo no está usando`,
+          `Por qué ahora es el momento de auditar la consistencia de marca de tu ${n} entre departamentos`,
+          `El sistema de dashboard de ${n} que tu competencia corporativa no ha implementado todavía`,
+          `La oportunidad de eficiencia operativa en ${n} a escala que nadie está capitalizando`,
+        ],
+        viral: [
+          `El modelo de ${n} corporativo que está cambiando cómo los ejecutivos gestionan la escala`,
+          `Por qué los ${n} que escalan sin perder rentabilidad tienen este sistema en común`,
+          `Todos hablan de escalabilidad en ${n} — esto es lo que realmente mantiene consistencia de marca`,
+          `El cambio de liderazgo en ${n} que mejoró coherencia entre departamentos está redefiniendo la escala`,
+        ],
+      },
+    };
+
+    // Default: Microempresa ES
+    return {
+      angle: "Ventas locales · WhatsApp · Clientes esta semana",
+      objectivePool: [
+        "Conseguir clientes locales esta semana",
+        "Activar WhatsApp como canal de ventas directas",
+        "Convertir clientes puntuales en recurrentes",
+        "Aumentar visibilidad local diaria con bajo presupuesto",
+      ],
+      topicMap: {
+        curiosity: [
+          `El canal que más clientes locales da a microempresas de ${n} por semana`,
+          `Por qué WhatsApp convierte más que Instagram para tu ${n} local`,
+          `Lo que tu competencia en ${n} no sabe sobre visibilidad local diaria`,
+          `El secreto de los clientes recurrentes en ${n} que nadie explica`,
+        ],
+        pain: [
+          `Por qué tu ${n} local tiene poco tráfico aunque haces las cosas bien`,
+          `La razón por la que tus clientes de ${n} no vuelven sin que los persigas`,
+          `¿Sin clientes esta semana? Lo que le pasa a la mayoría de ${n} locales`,
+          `El problema de visibilidad diaria que bloquea a toda microempresa de ${n}`,
+        ],
+        story: [
+          `Cómo conseguí más clientes de ${n} esta semana usando solo WhatsApp`,
+          `Lo que cambié en mi ${n} para tener clientes recurrentes sin perseguirlos`,
+          `El mensaje que me trajo nuevos clientes locales a mi ${n} esta semana`,
+          `Cómo hice que mi ${n} local fuera la opción visible en el barrio`,
+        ],
+        authority: [
+          `El sistema de WhatsApp para microempresas de ${n} que da clientes esta semana`,
+          `Cómo construir visibilidad local en ${n} con bajo presupuesto diario`,
+          `Lo que hacen los ${n} locales que siempre tienen clientes recurrentes`,
+          `La estrategia de referidos de ${n} que funciona sin gastar en publicidad`,
+        ],
+        mistake: [
+          `El error de WhatsApp que cometen los ${n} locales y pierden ventas esta semana`,
+          `Por qué tu ${n} tiene seguidores pero no clientes esta semana`,
+          `La razón por la que tus clientes de ${n} no te recomiendan solos`,
+          `Deja de hacer esto en tu ${n} local — está bloqueando las ventas locales`,
+        ],
+        opportunity: [
+          `La oportunidad de visibilidad local en ${n} que tu competencia no está aprovechando`,
+          `El momento de capturar clientes de ${n} con WhatsApp que se cierra pronto`,
+          `El nicho de ${n} local que nadie está dominando en tu zona todavía`,
+          `La ventana de clientes recurrentes en ${n} que se cierra si no actúas esta semana`,
+        ],
+        viral: [
+          `El mensaje de WhatsApp para ${n} local que todos están empezando a copiar`,
+          `Por qué los ${n} locales están cambiando esto para conseguir más clientes`,
+          `Todos hablan de marketing para ${n} — esto es lo que realmente da clientes locales`,
+          `El cambio en ${n} local que más clientes recurrentes está generando con bajo presupuesto`,
+        ],
+      },
+    };
+  }
+
+  // ── English ────────────────────────────────────────────────────────────────
+  if (isPrincipiante) return {
+    angle: "First Client · Clarity · Initial Confidence",
+    objectivePool: ["Build initial confidence with first clients","Reduce barrier to first result","Create clarity around first concrete step","Land first client with simple action today"],
+    topicMap: {
+      curiosity:   [`Why getting your first ${n} client is simpler than it looks`,`The step nobody explains when starting ${n} from scratch`,`What you actually need to start ${n} (not what you think)`,`The clarity secret to start ${n} today without experience`],
+      pain:        [`Why you still don't have your first ${n} client — the simple fix`,`The clarity block that paralyzes beginners in ${n}`,`Still no clients? The most common reason when starting ${n}`,`Why starting ${n} feels hard when it actually isn't`],
+      story:       [`How I got my first ${n} clients without prior experience`,`From zero to first ${n} clients: what actually worked`,`My first mistake in ${n} — and what I learned about clarity`,`The first ${n} result that gave me confidence to continue`],
+      authority:   [`The simplest guide to start ${n} and get your first clients`,`What people who land their first ${n} client fast do differently`,`The first-client ${n} process that works from day one`,`How to build initial trust with your first ${n} clients`],
+      mistake:     [`The #1 mistake beginners make in ${n} that delays the first client`,`This thing beginners do in ${n} kills initial confidence`,`The most common ${n} decision that delays first results`,`Stop doing this in ${n} — it's costing you clarity`],
+      opportunity: [`The window to land your first ${n} client is open right now`,`Why now is the best time to start ${n} with clarity`,`The ${n} angle for first clients your competition isn't using`,`The first-result opportunity in ${n} beginners don't see yet`],
+      viral:       [`The first step in ${n} all beginners are starting to use`,`Why starting ${n} with this approach changes first results`,`Everyone's talking about starting ${n} — here's what actually gives first clients`,`The mindset shift for starting ${n} giving the most clarity right now`],
+    },
+  };
+
+  if (isPequena) return {
+    angle: "System · Positioning · Repeatable Process",
+    objectivePool: ["Position brand in local niche","Build systematic lead capture","Establish repeatable content process","Strengthen reputation and differentiation"],
+    topicMap: {
+      curiosity:   [`The content system that positions your ${n} without heroic effort`,`What separates a ${n} with solid reputation from one that can't capture leads`,`Why your ${n} needs a capture process, not more random posts`,`The ${n} content calendar that captures prospects every week`],
+      pain:        [`Why your ${n} has visibility but no real lead capture`,`Why your ${n} works sometimes but not consistently`,`The positioning problem ${n} businesses with potential have without a system`,`Inconsistent ${n} reputation? Here's the system that fixes it`],
+      story:       [`How I built a content system that positions my ${n} consistently`,`The ${n} calendar that turned my operation into a repeatable process`,`How I went from random results to systematic lead capture in ${n}`,`What I changed in my ${n} to have reputation without depending on me`],
+      authority:   [`The ${n} content system that runs without depending on you`,`How to design a repeatable capture process for your ${n}`,`What ${n} businesses with solid reputation and consistent leads do differently`,`The ${n} positioning calendar that works 7 days a week`],
+      mistake:     [`The content mistake ${n} businesses without lead systems make`,`Why your ${n} doesn't have consistent leads even though you create content`,`Why your ${n} still doesn't have solid local reputation`,`Stop posting without a calendar — it's killing your ${n} positioning`],
+      opportunity: [`The ${n} positioning window small businesses aren't using`,`Why now is the time to build your ${n} lead capture system`,`The ${n} differentiation angle your competition isn't using`,`The ${n} reputation opportunity for small businesses nobody's taking`],
+      viral:       [`The ${n} system all small businesses are starting to copy`,`Why ${n} businesses with content systems get more leads than those who post more`,`Everyone talks about ${n} content — this is what actually builds solid reputation`,`The shift from random ${n} results to repeatable process everyone should know`],
+    },
+  };
+
+  if (isMediana) return {
+    angle: "Conversion · CRM · Team Optimization",
+    objectivePool: ["Optimize team conversion rate","Improve follow-up and CRM process","Identify bottlenecks in conversion","Automate manual steps blocking sales"],
+    topicMap: {
+      curiosity:   [`What your ${n} CRM is telling you that you're not reading`,`Why your ${n} team has activity but low actual conversion`,`The ${n} data point that shows where opportunities are lost`,`What separates the ${n} sales process that converts from the one that doesn't`],
+      pain:        [`Why your ${n} team works more but converts the same or less`,`Why your ${n} loses opportunities in the follow-up stage`,`${n} CRM not giving useful data? Here's the real problem`,`The conversion bottleneck every ${n} with a team has`],
+      story:       [`How we optimized our ${n} follow-up and conversion rose significantly`,`What we implemented in our ${n} CRM that changed this month's numbers`,`How we automated ${n} follow-up and the team converted more without extra effort`,`The ${n} conversion diagnosis that found where 30% of opportunities were lost`],
+      authority:   [`The CRM process for ${n} teams that improves conversion without more effort`,`How to design a ${n} follow-up system that recovers lost opportunities`,`The ${n} metrics that actually predict this month's conversion result`,`The ${n} automation flow that eliminates manual steps blocking sales`],
+      mistake:     [`The CRM mistake ${n} teams make that loses conversion`,`Why your ${n} team isn't following up at the right moment`,`The automation missing from your ${n} process is costing clients every week`,`Stop measuring this in your ${n} — it doesn't predict real team conversion`],
+      opportunity: [`The ${n} automation your team can implement this week to improve conversion`,`Why now is the time to audit your ${n} follow-up process`,`The ${n} CRM angle your competition with a team isn't optimizing yet`,`The ${n} conversion optimization window that closes with every passing week`],
+      viral:       [`The ${n} process changing how teams manage conversion`,`Why ${n} businesses with optimized teams convert more with the same effort`,`Everyone talks about CRM for ${n} — this is what actually moves team conversion`,`The ${n} automation change that improved conversion numbers this month`],
+    },
+  };
+
+  if (isGrande) return {
+    angle: "Scale · Brand Consistency · Executive Leadership",
+    objectivePool: ["Scale with brand consistency across departments","Optimize profitability at scale","Improve multi-channel campaign coordination","Inform executive decisions with clear metrics"],
+    topicMap: {
+      curiosity:   [`The ${n} executive dashboard that shows where profitability is lost at scale`,`What brand consistency in ${n} across departments actually requires`,`Why ${n} multi-channel campaigns lose effectiveness without this system`,`The ${n} executive data leadership isn't reading that's costing margin`],
+      pain:        [`Why your ${n} operation grows but profitability doesn't scale equally`,`Why ${n} brand consistency dilutes across departments at scale`,`${n} campaigns without channel coherence? Here's the systemic cause`,`The scalability problem large ${n} organizations with multiple teams have`],
+      story:       [`How we redesigned our ${n} system to scale without losing brand consistency`,`What we built into our ${n} dashboard that changed executive leadership decisions`,`How we coordinated ${n} campaigns across departments without losing brand coherence`,`The ${n} executive diagnosis that revealed where profitability was lost at scale`],
+      authority:   [`The executive dashboard system for ${n} organizations already scaling`,`How to build ${n} brand consistency across departments at scale`,`The ${n} executive metrics that actually inform leadership decisions`,`The ${n} multi-channel model that maintains coherence at corporate scale`],
+      mistake:     [`The scalability mistake large ${n} organizations make that loses profitability`,`Why your ${n} loses brand consistency across departments when scaling`,`The ${n} campaign coordination gap costing margin every month`,`Stop measuring this in your ${n} at the executive level — it doesn't inform real decisions`],
+      opportunity: [`The ${n} profitability optimization window at scale leadership isn't using`,`Why now is the time to audit your ${n} brand consistency across departments`,`The ${n} dashboard system your corporate competition hasn't implemented yet`,`The ${n} operational efficiency opportunity at scale nobody is capitalizing on`],
+      viral:       [`The ${n} corporate model changing how executives manage scale`,`Why ${n} organizations that scale without losing profitability have this system in common`,`Everyone talks about ${n} scalability — this is what actually maintains brand consistency`,`The ${n} leadership change that improved cross-department coherence is redefining scale`],
+    },
+  };
+
+  // Default: Micro Business EN
+  return {
+    angle: "Local Sales · WhatsApp · Clients This Week",
+    objectivePool: ["Get local clients this week","Activate WhatsApp as direct sales channel","Convert one-time clients into repeat customers","Increase daily local visibility on low budget"],
+    topicMap: {
+      curiosity:   [`The channel that gives ${n} micro businesses the most local clients per week`,`Why WhatsApp converts better than Instagram for your local ${n}`,`What your ${n} competition doesn't know about daily local visibility`,`The repeat client secret in ${n} nobody explains`],
+      pain:        [`Why your local ${n} has low traffic even when you do things right`,`Why your ${n} clients don't come back without you chasing them`,`Still no clients this week? What happens to most local ${n} businesses`,`The daily visibility problem blocking every ${n} micro business`],
+      story:       [`How I got more ${n} clients this week using only WhatsApp`,`What I changed in my ${n} to have repeat clients without chasing them`,`The message that brought new local clients to my ${n} this week`,`How I made my local ${n} the visible option in the neighborhood`],
+      authority:   [`The WhatsApp system for ${n} micro businesses that delivers clients this week`,`How to build local ${n} visibility on a daily low budget`,`What local ${n} businesses that always have repeat clients do differently`,`The ${n} referral strategy that works without spending on advertising`],
+      mistake:     [`The WhatsApp mistake local ${n} businesses make that loses weekly sales`,`Why your ${n} has followers but no clients this week`,`Why your ${n} clients don't refer you without being asked`,`Stop doing this in your local ${n} — it's blocking local sales`],
+      opportunity: [`The local ${n} visibility opportunity your competition isn't taking`,`The window to capture ${n} clients with WhatsApp that closes soon`,`The local ${n} niche nobody is dominating in your area yet`,`The ${n} repeat client window that closes if you don't act this week`],
+      viral:       [`The WhatsApp message for local ${n} everyone is starting to copy`,`Why local ${n} businesses are changing this to get more clients this week`,`Everyone talks about ${n} marketing — this is what actually gives local clients`,`The local ${n} change generating the most repeat clients on a low budget`],
+    },
   };
 }
 
