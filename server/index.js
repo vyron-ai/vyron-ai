@@ -245,6 +245,7 @@ app.post("/api/content-planner/generate", (req, res) => {
   const dur = Math.min(Math.max(parseInt(duration) || 30, 7), 90);
   const isES = language !== "English";
   const tr   = buildTransformation(n, pr, isES);
+  const si   = buildStageIntelligence(businessStage, n, pr, au, isES);
 
   const freqMap  = { daily: 7, "5x_week": 5, "3x_week": 3, "2x_week": 2 };
   const ppw      = freqMap[postingFrequency] ?? 7;
@@ -403,16 +404,22 @@ app.post("/api/content-planner/generate", (req, res) => {
     const hookType    = hookTypes[i % hookTypes.length];
     const contentType = contentTypes[i % contentTypes.length];
     const titles      = titleTemplates[hookType] ?? titleTemplates.curiosity;
-    const ctas        = ctaTemplates[hookType]   ?? ctaTemplates.curiosity;
     const intensity   = intensityCycle[i % intensityCycle.length];
+    // Every 5th entry uses a stage-specific topic title for strong stage differentiation
+    const useStageTitle = (i % 5 === 2) && si.plannerTopics.length > 0;
+    const rawTitle    = useStageTitle
+      ? si.plannerTopics[Math.floor(i / 5) % si.plannerTopics.length]
+      : titles[i % titles.length];
+    // Stage CTA pool used for all entries — stage psychology determines the right ask
+    const rawCta      = si.ctaPool[i % si.ctaPool.length];
     entries.push({
       day:         dayNum,
       contentType,
       hookType,
       intensity,
-      title:       ctxApply(titles[i % titles.length],     n, au, pr, isES),
+      title:       ctxApply(rawTitle,   n, au, pr, isES),
       objective:   objectives[i % objectives.length],
-      cta:         ctxApply(ctas[i % ctas.length],          n, au, pr, isES),
+      cta:         ctxApply(rawCta,     n, au, pr, isES),
     });
   }
 
@@ -1145,6 +1152,254 @@ function buildTransformation(n, pr, isES) {
   };
 }
 
+// ── Business Stage Intelligence V1 ───────────────────────────────────────────
+// Returns stage-specific psychology, vocabulary, script context, CTAs, content
+// topics, and strategy notes. Produces clearly differentiated output per stage.
+function buildStageIntelligence(stage, n, pr, au, isES) {
+  const s = (stage || "Microempresa").toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  const isPrincipiante = /principiante|beginner|starter/.test(s);
+  const isPequena      = /peque[ñn]|small/.test(s);
+  const isMediana      = /mediana|medium/.test(s);
+  const isGrande       = /grande|large|corp|enterprise/.test(s);
+
+  if (isES) {
+    if (isPrincipiante) return {
+      label:      "Principiante",
+      vocabulary: ["primeros clientes","claridad","empezar","confianza inicial","acción simple","primer resultado","primer paso"],
+      scriptContext: `\nSi estás empezando en ${n}: el primer resultado real, conseguido con un paso simple y claro, vale más que semanas de preparación. ${pr || n} está diseñado para quien empieza — sin prerequisitos, sin teoría innecesaria. Solo el primer paso, ejecutable hoy, para conseguir tus primeros clientes con confianza inicial real.`,
+      sarResolve:   `${pr || n} está diseñado para quien está empezando en ${n}. No necesitas experiencia previa. Solo el primer paso — este es.`,
+      painContext:  `Para quien empieza en ${n}, la mayor fricción no es la habilidad — es la falta de claridad sobre el primer paso y cómo conseguir los primeros clientes.`,
+      ctaPool: [
+        `Comenta "INICIO" y te mando la guía de primer paso — gratis.`,
+        `Da tu primer paso hoy. ${pr || n} — enlace en bio.`,
+        `¿Empezando en ${n}? Comenta "GUÍA" y te muestro por dónde empezar.`,
+        `Empieza con esto hoy. Enlace en bio para tus primeros clientes.`,
+      ],
+      plannerTopics: [
+        `Cómo conseguir tus primeros clientes en ${n} desde cero`,
+        `El primer paso en ${n} que nadie te dice`,
+        `Empezando en ${n}: lo que de verdad necesitas (y lo que no)`,
+        `Mi primer resultado en ${n} — y cómo repetirlo`,
+        `La guía más simple para empezar en ${n} hoy`,
+      ],
+      strategyFocus: `Estrategia para Principiante: enfoque total en claridad y primeros resultados. Cada post debe reducir la barrera de entrada — lenguaje simple, primer paso concreto, resultado alcanzable sin experiencia previa. El objetivo no es construir autoridad todavía, sino generar confianza inicial y los primeros clientes con acción simple y directa.`,
+      weeklyNote: `[Principiante] Lenguaje simple, primer paso claro, resultado alcanzable hoy sin experiencia previa.`,
+    };
+
+    if (isPequena) return {
+      label:      "Pequeña empresa",
+      vocabulary: ["sistema","calendario de contenido","reputación","posicionamiento","captación de leads","proceso repetible","diferenciación"],
+      scriptContext: `\nSi ya tienes operación en ${n} pero los resultados son inconsistentes: el problema no es esfuerzo — es la falta de un sistema. ${pr || n} construye el proceso repetible que hace tu ${n} predecible: calendario de contenido, captación de leads, reputación que se construye sola. No más esfuerzo heroico — un sistema de posicionamiento y diferenciación que trabaja para ti consistentemente.`,
+      sarResolve:   `${pr || n} convierte tu operación de ${n} en un sistema consistente: calendario, posicionamiento y captación de leads que funciona sin depender de ti todo el tiempo.`,
+      painContext:  `Para pequeñas empresas en ${n}, el problema no es esfuerzo — es la falta de un sistema repetible que haga consistente lo que ya funciona a veces y los posicione como la referencia.`,
+      ctaPool: [
+        `Comenta "SISTEMA" y te envío la estructura de proceso repetible.`,
+        `Convierte tu ${n} en un sistema consistente. Enlace en bio.`,
+        `¿Operación en ${n} pero resultados inconsistentes? Comenta "CONSISTENCIA".`,
+        `${pr || n} — el sistema que hace funcionar tu ${n} predeciblemente. Enlace en bio.`,
+      ],
+      plannerTopics: [
+        `El sistema que hace funcionar tu ${n} sin esfuerzo heroico`,
+        `Cómo construir un calendario de contenido que posiciona tu ${n}`,
+        `De cliente casual a cliente recurrente en ${n}: el proceso`,
+        `Reputación en ${n}: cómo construirla sistemáticamente`,
+        `La diferencia entre un ${n} que depende de ti y uno que trabaja solo`,
+      ],
+      strategyFocus: `Estrategia para Pequeña empresa: sistemas y posicionamiento. El contenido debe demostrar proceso, consistencia y diferenciación — cómo el ${n} funciona de forma repetible, no solo resultados aislados. El objetivo es ser la referencia local: no el más barato, sino el más confiable y reconocible con un sistema claro de captación de leads.`,
+      weeklyNote: `[Pequeña empresa] Muestra proceso o consistencia — cómo tu ${n} funciona sistemáticamente, no solo un resultado aislado.`,
+    };
+
+    if (isMediana) return {
+      label:      "Mediana empresa",
+      vocabulary: ["equipo","métricas","seguimiento","CRM","automatización","conversión","proceso de ventas","optimización operacional"],
+      scriptContext: `\nSi tienes equipo en ${n} pero los números de conversión no reflejan la actividad: el problema está en el proceso de seguimiento y el CRM, no en el esfuerzo del equipo. ${pr || n} optimiza ese proceso — métricas claras, automatización que elimina pasos manuales, seguimiento que recupera oportunidades antes de perderlas. El resultado: el mismo equipo, mejor conversión, proceso de ventas que escala.`,
+      sarResolve:   `${pr || n} optimiza el proceso de conversión en ${n}: CRM, seguimiento automatizado y métricas que muestran exactamente dónde se pierden las oportunidades.`,
+      painContext:  `Para medianas empresas en ${n}, el problema suele estar en el seguimiento y la conversión — la actividad existe pero el CRM y la automatización no están optimizados para capturar todo el potencial.`,
+      ctaPool: [
+        `Audita tu proceso de ${n} antes de invertir más. Comenta "DIAGNÓSTICO".`,
+        `Comenta "DIAGNÓSTICO" y revisamos dónde se pierden oportunidades en tu ${n}.`,
+        `¿Tu equipo en ${n} tiene actividad pero baja conversión? Comenta "OPTIMIZAR".`,
+        `${pr || n} optimiza la conversión en ${n}. Enlace en bio para el análisis.`,
+      ],
+      plannerTopics: [
+        `El CRM que tu equipo de ${n} necesita (y cómo implementarlo sin resistencia)`,
+        `Por qué tu equipo de ${n} trabaja mucho pero convierte poco`,
+        `Automatización en ${n}: qué delegar primero para mejorar conversión`,
+        `Las métricas de ${n} que realmente predicen el resultado del mes`,
+        `Seguimiento en ${n}: el proceso que recupera el 30% de las oportunidades perdidas`,
+      ],
+      strategyFocus: `Estrategia para Mediana empresa: optimización operacional. El contenido debe demostrar conocimiento de proceso, métricas y conversión — no cómo empezar, sino cómo mejorar lo que ya existe. Métricas, CRM, automatización de seguimiento. El objetivo es posicionarse como el referente estratégico para equipos de ${n} que quieren mejorar sus números de conversión.`,
+      weeklyNote: `[Mediana empresa] Habla de proceso, métricas o conversión — no de empezar, sino de optimizar lo que ya existe con CRM y automatización.`,
+    };
+
+    if (isGrande) return {
+      label:      "Empresa grande",
+      vocabulary: ["escalabilidad","departamentos","dashboards","campañas multicanal","consistencia de marca","rentabilidad","liderazgo ejecutivo","estrategia sistémica"],
+      scriptContext: `\nPara empresas grandes en ${n}: el desafío no es ejecutar — es escalar la ejecución sin que la consistencia de marca y la rentabilidad se diluyan entre departamentos. ${pr || n} construye la infraestructura que hace posible esa escala — dashboards ejecutivos, estrategia multicanal coordinada y sistemas que permiten al liderazgo mantener visibilidad sin microgestionar. Escalabilidad real, control operativo, campañas que funcionan en todos los canales.`,
+      sarResolve:   `${pr || n} construye la infraestructura de ${n} para escala: dashboards, consistencia entre departamentos y estrategia multicanal que el liderazgo ejecutivo puede supervisar sin microgestionar.`,
+      painContext:  `Para empresas grandes en ${n}, el riesgo no es no crecer — es crecer de forma inconsistente entre departamentos y perder rentabilidad y consistencia de marca en la escala.`,
+      ctaPool: [
+        `Escala tu ${n} sin perder control operativo. Enlace en bio para auditoría ejecutiva.`,
+        `Solicita una auditoría ejecutiva del sistema de ${n}. Enlace en bio.`,
+        `Comenta "ESCALA" y te enviamos el diagnóstico de consistencia de marca para equipos grandes.`,
+        `${pr || n} para ${n} que ya escalan y necesitan consistencia entre departamentos. Enlace en bio.`,
+      ],
+      plannerTopics: [
+        `Dashboard de ${n}: las métricas ejecutivas que realmente importan`,
+        `Consistencia de marca en ${n} a escala entre departamentos`,
+        `Cómo coordinar campañas multicanal de ${n} sin perder coherencia`,
+        `El modelo de liderazgo en ${n} que escala sin microgestión`,
+        `Rentabilidad en ${n} a escala: dónde se pierde el margen y cómo recuperarlo`,
+      ],
+      strategyFocus: `Estrategia para Empresa grande: escalabilidad y liderazgo ejecutivo. El contenido debe hablar el lenguaje de dirección: escalabilidad, ROI, consistencia entre departamentos, campañas multicanal coordinadas. No cómo empezar — cómo escalar sin perder rentabilidad ni control operativo. Dashboards y sistemas que funcionan a nivel corporativo.`,
+      weeklyNote: `[Empresa grande] Lenguaje ejecutivo — escalabilidad, departamentos, dashboards, consistencia de marca. Estrategia sistémica, no táctica individual.`,
+    };
+
+    // Default: Microempresa
+    return {
+      label:      "Microempresa",
+      vocabulary: ["ventas locales","WhatsApp","clientes recurrentes","bajo presupuesto","visibilidad diaria","recomendación","cliente de la semana"],
+      scriptContext: `\nSi tienes una microempresa en ${n}: la realidad es directa — necesitas clientes esta semana, no en seis meses. ${pr || n} está construido para eso — visibilidad local, WhatsApp que convierte, clientes recurrentes que vuelven sin que tengas que perseguirlos. Sin grandes presupuestos, sin estrategias complicadas. Solo lo que funciona con bajo presupuesto para una microempresa real que necesita ventas locales hoy.`,
+      sarResolve:   `${pr || n} está construido para microempresas en ${n}: más clientes esta semana, bajo presupuesto, usando WhatsApp, referidos y visibilidad local diaria.`,
+      painContext:  `Para microempresas en ${n}, el tiempo y el presupuesto son limitados — lo que funciona tiene que dar ventas locales esta semana con bajo presupuesto y sin infraestructura compleja.`,
+      ctaPool: [
+        `Escríbeme por WhatsApp y te muestro cómo atraer más clientes de ${n} esta semana.`,
+        `Comenta "CLIENTES" y te mando el plan simple para tu microempresa de ${n}.`,
+        `${pr || n} — más clientes locales esta semana. Enlace en bio.`,
+        `¿Microempresa de ${n} con bajo presupuesto? Esto es para ti. Enlace en bio.`,
+      ],
+      plannerTopics: [
+        `Cómo conseguir más clientes de ${n} esta semana sin gastar en publicidad`,
+        `WhatsApp para ${n}: el mensaje que convierte clientes locales`,
+        `Cómo hacer que tus clientes de ${n} vuelvan y te recomienden`,
+        `Visibilidad local en ${n} con bajo presupuesto`,
+        `El plan de ${n} para microempresas que necesitan resultados esta semana`,
+      ],
+      strategyFocus: `Estrategia para Microempresa: resultados rápidos y locales. WhatsApp, referidos, reactivación de clientes pasados, visibilidad diaria con bajo presupuesto. Cada post debe ser práctico y ejecutable el mismo día — nada teórico, nada que requiera inversión significativa. El objetivo es ventas locales esta semana, no posicionamiento a largo plazo todavía.`,
+      weeklyNote: `[Microempresa] Práctico y ejecutable hoy — ventas locales, WhatsApp o clientes recurrentes. Sin teoría, sin presupuesto grande.`,
+    };
+  }
+
+  // ── English ────────────────────────────────────────────────────────────────
+  if (isPrincipiante) return {
+    label:      "Beginner",
+    vocabulary: ["first clients","clarity","getting started","initial confidence","simple action","first step","first result"],
+    scriptContext: `\nIf you're starting out in ${n}: one real result, achieved with a clear simple step, is worth more than weeks of preparation. ${pr || n} is designed for beginners — no prerequisites, no unnecessary theory. Just the first step, executable today, to land your first clients with real initial confidence.`,
+    sarResolve:   `${pr || n} is designed for people starting in ${n}. No prior experience needed. Just the first step — and this is it.`,
+    painContext:  `For those starting in ${n}, the biggest friction isn't skill — it's lack of clarity on the first step and how to get the first clients.`,
+    ctaPool: [
+      `Comment "START" and I'll send you the beginner's first-step guide — free.`,
+      `Take your first step today. ${pr || n} — link in bio.`,
+      `Just starting in ${n}? Comment "GUIDE" and I'll show you where to begin.`,
+      `Start with this today. Link in bio for your first clients.`,
+    ],
+    plannerTopics: [
+      `How to get your first ${n} clients from scratch`,
+      `The first step in ${n} nobody tells you`,
+      `Starting ${n}: what you actually need (and what you don't)`,
+      `My first result in ${n} — and how to repeat it`,
+      `The simplest guide to start ${n} today`,
+    ],
+    strategyFocus: `Beginner strategy: complete focus on clarity and first results. Every post should lower the barrier to entry — simple language, concrete first step, result achievable without prior experience. The goal isn't authority yet, it's building initial confidence and landing the first clients with simple, direct action.`,
+    weeklyNote: `[Beginner] Simple language, clear first step, result achievable today without prior experience.`,
+  };
+
+  if (isPequena) return {
+    label:      "Small Business",
+    vocabulary: ["system","content calendar","reputation","positioning","lead capture","repeatable process","differentiation"],
+    scriptContext: `\nIf you have an existing ${n} operation but results are inconsistent: the problem isn't effort — it's the lack of a system. ${pr || n} builds the repeatable process that makes your ${n} predictable: content calendar, lead capture, reputation that builds itself. Not more heroic effort — a positioning and differentiation system that works for you consistently.`,
+    sarResolve:   `${pr || n} turns your ${n} operation into a consistent system: calendar, positioning, and lead capture that doesn't depend entirely on you.`,
+    painContext:  `For small businesses in ${n}, the problem isn't effort — it's the lack of a repeatable system that makes consistent what already works sometimes.`,
+    ctaPool: [
+      `Comment "SYSTEM" and I'll send you the repeatable process structure.`,
+      `Turn your ${n} into a consistent system — link in bio.`,
+      `Got a ${n} operation but inconsistent results? Comment "CONSISTENT".`,
+      `${pr || n} — the system that makes your ${n} work predictably. Link in bio.`,
+    ],
+    plannerTopics: [
+      `The system that makes your ${n} work without heroic effort`,
+      `How to build a content calendar that positions your ${n}`,
+      `From one-time to repeat client in ${n}: the process`,
+      `Reputation in ${n}: how to build it systematically`,
+      `The difference between a ${n} that depends on you and one that runs itself`,
+    ],
+    strategyFocus: `Small business strategy: systems and positioning. Content should demonstrate process, consistency, and differentiation — how the ${n} works repeatably, not just isolated results. The goal is to be the local reference: not the cheapest, but the most reliable and recognizable, with a clear lead capture system.`,
+    weeklyNote: `[Small Business] Show process or consistency — how your ${n} works systematically, not just an isolated result.`,
+  };
+
+  if (isMediana) return {
+    label:      "Medium Business",
+    vocabulary: ["team","metrics","follow-up","CRM","automation","conversion","sales process","operational optimization"],
+    scriptContext: `\nIf you have a team in ${n} but conversion numbers don't reflect the activity: the problem is in the follow-up process and CRM, not the team's effort. ${pr || n} optimizes that process — clear metrics, automation that eliminates manual steps, follow-up that recovers opportunities before they're lost. Result: the same team, better conversion, a sales process that scales.`,
+    sarResolve:   `${pr || n} optimizes the conversion process in ${n}: CRM, automated follow-up, and metrics that show exactly where opportunities are being lost.`,
+    painContext:  `For medium businesses in ${n}, the problem is usually follow-up and conversion — the activity is there but CRM and automation aren't optimized to capture the full potential.`,
+    ctaPool: [
+      `Audit your ${n} process before investing more. Comment "DIAGNOSIS".`,
+      `Comment "DIAGNOSIS" and let's find where your ${n} process loses opportunities.`,
+      `${n} team with activity but low conversion? Comment "OPTIMIZE".`,
+      `${pr || n} optimizes ${n} conversion. Link in bio for the process audit.`,
+    ],
+    plannerTopics: [
+      `The CRM your ${n} team needs (and how to implement it without resistance)`,
+      `Why your ${n} team works hard but converts little`,
+      `Automation in ${n}: what to delegate first to improve conversion`,
+      `The ${n} metrics that actually predict this month's result`,
+      `Follow-up in ${n}: the process that recovers 30% of lost opportunities`,
+    ],
+    strategyFocus: `Medium business strategy: operational optimization. Content should demonstrate process, metrics, and conversion knowledge — not how to start, but how to improve what already exists. CRM, automation, follow-up optimization. The goal is to be the strategic reference for ${n} teams that are already operating and want better conversion numbers.`,
+    weeklyNote: `[Medium Business] Talk about process, metrics, or conversion — not how to start, but how to optimize what exists with CRM and automation.`,
+  };
+
+  if (isGrande) return {
+    label:      "Large Enterprise",
+    vocabulary: ["scalability","departments","dashboards","multi-channel campaigns","brand consistency","profitability","executive leadership","systemic strategy"],
+    scriptContext: `\nFor large enterprises in ${n}: the challenge isn't execution — it's scaling execution without brand consistency and profitability diluting across departments. ${pr || n} builds the infrastructure for that scale — executive dashboards, coordinated multi-channel campaigns, and systems that let leadership maintain visibility without micromanaging. Real scalability, operational control, campaigns that work across all channels.`,
+    sarResolve:   `${pr || n} builds the ${n} infrastructure for scale: dashboards, cross-department consistency, and multi-channel strategy that executive leadership can oversee without micromanaging.`,
+    painContext:  `For large enterprises in ${n}, the risk isn't not growing — it's growing inconsistently across departments and losing brand consistency and profitability at scale.`,
+    ctaPool: [
+      `Scale your ${n} without losing operational control. Link in bio for executive audit.`,
+      `Request an executive system audit for ${n}. Link in bio.`,
+      `Comment "SCALE" and we'll send the brand consistency diagnostic for large teams.`,
+      `${pr || n} for ${n} organizations scaling and needing cross-department consistency. Link in bio.`,
+    ],
+    plannerTopics: [
+      `${n} executive dashboard: the metrics that actually matter`,
+      `Brand consistency in ${n} at scale across departments`,
+      `How to coordinate multi-channel ${n} campaigns without losing coherence`,
+      `The ${n} leadership model that scales without micromanagement`,
+      `Profitability in ${n} at scale: where margin is lost and how to recover it`,
+    ],
+    strategyFocus: `Large enterprise strategy: scalability and executive leadership. Content should speak executive language: scalability, ROI, cross-department consistency, coordinated multi-channel campaigns. Not how to start — how to scale without losing profitability or operational control. Dashboards and systems that work at corporate level.`,
+    weeklyNote: `[Large Enterprise] Executive language — scalability, departments, dashboards, brand consistency. Systemic strategy, not individual tactics.`,
+  };
+
+  // Default: Micro Business
+  return {
+    label:      "Micro Business",
+    vocabulary: ["local sales","WhatsApp","repeat clients","low budget","daily visibility","referrals","weekly client"],
+    scriptContext: `\nIf you run a micro business in ${n}: you need clients this week, not in six months. ${pr || n} is built for that — local visibility, WhatsApp that converts, repeat clients that come back without you chasing them. No big budgets, no complicated strategies. Just what works on a low budget for a real micro business that needs local sales now.`,
+    sarResolve:   `${pr || n} is built for micro businesses in ${n}: more clients this week, low budget, using WhatsApp, referrals, and daily local visibility.`,
+    painContext:  `For micro businesses in ${n}, time and budget are limited — what works has to deliver local sales this week without significant investment.`,
+    ctaPool: [
+      `DM me and I'll show you how to attract more ${n} clients this week.`,
+      `Comment "CLIENTS" and I'll send you the simple plan for your ${n} micro business.`,
+      `${pr || n} — more local clients this week. Link in bio.`,
+      `Running a ${n} micro business on a tight budget? This is for you. Link in bio.`,
+    ],
+    plannerTopics: [
+      `How to get more ${n} clients this week without spending on ads`,
+      `WhatsApp for ${n}: the message that converts local clients`,
+      `How to make your ${n} clients come back and refer you`,
+      `Local ${n} visibility on a low budget`,
+      `The ${n} plan for micro businesses that need results this week`,
+    ],
+    strategyFocus: `Micro business strategy: fast, local results. WhatsApp, referrals, reactivating past clients, daily visibility on a low budget. Every post should be practical and executable the same day — nothing theoretical, nothing requiring significant budget. The goal is local sales this week, not long-term positioning yet.`,
+    weeklyNote: `[Micro Business] Practical and executable today — local sales, WhatsApp, or repeat clients. No theory, no big budget required.`,
+  };
+}
+
 // ── Context Intelligence Layer ────────────────────────────────────────────────
 function buildAudienceIntelligence(n, au, au1, pr, hookType, intensity, isES = false, tr = null) {
   const pick    = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -1255,6 +1510,7 @@ app.post("/api/script/generate", (req, res) => {
 
   // Build audience intelligence first — everything downstream uses it
   const tr    = buildTransformation(n, pr, isES);
+  const si    = buildStageIntelligence(businessStage, n, pr, au, isES);
   const intel = buildAudienceIntelligence(n, au, au1, pr, hookType, intensity, isES, tr);
 
   // ── SAR Triggers — intelligence-aware, hook-type-driven ──────────────────────
@@ -1553,12 +1809,13 @@ app.post("/api/script/generate", (req, res) => {
     sarTrigger:       pick(activeSarMap[hookType]    ?? activeSarMap.curiosity),
     painTrigger:      pick(activePainMap[intensity]  ?? activePainMap.medium),
     curiosityTrigger: pick(activeCurMap[hookType]    ?? activeCurMap.curiosity),
-    script:           activeScriptMap[hookType]      ?? activeScriptMap.curiosity,
+    script:           (activeScriptMap[hookType]     ?? activeScriptMap.curiosity) + si.scriptContext,
   };
   // Apply Context Engine to body text — max 2 original occurrences globally across 8 fields
   const body     = ctxBatch(rawOutput, n, au, pr, isES, 2);
   // Title + CTA use independent counters so they always get the original phrase once
-  const cta      = ctxApply(pick(activeCtaMap[intensity]   ?? activeCtaMap.medium),      n, au, pr, isES);
+  // Stage CTA overrides generic CTA pool — stage psychology determines the right ask
+  const cta      = ctxApply(pick(si.ctaPool),                                             n, au, pr, isES);
   const title    = ctxApply(pick(activeTitleMap[hookType]  ?? activeTitleMap.curiosity), n, au, pr, isES);
   const hashtags = buildHashtags(n, au, pr, hookType, isES);
 
@@ -1579,7 +1836,7 @@ app.post("/api/script/generate", (req, res) => {
     "╚══════════════════════════════════════════════════════════════════",
   ].join("\n"));
 
-  res.json({ ...body, cta, title, hashtags, audienceConsistencyScore: purity.score });
+  res.json({ ...body, cta, title, hashtags, audienceConsistencyScore: purity.score, stageLabel: si.label, stageVocabulary: si.vocabulary });
 });
 
 // ── POST /api/content-strategy/generate ──────────────────────────────────────
@@ -1956,6 +2213,9 @@ app.post("/api/content-strategy/generate", (req, res) => {
     engagement:      `El contenido viral al 30% establece la base algorítmica para tu presencia en ${n}. Sin contenido consistente que impulse el alcance, incluso tus mejores publicaciones de historia y comunidad llegan a una audiencia que se reduce. El contenido viral es infraestructura — mantiene la distribución activa para que tu contenido de mayor conexión realmente llegue a las personas para las que está diseñado.`,
   };
 
+  const tr  = buildTransformation(n, pr, isES);
+  const si  = buildStageIntelligence(businessStage, n, pr, au, isES);
+
   const activeWhyMix      = isES ? whyMixWorksES      : whyMixWorks;
   const activeAudPsych    = isES ? audiencePsychologyES: audiencePsychology;
   const activeContentDom  = isES ? contentDominantES   : contentDominant;
@@ -1967,15 +2227,17 @@ app.post("/api/content-strategy/generate", (req, res) => {
     whyMixWorks:        pick(activeWhyMix[g]     ?? activeWhyMix.sales),
     audiencePsychology: pick(activeAudPsych[g]   ?? activeAudPsych.sales),
     contentDominant:    activeContentDom[g]       ?? activeContentDom.sales,
+    stageStrategy:      si.strategyFocus,
   };
   const rawCtas = {
     nicheSpecific: pick(activeCtaNiche[g] ?? activeCtaNiche.sales),
+    stageSpecific: pick(si.ctaPool),
     leadGen:       pick(activeCtaLeadGen),
     sales:         pick(activeCtaSales),
   };
-  const weeklyWithCtx = weeklySchedule.map(day => ({
+  const weeklyWithCtx = weeklySchedule.map((day, idx) => ({
     ...day,
-    note: ctxApply(day.note, n, au, pr, isES, 1, 2, 1),
+    note: ctxApply(day.note, n, au, pr, isES, 1, 2, 1) + "  " + si.weeklyNote,
   }));
   res.json({
     contentMix,
