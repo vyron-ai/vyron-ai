@@ -23,7 +23,7 @@ const distDir = join(__dirname, "..", "dist", "public");
 const FFMPEG = ffmpegStatic ?? null;
 console.log(`FFmpeg path: ${FFMPEG ?? "NOT FOUND — MP4 export will fail"}`);
 
-// ── probeVideo — parse codec info from ffmpeg -i stderr ───────────────────────
+// ── probeVideo — parse codec + metadata from ffmpeg -i stderr ─────────────────
 // ffmpeg always exits non-zero when no output is given; the info is in stderr.
 async function probeVideo(filePath) {
   if (!FFMPEG) return null;
@@ -41,6 +41,8 @@ async function probeVideo(filePath) {
   const fmtLine = stderr.match(/Input #\d+,\s*([^\n,]+)/);
   const vidLine = stderr.match(/Stream #\d+:\d+[^:]*:\s*Video: ([^\n]+)/);
   const audLine = stderr.match(/Stream #\d+:\d+[^:]*:\s*Audio: ([^\n]+)/);
+  const durLine = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  const brLine  = stderr.match(/bitrate:\s*(\d+)\s*kb\/s/);
 
   const vidStr = vidLine?.[1] ?? "";
   const audStr = audLine?.[1] ?? "";
@@ -49,6 +51,31 @@ async function probeVideo(filePath) {
   const profileMatch = vidStr.match(/\(([A-Za-z0-9 .:]+)\)/);
   const pixFmtMatch  = vidStr.match(/\b(yuv\w+|rgb\w*|bgr\w*|gray\w*|nv\d+)\b/);
   const audioMatch   = audStr.match(/^(\S+)/);
+
+  // Resolution: "1920x1080" or "1080x1920" from video stream line
+  const resMatch = vidStr.match(/,\s*(\d{2,5})x(\d{2,5})/);
+  const width    = resMatch ? parseInt(resMatch[1], 10) : 0;
+  const height   = resMatch ? parseInt(resMatch[2], 10) : 0;
+
+  // FPS: "30 fps", "29.97 tbr", "23.976 fps" — prefer fps over tbr
+  const fpsMatchFps = vidStr.match(/(\d+(?:\.\d+)?)\s*fps/);
+  const fpsMatchTbr = vidStr.match(/(\d+(?:\.\d+)?)\s*tbr/);
+  const fpsRaw = fpsMatchFps
+    ? parseFloat(fpsMatchFps[1])
+    : fpsMatchTbr ? parseFloat(fpsMatchTbr[1]) : 0;
+  const fps = Math.round(fpsRaw * 100) / 100;
+
+  // Duration in seconds
+  let durationSec = 0;
+  if (durLine) {
+    durationSec = parseInt(durLine[1], 10) * 3600
+      + parseInt(durLine[2], 10) * 60
+      + parseFloat(durLine[3]);
+    durationSec = Math.round(durationSec * 100) / 100;
+  }
+
+  // Bitrate in kbps (overall container bitrate)
+  const bitrate = brLine ? parseInt(brLine[1], 10) : 0;
 
   // FFmpeg always reports QuickTime/MP4 family as "mov,mp4,m4a,..." regardless
   // of whether the actual file is MOV or MP4. Use the file extension — which
@@ -63,6 +90,11 @@ async function probeVideo(filePath) {
     videoProfile: profileMatch?.[1] ?? "—",
     pixFmt:       pixFmtMatch?.[1]  ?? "—",
     audioCodec:   audioMatch?.[1]   ?? "none",
+    width,
+    height,
+    fps,
+    durationSec,
+    bitrate,
   };
 }
 
@@ -2608,12 +2640,15 @@ app.post("/api/content-strategy/generate", (req, res) => {
 });
 
 // ── Video enhancement helpers ─────────────────────────────────────────────────
+// Stronger values make a clearly visible before/after difference while staying
+// within perceptually natural limits (no clipping, no cartoon look).
 const ENHANCE_EQ = {
-  clean_boost:  { brightness: 0.03,  contrast: 1.10, saturation: 1.15, gamma: 1.0  },
-  cinematic:    { brightness: -0.02, contrast: 1.15, saturation: 0.82, gamma: 1.05 },
-  social_sharp: { brightness: 0.05,  contrast: 1.20, saturation: 1.30, gamma: 1.0  },
-  low_light:    { brightness: 0.12,  contrast: 1.10, saturation: 1.10, gamma: 1.30 },
-  audio_cleaner:null,
+  //              brightness  contrast  saturation  gamma
+  clean_boost:  { brightness:  0.06,  contrast: 1.18, saturation: 1.25, gamma: 1.0  },
+  cinematic:    { brightness: -0.03,  contrast: 1.28, saturation: 0.78, gamma: 1.10 },
+  social_sharp: { brightness:  0.08,  contrast: 1.32, saturation: 1.42, gamma: 1.0  },
+  low_light:    { brightness:  0.20,  contrast: 1.22, saturation: 1.15, gamma: 1.65 },
+  audio_cleaner: null,
 };
 
 function buildEnhanceFilters(preset, toggles) {
@@ -2621,7 +2656,7 @@ function buildEnhanceFilters(preset, toggles) {
   const eq = ENHANCE_EQ[preset] ?? ENHANCE_EQ.clean_boost;
   const filters = [];
 
-  // EQ
+  // ── EQ (brightness / contrast / saturation / gamma) ──────────────────────
   const eqParts = [];
   if (toggles.brightness)      eqParts.push(`brightness=${eq.brightness}`);
   if (toggles.contrast)        eqParts.push(`contrast=${eq.contrast}`);
@@ -2631,20 +2666,37 @@ function buildEnhanceFilters(preset, toggles) {
   }
   if (eqParts.length) filters.push(`eq=${eqParts.join(":")}`);
 
-  // Sharpness
+  // ── Sharpness ─────────────────────────────────────────────────────────────
   if (toggles.sharpness) {
-    const amt = preset === "social_sharp" ? 1.3 : 0.8;
+    // luma_msize_x:luma_msize_y:luma_amount (larger = stronger)
+    const amt = preset === "social_sharp" ? 2.2 : 1.4;
     filters.push(`unsharp=5:5:${amt}:5:5:0`);
+  } else if (preset === "social_sharp") {
+    // social_sharp always applies a base clarity pass even without the toggle
+    filters.push("unsharp=3:3:0.8:3:3:0");
   }
 
-  // Noise reduction
+  // ── Noise reduction ───────────────────────────────────────────────────────
   if (toggles.noiseReduction) {
-    const str = preset === "low_light" ? "2:2:8:8" : "1.5:1.5:6:6";
+    // hqdn3d: luma_spatial:chroma_spatial:luma_tmp:chroma_tmp
+    const str = preset === "low_light" ? "4:3:12:8" : "2.5:2:8:6";
     filters.push(`hqdn3d=${str}`);
+  } else if (preset === "low_light") {
+    // low_light always denoises a little to control grain from gamma lift
+    filters.push("hqdn3d=2:1.5:6:4");
   }
 
-  // Cinematic vignette
-  if (preset === "cinematic") filters.push("vignette");
+  // ── Cinematic colour grade + vignette ────────────────────────────────────
+  if (preset === "cinematic") {
+    // Subtle teal-orange grade: lift shadows toward blue, warm highlights
+    filters.push(
+      "curves=r='0/0 0.45/0.48 1/0.97':g='0/0 0.5/0.5 1/1':b='0/0.04 0.5/0.53 1/1.04'"
+    );
+    filters.push("vignette=angle=PI/5:mode=forward");
+  }
+
+  // ── Ensure even pixel dimensions (required for yuv420p / libx264 baseline)
+  filters.push("scale=trunc(iw/2)*2:trunc(ih/2)*2");
 
   return filters;
 }
@@ -2717,6 +2769,12 @@ app.post(
         res.setHeader("X-Vyron-Src-Profile",     srcProbe.videoProfile);
         res.setHeader("X-Vyron-Src-Pix-Fmt",     srcProbe.pixFmt);
         res.setHeader("X-Vyron-Src-Audio-Codec", srcProbe.audioCodec);
+        // Real metadata headers for the analysis engine
+        res.setHeader("X-Vyron-Src-Width",       String(srcProbe.width    ?? 0));
+        res.setHeader("X-Vyron-Src-Height",      String(srcProbe.height   ?? 0));
+        res.setHeader("X-Vyron-Src-Fps",         String(srcProbe.fps      ?? 0));
+        res.setHeader("X-Vyron-Src-Duration",    String(srcProbe.durationSec ?? 0));
+        res.setHeader("X-Vyron-Src-Bitrate",     String(srcProbe.bitrate  ?? 0));
       }
       if (previewProbe) {
         res.setHeader("X-Vyron-Preview-Container",   previewProbe.container);
@@ -2832,9 +2890,12 @@ app.post(
       args.push("-map", "0:v:0", "-map", "0:a:0?");
 
       // Video — always re-encode to ensure browser-compatible H.264/yuv420p
-      if (vFilters.length > 0) {
-        args.push("-vf", vFilters.join(","));
-      }
+      // buildEnhanceFilters() always includes a scale=trunc(iw/2)*2:trunc(ih/2)*2 step
+      // for non-audio-cleaner presets; audio_cleaner returns [] so we add it here.
+      const vFilterChain = vFilters.length > 0
+        ? vFilters.join(",")
+        : "scale=trunc(iw/2)*2:trunc(ih/2)*2";
+      args.push("-vf", vFilterChain);
       // libx264 + yuv420p is required for in-browser playback across all browsers
       args.push(
         "-c:v",       "libx264",
@@ -2842,12 +2903,8 @@ app.post(
         "-preset",    "fast",
         "-pix_fmt",   "yuv420p",
         "-profile:v", "baseline",
-        "-level",     "4.1"      // was 3.0 — too restrictive for HD content
+        "-level",     "4.1"
       );
-      // Ensure even pixel dimensions (required for yuv420p baseline)
-      if (vFilters.length === 0) {
-        args.push("-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2");
-      }
 
       // Audio — always normalise to stereo 44.1 kHz AAC
       if (toggles.audioCleanup) {

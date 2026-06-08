@@ -101,10 +101,19 @@ const TOGGLE_LABELS: { key: keyof Toggles; label: string; desc: string }[] = [
 
 // ── Analysis types ─────────────────────────────────────────────────────────────
 interface VideoAnalysis {
-  resolution:      string;
+  // ── Technical metadata (real values from FFprobe via server headers) ──────
+  width:           number;
+  height:          number;
+  resolution:      string;   // "1920×1080"
+  codec:           string;   // "h264"
+  audioCodecLabel: string;   // "AAC" | "None"
   fps:             number;
-  bitrate:         number;
-  duration:        number;
+  bitrate:         number;   // kbps
+  duration:        number;   // seconds
+  fpsDisplay:      string;   // "30 fps"
+  bitrateDisplay:  string;   // "4.8 Mbps" | "480 kbps"
+  durationDisplay: string;   // "00:01:42"
+  // ── Canvas pixel analysis ─────────────────────────────────────────────────
   brightnessScore: number;
   contrastScore:   number;
   saturationScore: number;
@@ -122,6 +131,40 @@ interface VideoAnalysis {
   overallScore:    number;
 }
 
+// ── Formatting helpers ─────────────────────────────────────────────────────────
+function fmtDuration(sec: number): string {
+  if (!sec || sec <= 0) return "—";
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  if (h > 0) return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function fmtBitrate(kbps: number): string {
+  if (!kbps || kbps <= 0) return "—";
+  if (kbps >= 1000) return `${(kbps / 1000).toFixed(1)} Mbps`;
+  return `${kbps.toLocaleString()} kbps`;
+}
+
+function fmtFps(fps: number): string {
+  if (!fps || fps <= 0) return "—";
+  return fps % 1 === 0 ? `${fps} fps` : `${fps.toFixed(2)} fps`;
+}
+
+function fmtCodec(raw: string): string {
+  if (!raw || raw === "—" || raw === "unknown") return "Unknown";
+  const MAP: Record<string, string> = {
+    h264: "H.264", avc: "H.264", avc1: "H.264",
+    hevc: "H.265", h265: "H.265",
+    vp9: "VP9", vp8: "VP8",
+    av1: "AV1",
+    mpeg4: "MPEG-4",
+    aac: "AAC", mp3: "MP3", opus: "Opus",
+  };
+  return MAP[raw.toLowerCase()] ?? raw.toUpperCase();
+}
+
 interface AIRecommendation {
   presetId:    PresetId;
   label:       string;
@@ -132,24 +175,59 @@ interface AIRecommendation {
 }
 
 // ── AI Analysis engine ─────────────────────────────────────────────────────────
+interface ProbeOverrides {
+  width:       number;
+  height:      number;
+  fps:         number;
+  durationSec: number;
+  bitrate:     number;  // kbps
+  codec:       string;
+  audioCodec:  string;
+}
+
 async function analyzeVideoFrame(
   videoUrl: string,
   file: File,
   audioCodec: string,
+  probe?: ProbeOverrides,
 ): Promise<VideoAnalysis> {
+  const hasAudioFallback = (probe?.audioCodec ?? audioCodec) !== "none"
+    && (probe?.audioCodec ?? audioCodec) !== "—"
+    && !!(probe?.audioCodec ?? audioCodec);
+
   const makeFallback = (): VideoAnalysis => {
     const h = (file.name + file.size).split("").reduce((a, c) => a + c.charCodeAt(0), 0);
     const base = 50 + (h % 20);
+    const w = probe?.width  || 0;
+    const ht = probe?.height || 0;
+    const kbps = probe?.bitrate || 0;
+    const sec  = probe?.durationSec || 0;
+    const bitrateScore = kbps > 0
+      ? kbps < 500 ? 20 : kbps < 1000 ? 38 : kbps < 2000 ? 55 : kbps < 4000 ? 70 : kbps < 8000 ? 85 : 94
+      : base;
+    const resScore = (w * ht) > 0
+      ? (w * ht) < 640 * 480 ? 40 : (w * ht) < 1280 * 720 ? 65 : (w * ht) < 1920 * 1080 ? 80 : 90
+      : base;
+    const overall = Math.round(base * 0.6 + bitrateScore * 0.2 + resScore * 0.2);
     return {
-      resolution: "Unknown", fps: 30, bitrate: 0, duration: 0,
+      width: w, height: ht,
+      resolution:      w && ht ? `${w}×${ht}` : "Unknown",
+      codec:           probe?.codec     || "—",
+      audioCodecLabel: fmtCodec(probe?.audioCodec ?? audioCodec),
+      fps:             probe?.fps       || 0,
+      bitrate:         kbps,
+      duration:        sec,
+      fpsDisplay:      fmtFps(probe?.fps    || 0),
+      bitrateDisplay:  fmtBitrate(kbps),
+      durationDisplay: fmtDuration(sec),
       brightnessScore: 50, contrastScore: 50, saturationScore: 50,
       sharpnessScore: 50, noiseLevel: 30,
-      audioPresent: audioCodec !== "none" && audioCodec !== "—" && !!audioCodec,
+      audioPresent: hasAudioFallback,
       exposureLabel: "Normal", contrastLabel: "Normal",
       sharpnessLabel: "Medium", noiseLabel: "Low",
-      audioLabel: audioCodec !== "none" && audioCodec !== "—" && !!audioCodec ? "Good" : "None",
+      audioLabel: hasAudioFallback ? "Good" : "None",
       clarityScore: base, exposureScore: base, colorScore: base,
-      overallScore: base,
+      overallScore: Math.max(10, Math.min(99, overall)),
     };
   };
 
@@ -258,7 +336,9 @@ async function analyzeVideoFrame(
           noiseLevel < 40 ? "Low" :
           noiseLevel < 65 ? "Moderate" : "Heavy";
 
-        const hasAudio = audioCodec !== "none" && audioCodec !== "—" && !!audioCodec;
+        // Prefer real audio codec from probe
+        const effectiveAudioCodec = probe?.audioCodec ?? audioCodec;
+        const hasAudio = effectiveAudioCodec !== "none" && effectiveAudioCodec !== "—" && !!effectiveAudioCodec;
         const audioLabel = hasAudio ? "Good" : "None";
 
         const exposureScore = Math.round(Math.max(0, 100 - Math.abs(brightnessScore - 52) * 1.8));
@@ -266,16 +346,45 @@ async function analyzeVideoFrame(
         const colorScore    = Math.round(saturationScore * 0.5 + contrastScore * 0.5);
         const audioScore    = hasAudio ? 85 : 30;
 
+        // Real metadata — prefer probe values, fall back to canvas/file estimates
+        const realWidth  = probe?.width  || vid.videoWidth  || 0;
+        const realHeight = probe?.height || vid.videoHeight || 0;
+        const realFps    = probe?.fps    || 0;
+        const realBitrate  = probe?.bitrate    || (vid.duration > 0 ? Math.round(file.size * 8 / vid.duration / 1000) : 0);
+        const realDuration = probe?.durationSec || Math.round((vid.duration || 0) * 10) / 10;
+
+        // Incorporate technical quality into overall score
+        const bitrateScore = realBitrate > 0
+          ? realBitrate < 500 ? 20 : realBitrate < 1000 ? 38 : realBitrate < 2000 ? 55
+          : realBitrate < 4000 ? 70 : realBitrate < 8000 ? 85 : 94
+          : 70;
+        const resScore = (realWidth * realHeight) > 0
+          ? (realWidth * realHeight) < 640 * 480 ? 40
+          : (realWidth * realHeight) < 1280 * 720  ? 65
+          : (realWidth * realHeight) < 1920 * 1080 ? 80 : 90
+          : 70;
+
         const overallScore = Math.round(
-          exposureScore * 0.25 + clarityScore * 0.30 + colorScore * 0.25 + audioScore * 0.20,
+          exposureScore  * 0.20 +
+          clarityScore   * 0.25 +
+          colorScore     * 0.20 +
+          audioScore     * 0.15 +
+          bitrateScore   * 0.10 +
+          resScore       * 0.10,
         );
 
         resolve({
-          resolution: vid.videoWidth && vid.videoHeight
-            ? `${vid.videoWidth}×${vid.videoHeight}` : "Unknown",
-          fps: 30,
-          bitrate: vid.duration > 0 ? Math.round(file.size * 8 / vid.duration / 1000) : 0,
-          duration: Math.round((vid.duration || 0) * 10) / 10,
+          width:           realWidth,
+          height:          realHeight,
+          resolution:      realWidth && realHeight ? `${realWidth}×${realHeight}` : "Unknown",
+          codec:           probe?.codec || "—",
+          audioCodecLabel: fmtCodec(effectiveAudioCodec),
+          fps:             realFps,
+          bitrate:         realBitrate,
+          duration:        realDuration,
+          fpsDisplay:      fmtFps(realFps),
+          bitrateDisplay:  fmtBitrate(realBitrate),
+          durationDisplay: fmtDuration(realDuration),
           brightnessScore, contrastScore, saturationScore,
           sharpnessScore, noiseLevel,
           audioPresent: hasAudio,
@@ -799,10 +908,19 @@ export default function VideoEnhancementPage() {
       console.log("[VYRON preview] original preview ready:", url, "size:", typed.size);
       setOriginalUrl(url);
 
-      // ── Phase 1: Trigger AI analysis on the preview frame ────────────────────
-      const srcAudio = xhr.getResponseHeader("X-Vyron-Src-Audio-Codec") ?? "—";
+      // ── Phase 1: Trigger AI analysis — merge real FFprobe data from headers ──
+      const srcAudio = gh("X-Vyron-Src-Audio-Codec");
+      const probeOverrides: ProbeOverrides = {
+        width:       parseInt(gh("X-Vyron-Src-Width"),    10) || 0,
+        height:      parseInt(gh("X-Vyron-Src-Height"),   10) || 0,
+        fps:         parseFloat(gh("X-Vyron-Src-Fps"))    || 0,
+        durationSec: parseFloat(gh("X-Vyron-Src-Duration")) || 0,
+        bitrate:     parseInt(gh("X-Vyron-Src-Bitrate"),  10) || 0,
+        codec:       gh("X-Vyron-Src-Video-Codec"),
+        audioCodec:  srcAudio,
+      };
       setAnalysisLoading(true);
-      analyzeVideoFrame(url, f, srcAudio).then(result => {
+      analyzeVideoFrame(url, f, srcAudio, probeOverrides).then(result => {
         setAnalysis(result);
         setRecommendation(computeRecommendation(result));
         setAnalysisLoading(false);
@@ -1090,24 +1208,87 @@ export default function VideoEnhancementPage() {
             <div className="flex items-center gap-2 px-1 pt-1">
               <Eye size={14} className="text-primary" />
               <span className="text-xs font-bold text-primary uppercase tracking-wider">— Video Analysis Report</span>
-              <span className="ml-auto text-[10px] text-muted-foreground/50">AI frame scan complete</span>
+              <span className="ml-auto text-[10px] text-muted-foreground/50">FFprobe + frame scan</span>
             </div>
+
+            {/* Technical metadata row */}
             <div className="glass border border-border rounded-xl overflow-hidden">
+              <div className="px-4 py-2 border-b border-border/40 flex items-center gap-1.5">
+                <Activity size={11} className="text-primary/70" />
+                <span className="text-[10px] font-bold text-primary/70 uppercase tracking-wider">Technical Metadata</span>
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 divide-y divide-border/40">
                 {[
-                  { label: "Resolution",  value: analysis.resolution,    good: !analysis.resolution.startsWith("Un") },
-                  { label: "Est. Bitrate", value: analysis.bitrate > 0 ? `${analysis.bitrate.toLocaleString()} kbps` : "—", good: analysis.bitrate > 1000 },
-                  { label: "Duration",    value: analysis.duration > 0 ? `${analysis.duration}s` : "—", good: true },
-                  { label: "Exposure",    value: analysis.exposureLabel, good: analysis.exposureLabel === "Normal" },
-                  { label: "Contrast",    value: analysis.contrastLabel, good: analysis.contrastLabel === "Normal" || analysis.contrastLabel === "High" },
-                  { label: "Sharpness",   value: analysis.sharpnessLabel, good: analysis.sharpnessLabel === "Sharp" },
-                  { label: "Noise",       value: analysis.noiseLabel,    good: analysis.noiseLabel === "Clean" || analysis.noiseLabel === "Low" },
-                  { label: "Audio",       value: analysis.audioLabel,    good: analysis.audioPresent },
-                  { label: "Overall",     value: `${analysis.overallScore}/100`, good: analysis.overallScore >= 70 },
+                  { label: "Resolution",  value: analysis.resolution,      good: !analysis.resolution.startsWith("Un") },
+                  { label: "Bitrate",     value: analysis.bitrateDisplay,  good: analysis.bitrate > 1000 },
+                  { label: "Duration",    value: analysis.durationDisplay, good: analysis.duration > 0 },
+                  { label: "FPS",         value: analysis.fpsDisplay,      good: analysis.fps >= 24 },
+                  { label: "Codec",       value: fmtCodec(analysis.codec), good: analysis.codec !== "—" && analysis.codec !== "Unknown" },
+                  { label: "Audio",       value: analysis.audioCodecLabel, good: analysis.audioPresent },
                 ].map(({ label, value, good }, i) => (
                   <div key={label} className={`px-4 py-3 ${i % 3 !== 2 ? "sm:border-r border-border/40" : ""}`}>
                     <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">{label}</p>
                     <p className={`text-sm font-bold ${good ? "text-foreground" : "text-amber-400"}`}>{value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Visual diagnostics row */}
+            <div className="glass border border-border rounded-xl overflow-hidden">
+              <div className="px-4 py-2 border-b border-border/40 flex items-center gap-1.5">
+                <BarChart3 size={11} className="text-primary/70" />
+                <span className="text-[10px] font-bold text-primary/70 uppercase tracking-wider">Smart Diagnostics</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 divide-y divide-border/40">
+                {[
+                  {
+                    label: "Exposure",
+                    value: analysis.exposureLabel,
+                    score: analysis.exposureScore,
+                    good: analysis.exposureLabel === "Normal",
+                  },
+                  {
+                    label: "Contrast",
+                    value: analysis.contrastLabel,
+                    score: analysis.contrastScore,
+                    good: analysis.contrastLabel === "Normal" || analysis.contrastLabel === "High",
+                  },
+                  {
+                    label: "Sharpness",
+                    value: analysis.sharpnessLabel,
+                    score: analysis.sharpnessScore,
+                    good: analysis.sharpnessLabel === "Sharp",
+                  },
+                  {
+                    label: "Noise",
+                    value: analysis.noiseLabel,
+                    score: 100 - analysis.noiseLevel,
+                    good: analysis.noiseLabel === "Clean" || analysis.noiseLabel === "Low",
+                  },
+                  {
+                    label: "Color",
+                    value: analysis.saturationScore >= 55 ? "Vivid" : analysis.saturationScore >= 35 ? "Normal" : "Flat",
+                    score: analysis.colorScore,
+                    good: analysis.saturationScore >= 35,
+                  },
+                  {
+                    label: "Overall Score",
+                    value: `${analysis.overallScore}/100`,
+                    score: analysis.overallScore,
+                    good: analysis.overallScore >= 65,
+                    bold: true,
+                  },
+                ].map(({ label, value, score, good, bold }, i) => (
+                  <div key={label} className={`px-4 py-3 ${i % 3 !== 2 ? "sm:border-r border-border/40" : ""}`}>
+                    <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">{label}</p>
+                    <p className={`${bold ? "text-base" : "text-sm"} font-bold ${good ? "text-foreground" : "text-amber-400"}`}>{value}</p>
+                    <div className="mt-1 h-0.5 rounded-full bg-white/5 overflow-hidden w-full">
+                      <div
+                        className={`h-full rounded-full transition-all ${good ? "bg-green-500/60" : "bg-amber-500/60"}`}
+                        style={{ width: `${score}%` }}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
