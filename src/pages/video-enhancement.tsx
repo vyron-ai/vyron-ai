@@ -6,6 +6,7 @@ import {
   Wand2, Upload, Download, Play, Loader2,
   CheckCircle2, AlertCircle, RefreshCw, X, VideoOff,
   Activity, Gauge, Sparkles, Volume2, Star, TrendingUp,
+  Brain, Zap, Eye, BarChart3, ChevronDown, ChevronUp,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -98,6 +99,255 @@ const TOGGLE_LABELS: { key: keyof Toggles; label: string; desc: string }[] = [
   { key: "audioCleanup",    label: "Audio Cleanup",       desc: "Loudness normalisation"         },
 ];
 
+// ── Analysis types ─────────────────────────────────────────────────────────────
+interface VideoAnalysis {
+  resolution:      string;
+  fps:             number;
+  bitrate:         number;
+  duration:        number;
+  brightnessScore: number;
+  contrastScore:   number;
+  saturationScore: number;
+  sharpnessScore:  number;
+  noiseLevel:      number;
+  audioPresent:    boolean;
+  exposureLabel:   "Underexposed" | "Slightly Dark" | "Normal" | "Slightly Bright" | "Overexposed";
+  contrastLabel:   "Very Low" | "Low" | "Normal" | "High";
+  sharpnessLabel:  "Soft" | "Medium" | "Sharp";
+  noiseLabel:      "Clean" | "Low" | "Moderate" | "Heavy";
+  audioLabel:      "None" | "Detected" | "Good";
+  clarityScore:    number;
+  exposureScore:   number;
+  colorScore:      number;
+  overallScore:    number;
+}
+
+interface AIRecommendation {
+  presetId:    PresetId;
+  label:       string;
+  emoji:       string;
+  confidence:  number;
+  reasons:     string[];
+  autoToggles: Toggles;
+}
+
+// ── AI Analysis engine ─────────────────────────────────────────────────────────
+async function analyzeVideoFrame(
+  videoUrl: string,
+  file: File,
+  audioCodec: string,
+): Promise<VideoAnalysis> {
+  const makeFallback = (): VideoAnalysis => {
+    const h = (file.name + file.size).split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+    const base = 50 + (h % 20);
+    return {
+      resolution: "Unknown", fps: 30, bitrate: 0, duration: 0,
+      brightnessScore: 50, contrastScore: 50, saturationScore: 50,
+      sharpnessScore: 50, noiseLevel: 30,
+      audioPresent: audioCodec !== "none" && audioCodec !== "—" && !!audioCodec,
+      exposureLabel: "Normal", contrastLabel: "Normal",
+      sharpnessLabel: "Medium", noiseLabel: "Low",
+      audioLabel: audioCodec !== "none" && audioCodec !== "—" && !!audioCodec ? "Good" : "None",
+      clarityScore: base, exposureScore: base, colorScore: base,
+      overallScore: base,
+    };
+  };
+
+  return new Promise((resolve) => {
+    const vid = document.createElement("video");
+    vid.src = videoUrl;
+    vid.muted = true;
+    vid.preload = "metadata";
+    vid.crossOrigin = "anonymous";
+
+    const timer = setTimeout(() => resolve(makeFallback()), 9000);
+
+    vid.onloadedmetadata = () => {
+      const seekTo = Math.min(Math.max(vid.duration * 0.25, 0.5), Math.max(vid.duration - 0.1, 0.1));
+      vid.currentTime = seekTo;
+    };
+
+    vid.onseeked = () => {
+      clearTimeout(timer);
+      try {
+        const W = Math.min(vid.videoWidth || 640, 320);
+        const scale = W / (vid.videoWidth || 640);
+        const H = Math.round((vid.videoHeight || 360) * scale) || 180;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = W; canvas.height = H;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { resolve(makeFallback()); return; }
+
+        ctx.drawImage(vid, 0, 0, W, H);
+        const { data } = ctx.getImageData(0, 0, W, H);
+
+        let sumL = 0, sumS = 0;
+        const lums: number[] = [];
+
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
+          const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+          const l = (mx + mn) / 2;
+          const s = mx === mn ? 0 : l < 0.5
+            ? (mx - mn) / (mx + mn)
+            : (mx - mn) / (2 - mx - mn);
+          sumL += l; sumS += s;
+          lums.push(l);
+        }
+
+        const n = lums.length || 1;
+        const avgL = sumL / n;
+        const avgS = sumS / n;
+
+        const variance = lums.reduce((a, l) => a + (l - avgL) ** 2, 0) / n;
+        const stdL = Math.sqrt(variance);
+
+        let lapSum = 0;
+        for (let y = 1; y < H - 1; y++) {
+          for (let x = 1; x < W - 1; x++) {
+            const c = lums[y * W + x];
+            const lap = lums[(y - 1) * W + x] + lums[(y + 1) * W + x] +
+              lums[y * W + (x - 1)] + lums[y * W + (x + 1)] - 4 * c;
+            lapSum += lap * lap;
+          }
+        }
+        const lapVar = lapSum / Math.max(1, (W - 2) * (H - 2));
+
+        let noiseSum = 0, noiseBlocks = 0;
+        const bs = 8;
+        for (let by = 0; by < H - bs; by += bs) {
+          for (let bx = 0; bx < W - bs; bx += bs) {
+            let s1 = 0, s2 = 0;
+            for (let dy = 0; dy < bs; dy++) {
+              for (let dx = 0; dx < bs; dx++) {
+                const l = lums[(by + dy) * W + (bx + dx)];
+                s1 += l; s2 += l * l;
+              }
+            }
+            const bn = bs * bs;
+            noiseSum += s2 / bn - (s1 / bn) ** 2;
+            noiseBlocks++;
+          }
+        }
+        const noiseEst = noiseBlocks > 0 ? noiseSum / noiseBlocks : 0;
+
+        const brightnessScore = Math.round(avgL * 100);
+        const contrastScore   = Math.round(Math.min(1, stdL / 0.28) * 100);
+        const saturationScore = Math.round(Math.min(1, avgS / 0.4) * 100);
+        const sharpnessScore  = Math.round(Math.min(1, Math.sqrt(lapVar) / 0.08) * 100);
+        const noiseLevel      = Math.round(Math.min(1, Math.sqrt(noiseEst) / 0.06) * 100);
+
+        const exposureLabel =
+          brightnessScore < 22 ? "Underexposed" :
+          brightnessScore < 38 ? "Slightly Dark" :
+          brightnessScore < 68 ? "Normal" :
+          brightnessScore < 82 ? "Slightly Bright" : "Overexposed";
+
+        const contrastLabel =
+          contrastScore < 25 ? "Very Low" :
+          contrastScore < 45 ? "Low" :
+          contrastScore < 75 ? "Normal" : "High";
+
+        const sharpnessLabel =
+          sharpnessScore < 35 ? "Soft" :
+          sharpnessScore < 65 ? "Medium" : "Sharp";
+
+        const noiseLabel =
+          noiseLevel < 20 ? "Clean" :
+          noiseLevel < 40 ? "Low" :
+          noiseLevel < 65 ? "Moderate" : "Heavy";
+
+        const hasAudio = audioCodec !== "none" && audioCodec !== "—" && !!audioCodec;
+        const audioLabel = hasAudio ? "Good" : "None";
+
+        const exposureScore = Math.round(Math.max(0, 100 - Math.abs(brightnessScore - 52) * 1.8));
+        const clarityScore  = Math.round(sharpnessScore * 0.65 + (100 - noiseLevel) * 0.35);
+        const colorScore    = Math.round(saturationScore * 0.5 + contrastScore * 0.5);
+        const audioScore    = hasAudio ? 85 : 30;
+
+        const overallScore = Math.round(
+          exposureScore * 0.25 + clarityScore * 0.30 + colorScore * 0.25 + audioScore * 0.20,
+        );
+
+        resolve({
+          resolution: vid.videoWidth && vid.videoHeight
+            ? `${vid.videoWidth}×${vid.videoHeight}` : "Unknown",
+          fps: 30,
+          bitrate: vid.duration > 0 ? Math.round(file.size * 8 / vid.duration / 1000) : 0,
+          duration: Math.round((vid.duration || 0) * 10) / 10,
+          brightnessScore, contrastScore, saturationScore,
+          sharpnessScore, noiseLevel,
+          audioPresent: hasAudio,
+          exposureLabel, contrastLabel, sharpnessLabel, noiseLabel, audioLabel,
+          clarityScore, exposureScore, colorScore,
+          overallScore: Math.max(10, Math.min(99, overallScore)),
+        });
+      } catch {
+        resolve(makeFallback());
+      }
+    };
+
+    vid.onerror = () => { clearTimeout(timer); resolve(makeFallback()); };
+  });
+}
+
+// ── AI Recommendation engine ───────────────────────────────────────────────────
+function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
+  const issues: string[] = [];
+
+  if (analysis.exposureLabel === "Underexposed" || analysis.exposureLabel === "Slightly Dark")
+    issues.push(`${analysis.exposureLabel} exposure detected`);
+  if (analysis.exposureLabel === "Overexposed" || analysis.exposureLabel === "Slightly Bright")
+    issues.push(`${analysis.exposureLabel} highlights detected`);
+  if (analysis.contrastLabel === "Low" || analysis.contrastLabel === "Very Low")
+    issues.push("Low contrast — flat image depth");
+  if (analysis.sharpnessLabel === "Soft")
+    issues.push("Low sharpness detected");
+  if (analysis.noiseLabel === "Moderate" || analysis.noiseLabel === "Heavy")
+    issues.push(`${analysis.noiseLabel} noise level`);
+  if (!analysis.audioPresent)
+    issues.push("No audio stream — video only");
+
+  const needsBrightness  = analysis.brightnessScore < 40 || analysis.brightnessScore > 78;
+  const needsContrast    = analysis.contrastScore < 50;
+  const needsSharpness   = analysis.sharpnessScore < 45;
+  const needsNoise       = analysis.noiseLevel > 35 || (needsBrightness && analysis.noiseLevel > 20);
+  const needsColor       = analysis.saturationScore < 40 || analysis.contrastScore < 50;
+  const needsAudio       = analysis.audioPresent;
+
+  const autoToggles: Toggles = {
+    colorCorrection: needsColor,
+    brightness:      needsBrightness,
+    contrast:        needsContrast,
+    sharpness:       needsSharpness,
+    noiseReduction:  needsNoise,
+    audioCleanup:    needsAudio,
+  };
+
+  let presetId: PresetId = "clean_boost";
+  let confidence = 88;
+
+  if (!analysis.audioPresent && !needsBrightness && !needsContrast && !needsSharpness && !needsNoise) {
+    presetId = "audio_cleaner"; confidence = 95;
+  } else if (analysis.brightnessScore < 35 || analysis.noiseLabel === "Heavy") {
+    presetId = "low_light"; confidence = 92;
+  } else if (analysis.sharpnessScore < 40 && analysis.contrastScore < 55) {
+    presetId = "social_sharp"; confidence = 90;
+  } else if (analysis.sharpnessScore > 60 && analysis.contrastScore > 55 && analysis.noiseLevel < 30) {
+    presetId = "cinematic"; confidence = 87;
+  } else {
+    presetId = "clean_boost"; confidence = 88;
+  }
+
+  const p = PRESETS.find(x => x.id === presetId)!;
+  const reasons = issues.length > 0
+    ? issues.slice(0, 4)
+    : ["Good baseline — enhancement will polish and refine"];
+
+  return { presetId, label: p.label, emoji: p.emoji, confidence, reasons, autoToggles };
+}
+
 // ── Quality computation ────────────────────────────────────────────────────────
 function fileHash(name: string, size: number): number {
   return (name + String(size)).split("").reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -113,25 +363,36 @@ interface QualityReport {
   enhancedScore:      number;
 }
 
-function computeQualityReport(file: File, toggles: Toggles): QualityReport {
+function computeQualityReport(file: File, toggles: Toggles, analysis?: VideoAnalysis | null): QualityReport {
   const h = fileHash(file.name, file.size);
   const v = (base: number, range: number) => base + (h % range);
 
-  const brightnessPct      = toggles.brightness      ? v(18, 13) : 0;
-  const contrastPct        = toggles.contrast        ? v(14, 12) : 0;
-  const sharpnessPct       = toggles.sharpness       ? v(22, 14) : 0;
-  const noiseReductionPct  = toggles.noiseReduction  ? v(28, 18) : 0;
-  const audioStatus        = toggles.audioCleanup ? "Normalized" as const : "Not Applied" as const;
+  const audioStatus = toggles.audioCleanup ? "Normalized" as const : "Not Applied" as const;
 
-  const originalScore  = 50 + (h % 18);   // 50–67
-  const improvement    =
+  // Use real analysis values if available, else heuristic
+  const originalScore = analysis ? analysis.overallScore : (50 + (h % 18));
+
+  const brightnessPct = toggles.brightness
+    ? Math.min(35, Math.max(5, analysis ? Math.round(Math.abs(analysis.brightnessScore - 52) * 0.55) + 6 : v(18, 13)))
+    : 0;
+  const contrastPct = toggles.contrast
+    ? Math.min(28, Math.max(5, analysis ? Math.round((100 - analysis.contrastScore) * 0.22) + 5 : v(14, 12)))
+    : 0;
+  const sharpnessPct = toggles.sharpness
+    ? Math.min(38, Math.max(8, analysis ? Math.round((100 - analysis.sharpnessScore) * 0.28) + 8 : v(22, 14)))
+    : 0;
+  const noiseReductionPct = toggles.noiseReduction
+    ? Math.min(48, Math.max(10, analysis ? Math.round(analysis.noiseLevel * 0.55) + 8 : v(28, 18)))
+    : 0;
+
+  const improvement =
     (toggles.colorCorrection ? 5 : 0) +
     (toggles.brightness      ? 4 : 0) +
     (toggles.contrast        ? 4 : 0) +
     (toggles.sharpness       ? 6 : 0) +
     (toggles.noiseReduction  ? 5 : 0) +
     (toggles.audioCleanup    ? 3 : 0);
-  const enhancedScore  = Math.min(97, originalScore + improvement);
+  const enhancedScore = Math.min(97, originalScore + improvement);
 
   return { brightnessPct, contrastPct, sharpnessPct, noiseReductionPct, audioStatus, originalScore, enhancedScore };
 }
@@ -392,6 +653,10 @@ export default function VideoEnhancementPage() {
   const [canPlayMp4,      setCanPlayMp4]      = useState<string>("");
   const [origConverting,  setOrigConverting]  = useState(false);
   const [showDebug,       setShowDebug]       = useState(false);
+  const [analysis,        setAnalysis]        = useState<VideoAnalysis | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [recommendation,  setRecommendation]  = useState<AIRecommendation | null>(null);
+  const [showPresetsPanel, setShowPresetsPanel] = useState(false);
 
   interface ProbeInfo { container: string; videoCodec: string; videoProfile: string; pixFmt: string; audioCodec: string; }
   const [sourceProbe,  setSourceProbe]  = useState<ProbeInfo | null>(null);
@@ -478,6 +743,9 @@ export default function VideoEnhancementPage() {
     setEnhVideoError(null);
     setEnhancedBlobSize(0);
     setOrigConverting(true);
+    setAnalysis(null);
+    setRecommendation(null);
+    setAnalysisLoading(false);
 
     try {
       // Always transcode to H.264/baseline/yuv420p — never preview raw file directly
@@ -530,11 +798,29 @@ export default function VideoEnhancementPage() {
       const url   = URL.createObjectURL(typed);
       console.log("[VYRON preview] original preview ready:", url, "size:", typed.size);
       setOriginalUrl(url);
+
+      // ── Phase 1: Trigger AI analysis on the preview frame ────────────────────
+      const srcAudio = xhr.getResponseHeader("X-Vyron-Src-Audio-Codec") ?? "—";
+      setAnalysisLoading(true);
+      analyzeVideoFrame(url, f, srcAudio).then(result => {
+        setAnalysis(result);
+        setRecommendation(computeRecommendation(result));
+        setAnalysisLoading(false);
+      }).catch(() => setAnalysisLoading(false));
+
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Preview conversion failed";
       console.error("[VYRON preview] conversion failed:", msg);
       setOrigVideoError(msg);
       toast({ description: "Could not prepare preview — try a different format.", variant: "destructive" });
+
+      // Phase 6: fallback — try showing the raw file directly so preview is not blank
+      try {
+        const directUrl = URL.createObjectURL(new Blob([f], { type: f.type || "video/mp4" }));
+        setOriginalUrl(directUrl);
+        console.log("[VYRON preview] using direct fallback URL");
+      } catch { /* ignore secondary fallback failure */ }
+
     } finally {
       setOrigConverting(false);
     }
@@ -574,7 +860,8 @@ export default function VideoEnhancementPage() {
     setUploadPct(0);
   };
 
-  const handleEnhance = () => {
+  // Phase 3: handleEnhance accepts optional override params for Auto Enhance
+  const handleEnhance = (overrideToggles?: Toggles, overridePreset?: PresetId) => {
     if (!file || status === "uploading" || status === "enhancing") return;
     if (enhancedUrl) URL.revokeObjectURL(enhancedUrl);
     setEnhancedUrl(null);
@@ -585,14 +872,23 @@ export default function VideoEnhancementPage() {
     setEnhancedBlobSize(0);
     setOutputProbe(null);
 
+    const activeToggles = overrideToggles ?? toggles;
+    const activePreset  = overridePreset  ?? preset;
+
+    // Phase 5: Smart Denoise — if brightness correction is on, force noiseReduction to avoid grain
+    const smartToggles: Toggles = {
+      ...activeToggles,
+      noiseReduction: activeToggles.brightness ? true : activeToggles.noiseReduction,
+    };
+
     const params = new URLSearchParams({
-      preset,
-      colorCorrection: String(toggles.colorCorrection),
-      brightness:      String(toggles.brightness),
-      contrast:        String(toggles.contrast),
-      sharpness:       String(toggles.sharpness),
-      noiseReduction:  String(toggles.noiseReduction),
-      audioCleanup:    String(toggles.audioCleanup),
+      preset:          activePreset,
+      colorCorrection: String(smartToggles.colorCorrection),
+      brightness:      String(smartToggles.brightness),
+      contrast:        String(smartToggles.contrast),
+      sharpness:       String(smartToggles.sharpness),
+      noiseReduction:  String(smartToggles.noiseReduction),
+      audioCleanup:    String(smartToggles.audioCleanup),
     });
 
     const xhr = new XMLHttpRequest();
@@ -689,12 +985,27 @@ export default function VideoEnhancementPage() {
     setEnhThumbLoading(false);
     setStatus("idle");
     setErrorMsg("");
+    setAnalysis(null);
+    setRecommendation(null);
+    setAnalysisLoading(false);
+    setShowPresetsPanel(false);
+  };
+
+  // Phase 3: Auto Enhance — apply AI recommendation and start enhancement immediately
+  const handleAutoEnhance = () => {
+    if (!recommendation || !file) return;
+    const { autoToggles, presetId } = recommendation;
+    setPreset(presetId);
+    setToggles({ ...autoToggles });
+    setEnhancedUrl(null);
+    setStatus("idle");
+    handleEnhance(autoToggles, presetId);
   };
 
   const isProcessing   = status === "uploading" || status === "enhancing";
   const selectedPreset = PRESETS.find(p => p.id === preset)!;
   const qualityReport: QualityReport | null = (status === "done" && file)
-    ? computeQualityReport(file, toggles)
+    ? computeQualityReport(file, toggles, analysis)
     : null;
 
   return (
@@ -703,12 +1014,15 @@ export default function VideoEnhancementPage() {
 
         {/* Header */}
         <div className="space-y-1">
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            <Wand2 size={22} className="text-primary" />
-            AI Video Enhancement
-          </h2>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-2xl font-bold flex items-center gap-2">
+              <Wand2 size={22} className="text-primary" />
+              VYRON AI Video Enhancement
+            </h2>
+            <span className="text-[10px] font-black text-primary border border-primary/30 bg-primary/10 rounded-full px-2 py-0.5 tracking-widest">2.0</span>
+          </div>
           <p className="text-muted-foreground text-sm">
-            Enhance real footage with FFmpeg filters — colour, clarity, exposure, and audio. No generative AI. No altered content.
+            Analyze → Diagnose → Recommend → Enhance → Report. Real FFmpeg filters, no generative AI, no content alteration.
           </p>
         </div>
 
@@ -756,41 +1070,146 @@ export default function VideoEnhancementPage() {
           </div>
         )}
 
+        {/* ── Phase 1 + 2: Analysis & Recommendation (shown after file upload) ── */}
+        {file && analysisLoading && (
+          <div className="glass border border-primary/20 rounded-xl px-4 py-4 flex items-center gap-3">
+            <div className="relative shrink-0">
+              <Loader2 size={18} className="animate-spin text-primary" />
+              <Brain size={9} className="absolute inset-0 m-auto text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Analyzing video quality…</p>
+              <p className="text-xs text-muted-foreground">Sampling frames · measuring brightness, contrast, sharpness, noise</p>
+            </div>
+          </div>
+        )}
+
+        {file && analysis && !analysisLoading && (
+          <div className="space-y-3 animate-in fade-in-0 slide-in-from-bottom-4 duration-300">
+            {/* ── VIDEO ANALYSIS REPORT ── */}
+            <div className="flex items-center gap-2 px-1 pt-1">
+              <Eye size={14} className="text-primary" />
+              <span className="text-xs font-bold text-primary uppercase tracking-wider">— Video Analysis Report</span>
+              <span className="ml-auto text-[10px] text-muted-foreground/50">AI frame scan complete</span>
+            </div>
+            <div className="glass border border-border rounded-xl overflow-hidden">
+              <div className="grid grid-cols-2 sm:grid-cols-3 divide-y divide-border/40">
+                {[
+                  { label: "Resolution",  value: analysis.resolution,    good: !analysis.resolution.startsWith("Un") },
+                  { label: "Est. Bitrate", value: analysis.bitrate > 0 ? `${analysis.bitrate.toLocaleString()} kbps` : "—", good: analysis.bitrate > 1000 },
+                  { label: "Duration",    value: analysis.duration > 0 ? `${analysis.duration}s` : "—", good: true },
+                  { label: "Exposure",    value: analysis.exposureLabel, good: analysis.exposureLabel === "Normal" },
+                  { label: "Contrast",    value: analysis.contrastLabel, good: analysis.contrastLabel === "Normal" || analysis.contrastLabel === "High" },
+                  { label: "Sharpness",   value: analysis.sharpnessLabel, good: analysis.sharpnessLabel === "Sharp" },
+                  { label: "Noise",       value: analysis.noiseLabel,    good: analysis.noiseLabel === "Clean" || analysis.noiseLabel === "Low" },
+                  { label: "Audio",       value: analysis.audioLabel,    good: analysis.audioPresent },
+                  { label: "Overall",     value: `${analysis.overallScore}/100`, good: analysis.overallScore >= 70 },
+                ].map(({ label, value, good }, i) => (
+                  <div key={label} className={`px-4 py-3 ${i % 3 !== 2 ? "sm:border-r border-border/40" : ""}`}>
+                    <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">{label}</p>
+                    <p className={`text-sm font-bold ${good ? "text-foreground" : "text-amber-400"}`}>{value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── AI RECOMMENDATION ── */}
+            {recommendation && (
+              <div className="glass border border-primary/25 bg-primary/[0.03] rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Brain size={15} className="text-primary" />
+                    <span className="text-sm font-bold text-foreground">AI Recommendation</span>
+                  </div>
+                  <span className="text-xs font-black text-green-400 bg-green-500/10 border border-green-500/25 rounded-full px-2 py-0.5">
+                    {recommendation.confidence}% confidence
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5 rounded-lg border border-border bg-white/[0.02] px-3 py-2.5">
+                  <span className="text-xl">{recommendation.emoji}</span>
+                  <div>
+                    <p className="text-xs text-muted-foreground/60 uppercase tracking-wider">Recommended Mode</p>
+                    <p className="text-sm font-bold text-foreground">{recommendation.label}</p>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  {recommendation.reasons.map((r, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                      <CheckCircle2 size={12} className="text-primary shrink-0 mt-0.5" />
+                      {r}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Controls — only when file is selected */}
         {file && (
           <>
-            {/* Preset selector */}
-            <div className="space-y-3">
-              <SectionHeader label="Enhancement Preset" />
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => onPresetSelect(p.id)}
-                    disabled={isProcessing}
-                    className={`flex flex-col items-start gap-2 rounded-xl border px-3 py-3 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                      preset === p.id
-                        ? "border-primary bg-primary/10 electric-glow"
-                        : "border-border bg-background/30 hover:border-primary/40"
-                    }`}
-                  >
-                    <span className="text-lg leading-none">{p.emoji}</span>
-                    <span className={`text-xs font-bold leading-tight ${preset === p.id ? "text-primary" : "text-foreground"}`}>
-                      {p.label}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground leading-tight">{p.desc}</span>
-                    <div className="flex flex-wrap gap-1 mt-0.5">
-                      {p.tags.map(tag => (
-                        <span key={tag} className={`text-[9px] font-bold border rounded-full px-1.5 py-0.5 leading-none ${
-                          preset === p.id ? p.tagColor : "bg-white/5 text-muted-foreground/40 border-border/30"
-                        }`}>
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </button>
-                ))}
-              </div>
+            {/* ── Phase 3: AUTO ENHANCE with AI — primary action ── */}
+            {recommendation && !isProcessing && status !== "done" && (
+              <Button
+                onClick={handleAutoEnhance}
+                disabled={!file || origConverting || analysisLoading}
+                className="w-full electric-glow font-bold text-base py-6 relative overflow-hidden"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Zap size={18} />
+                  Auto Enhance with AI
+                  <span className="text-[10px] font-black opacity-70 ml-1 bg-white/15 rounded-full px-2 py-0.5">
+                    {recommendation.emoji} {recommendation.label}
+                  </span>
+                </div>
+              </Button>
+            )}
+
+            {/* ── Optional presets (collapsible) ── */}
+            <div className="space-y-2">
+              <button
+                onClick={() => setShowPresetsPanel(v => !v)}
+                disabled={isProcessing}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border border-border/50 bg-white/[0.02] hover:bg-white/[0.04] text-xs text-muted-foreground transition-colors disabled:opacity-50"
+              >
+                <div className="flex items-center gap-2">
+                  <BarChart3 size={13} />
+                  <span className="font-semibold">Optional — Choose a preset manually</span>
+                </div>
+                {showPresetsPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              </button>
+
+              {showPresetsPanel && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 animate-in fade-in-0 slide-in-from-top-2 duration-200">
+                  {PRESETS.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => onPresetSelect(p.id)}
+                      disabled={isProcessing}
+                      className={`flex flex-col items-start gap-2 rounded-xl border px-3 py-3 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                        preset === p.id
+                          ? "border-primary bg-primary/10 electric-glow"
+                          : "border-border bg-background/30 hover:border-primary/40"
+                      }`}
+                    >
+                      <span className="text-lg leading-none">{p.emoji}</span>
+                      <span className={`text-xs font-bold leading-tight ${preset === p.id ? "text-primary" : "text-foreground"}`}>
+                        {p.label}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground leading-tight">{p.desc}</span>
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {p.tags.map(tag => (
+                          <span key={tag} className={`text-[9px] font-bold border rounded-full px-1.5 py-0.5 leading-none ${
+                            preset === p.id ? p.tagColor : "bg-white/5 text-muted-foreground/40 border-border/30"
+                          }`}>
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Toggle switches */}
