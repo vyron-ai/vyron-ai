@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import {
-  RefreshCw, Loader2, Copy, Check, Zap, TrendingUp,
+  RefreshCw, Loader2, Copy, Check, Zap, TrendingUp, TrendingDown,
   Users, DollarSign, Target, MessageSquare, Brain,
   Clock, AlertCircle, BarChart3, ChevronRight,
   ShieldAlert, Timer, HandshakeIcon, Swords, BellOff, Gauge,
+  Building2, Layers, Award, Flag, ArrowRight,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -569,6 +570,487 @@ function InsightCard({ icon, label, content, copyable = true }: { icon: React.Re
   );
 }
 
+// ── Enterprise: stage detection ───────────────────────────────────────────────
+function resolveIsEnterprise(businessStage: string): boolean {
+  const s = (businessStage || "").toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return /grande|large|corp|enterprise/.test(s);
+}
+
+// ── Enterprise: types ─────────────────────────────────────────────────────────
+interface EnterpriseResult {
+  revenueAtRisk:       number;
+  recoverablePipeline: number;
+  recoveryProbability: number;
+  pipelineLeakagePct:  number;
+  rootCause:           string;
+  processFailure:      string;
+  teamFailurePoint:    string;
+  currentDealValue:    number;
+  optimizedDealValue:  number;
+  revenueUplift:       number;
+  recommendations:     { priority: number; title: string; text: string }[];
+  touchpoints:         { day: number; channel: string; objective: string; action: string }[];
+}
+
+// ── Enterprise: revenue scale (larger deal sizes) ─────────────────────────────
+const ENTERPRISE_REV: Record<LeadStatus, number> = {
+  interested:       125_000,
+  follow_up_needed:  88_000,
+  comparing:         72_000,
+  no_response:       58_000,
+  budget_concern:    48_000,
+  cold:              32_000,
+};
+
+// ── Enterprise text maps (ES/EN) ──────────────────────────────────────────────
+const ENT_ROOT_CAUSE: Record<"es"|"en", Record<SignalType, string>> = {
+  es: {
+    price_concern:   "Fallo en la articulación del ROI — la propuesta de valor no fue cuantificada en los términos que requería el tomador de decisión económico para justificar la aprobación del presupuesto.",
+    timing_issue:    "Desalineación de timing de pipeline — la cuenta entró en un ciclo de congelamiento de presupuesto o de prioridades internas que no fue capturado en el CRM ni previsto en el forecast.",
+    trust_issue:     "Brecha de credibilidad en el ciclo de evaluación — la cuenta requirió validación a nivel de referencia y prueba social que no fue entregada antes de que la evaluación se detuviera.",
+    competitor:      "Desplazamiento competitivo — la cuenta entró en un ciclo activo de RFP/comparación y un competidor estableció presencia antes o se posicionó de forma más específica para su situación.",
+    no_follow_up:    "Fallo de ejecución de pipeline — la cuenta no fue avanzada a través de la etapa de seguimiento debido a una brecha en la cadencia de ventas o en la gestión de actividades del CRM.",
+    lack_of_urgency: "Desplazamiento de prioridad — el business case no fue suficientemente convincente para competir con las prioridades internas de la cuenta por presupuesto y atención ejecutiva.",
+  },
+  en: {
+    price_concern:   "ROI articulation failure — the value proposition was not quantified in terms the economic buyer required for budget approval.",
+    timing_issue:    "Pipeline timing misalignment — the account entered a budget freeze or priority cycle that was not captured in the CRM or reflected in the forecast.",
+    trust_issue:     "Credibility gap in the evaluation cycle — the account required reference-level validation and social proof that was not delivered before the evaluation stalled.",
+    competitor:      "Competitive displacement — the account entered an active RFP cycle and a competing vendor established positioning before your team could differentiate.",
+    no_follow_up:    "Pipeline execution failure — the account was not progressed due to a gap in the sales cadence or a CRM activity management breakdown.",
+    lack_of_urgency: "Priority displacement — the business case was not compelling enough to compete with the account's internal priorities for budget and executive attention.",
+  },
+};
+
+const ENT_ROOT_CAUSE_STATUS: Record<"es"|"en", Record<LeadStatus, string>> = {
+  es: {
+    interested:       "Fallo en la definición del próximo paso — el lead expresó interés pero el equipo no concretó un compromiso de avance específico y el deal quedó en una etapa indefinida del pipeline.",
+    follow_up_needed: "Brecha en la ejecución del pipeline — el deal requería seguimiento estructurado que no fue activado, lo que permitió que la cuenta perdiera prioridad y se enfriara.",
+    comparing:        "Pérdida de posicionamiento en evaluación activa — la cuenta está en un ciclo de comparación y el equipo no mantuvo el ritmo de engagement necesario para mantener la posición de liderazgo.",
+    no_response:      "Fallo de re-engagement — la cuenta entró en silencio después del contacto inicial y no se activó un protocolo de multi-canal para recuperar la conversación.",
+    budget_concern:   "Fallo en la construcción del business case — la objeción de presupuesto indica que la propuesta de valor no fue conectada al retorno financiero de forma que justificara la inversión internamente.",
+    cold:             "Deterioro de pipeline sin intervención — la cuenta se enfrió sin que se activara un protocolo de nurturing o re-engagement estructurado en el ciclo correspondiente.",
+  },
+  en: {
+    interested:       "Next-step definition failure — the lead expressed interest but the team did not secure a specific commitment and the deal stalled in an undefined pipeline stage.",
+    follow_up_needed: "Pipeline execution gap — the deal required structured follow-up that was not activated, allowing the account to deprioritize and go cold.",
+    comparing:        "Positioning loss in active evaluation — the account is in a comparison cycle and the team did not maintain the engagement cadence required to hold the leading position.",
+    no_response:      "Re-engagement failure — the account went silent after initial contact and no multi-channel re-engagement protocol was activated.",
+    budget_concern:   "Business case construction failure — the budget objection indicates the value proposition was not connected to financial return in a way that justified internal approval.",
+    cold:             "Pipeline deterioration without intervention — the account went cold without a structured nurturing or re-engagement protocol being activated.",
+  },
+};
+
+const ENT_PROCESS_FAIL: Record<"es"|"en", Record<SignalType, string>> = {
+  es: {
+    price_concern:   "La documentación del business case no fue presentada en la etapa correcta del ciclo de evaluación, permitiendo que el costo se convirtiera en el criterio de decisión principal antes de que el ROI quedara establecido.",
+    timing_issue:    "No existe un protocolo de monitoreo de salud de pipeline para detectar cuentas que entran en estado de congelamiento — estas cuentas caen del pipeline activo sin que se active un trigger de re-engagement.",
+    trust_issue:     "Los activos de referencia y prueba social no fueron desplegados durante la etapa de evaluación mid-funnel, dejando la brecha de credibilidad abierta hasta que la cuenta se enfrió.",
+    competitor:      "El proceso de inteligencia competitiva no detectó al competidor con suficiente anticipación para ajustar el posicionamiento y el mensaje antes de que la etapa de evaluación cristalizara.",
+    no_follow_up:    "La gestión de actividades en el CRM falló — la tarea de seguimiento no fue creada, no fue asignada, o no fue escalada cuando superó el SLA estándar de follow-up.",
+    lack_of_urgency: "El proceso de desarrollo del business case no cuantificó el costo de inacción para esta cuenta específica, permitiendo que el status quo pareciera financieramente neutro.",
+  },
+  en: {
+    price_concern:   "Business case documentation was not presented at the right stage of the evaluation cycle, allowing cost to become the primary decision criterion before ROI was established.",
+    timing_issue:    "No pipeline health monitoring protocol exists to detect accounts entering a freeze state — these accounts fall off the active pipeline without triggering a re-engagement response.",
+    trust_issue:     "Reference and social proof assets were not deployed during the mid-funnel evaluation stage, leaving the credibility gap open until the account went cold.",
+    competitor:      "The competitive intelligence process did not surface the competing vendor early enough to adjust positioning before the evaluation stage crystallized.",
+    no_follow_up:    "CRM activity management failed — the follow-up task was not created, not assigned, or not escalated when it exceeded the standard follow-up SLA.",
+    lack_of_urgency: "The business case development process did not quantify the cost of inaction for this specific account, allowing the status quo to appear cost-neutral.",
+  },
+};
+
+const ENT_PROCESS_FAIL_STATUS: Record<"es"|"en", Record<LeadStatus, string>> = {
+  es: {
+    interested:       "El proceso de avance de pipeline no define un SLA de próximo paso para leads interesados — la ausencia de un compromiso concreto permite que los deals de alta intención se deterioren sin señal de alerta.",
+    follow_up_needed: "El proceso de seguimiento no tiene automatización de actividades ni escalación cuando un deal no tiene actividad dentro del SLA establecido.",
+    comparing:        "El proceso de gestión de deals en comparación no tiene un playbook de diferenciación activo ni un SLA de frecuencia de contacto para cuentas en evaluación competitiva.",
+    no_response:      "No existe un protocolo de re-engagement multi-canal estructurado para cuentas en silencio — el proceso actual depende de acción manual no escalada.",
+    budget_concern:   "El proceso de qualificación no validó la autoridad presupuestaria ni el proceso interno de aprobación de la cuenta antes de avanzar la oportunidad en el pipeline.",
+    cold:             "El pipeline no tiene una etapa formal de nurturing con criterios de re-activación — los deals fríos son archivados sin un proceso de recuperación estructurado.",
+  },
+  en: {
+    interested:       "The pipeline advancement process does not define a next-step SLA for interested leads — the absence of a concrete commitment allows high-intent deals to deteriorate without an alert.",
+    follow_up_needed: "The follow-up process lacks activity automation and escalation when a deal has no activity within the established SLA.",
+    comparing:        "The deal management process for accounts in comparison does not have an active differentiation playbook or a contact frequency SLA for competitive evaluations.",
+    no_response:      "No structured multi-channel re-engagement protocol exists for silent accounts — the current process relies on unescalated manual action.",
+    budget_concern:   "The qualification process did not validate budget authority or the account's internal approval process before advancing the opportunity in the pipeline.",
+    cold:             "The pipeline has no formal nurturing stage with re-activation criteria — cold deals are archived without a structured recovery process.",
+  },
+};
+
+const ENT_TEAM_FAIL: Record<"es"|"en", Record<SignalType, string>> = {
+  es: {
+    price_concern:   "Account Executive — no navegó la conversación de costo a valor antes de que la etapa de evaluación cerrara. Sales Manager — la revisión de pipeline no detectó la objeción de precio como señal de riesgo de deal.",
+    timing_issue:    "Sales Manager — la revisión de pipeline no identificó el riesgo de timing y no activó un protocolo de nurturing para esta cuenta. CRM/Ops — no existe trigger automático para deals en estado de espera.",
+    trust_issue:     "Account Executive + Marketing — el despliegue de activos de referencia y casos de estudio no fue activado en la etapa correcta del ciclo de evaluación.",
+    competitor:      "Sales Development + Account Executive — el desplazamiento competitivo no fue identificado temprano en el pipeline para montar una respuesta de contra-posicionamiento.",
+    no_follow_up:    "Account Executive + Sales Operations — el SLA de follow-up fue incumplido sin escalación ni re-asignación automática. La brecha es de proceso y de supervisión.",
+    lack_of_urgency: "Account Executive + Sales Enablement — el business case para esta cuenta no fue personalizado con un análisis de costo de inacción específico para su situación.",
+  },
+  en: {
+    price_concern:   "Account Executive — failed to navigate from cost to value before the evaluation stage closed. Sales Manager — pipeline review did not flag the price objection as a deal risk signal.",
+    timing_issue:    "Sales Manager — pipeline review did not identify the timing risk and activate a nurture protocol. CRM/Ops — no automatic trigger exists for deals in a hold state.",
+    trust_issue:     "Account Executive + Marketing — the reference and case study deployment process did not activate at the correct stage of the evaluation cycle.",
+    competitor:      "Sales Development + Account Executive — competitive displacement was not identified early enough in the pipeline to mount a counter-positioning response.",
+    no_follow_up:    "Account Executive + Sales Operations — the follow-up SLA was breached without escalation or automatic re-assignment. The failure is in both process and oversight.",
+    lack_of_urgency: "Account Executive + Sales Enablement — the business case for this account was not customized with a cost-of-inaction analysis specific to their situation.",
+  },
+};
+
+const ENT_TEAM_FAIL_STATUS: Record<"es"|"en", Record<LeadStatus, string>> = {
+  es: {
+    interested:       "Account Executive — responsable del avance del deal sin un compromiso de próximo paso específico. Sales Manager — la revisión de pipeline no detectó el deal estancado a tiempo.",
+    follow_up_needed: "Account Executive — la actividad de seguimiento no fue ejecutada dentro del SLA. Sales Operations — el sistema de alertas de pipeline no escaló la inactividad.",
+    comparing:        "Account Executive — frecuencia de contacto insuficiente durante el ciclo de evaluación competitiva. Sales Manager — la cadencia de competencia no fue aplicada.",
+    no_response:      "Account Executive — sin actividad de re-engagement multi-canal. Sales Operations — no se activó el protocolo de cuentas en silencio.",
+    budget_concern:   "Account Executive — calificación presupuestaria incompleta en etapa temprana. Sales Manager — el deal avanzó sin confirmar la autoridad de compra.",
+    cold:             "Account Executive — ausencia de actividad de nurturing durante el período de enfriamiento. Sales Manager — el deal pasó a estado frío sin revisión ni acción.",
+  },
+  en: {
+    interested:       "Account Executive — responsible for deal advancement without securing a specific next-step commitment. Sales Manager — pipeline review did not flag the stalled deal.",
+    follow_up_needed: "Account Executive — follow-up activity was not executed within the SLA. Sales Operations — the pipeline alert system did not escalate the inactivity.",
+    comparing:        "Account Executive — insufficient contact frequency during the competitive evaluation cycle. Sales Manager — the competitive cadence was not enforced.",
+    no_response:      "Account Executive — no multi-channel re-engagement activity. Sales Operations — the silent-account protocol was not activated.",
+    budget_concern:   "Account Executive — incomplete budget qualification at an early stage. Sales Manager — the deal advanced without confirming purchase authority.",
+    cold:             "Account Executive — absence of nurturing activity during the cooling period. Sales Manager — the deal transitioned to cold status without review or action.",
+  },
+};
+
+// Enterprise recommendations (per signal, top 3)
+const ENT_RECS: Record<"es"|"en", Record<SignalType, { title: string; text: string }[]>> = {
+  es: {
+    price_concern: [
+      { title:"Construir análisis de ROI personalizado", text:"Desarrolla un modelo financiero de una página específico para esta cuenta: inversión, retorno proyectado en 12 meses, y costo de inacción. Preséntalo con el tomador de decisión económico, no con el champion técnico." },
+      { title:"Estructurar propuesta con opciones de entrada", text:"Rediseña la propuesta con una opción de piloto o entrada escalonada que reduzca el riesgo percibido inicial. La barrera no es el precio — es la relación riesgo/retorno percibida." },
+      { title:"Implementar SLA de construcción de business case", text:"Establece que ningún deal supere la etapa de propuesta sin un business case documentado y validado por el champion interno. Ese documento será el que justifique la inversión internamente." },
+    ],
+    timing_issue: [
+      { title:"Activar protocolo de nurturing de timing", text:"Mueve el deal a una etapa específica de 'timing hold' en el CRM con un trigger de re-activación automático en 30/60/90 días. El deal no debe ser archivado — debe ser gestionado activamente en modo latente." },
+      { title:"Establecer cadencia de presencia ejecutiva", text:"El Account Executive senior o el Sales Manager contacta la cuenta cada 3 semanas con un insight relevante del sector — sin argumento de venta. El objetivo es mantener visibilidad de marca hasta que el timing se libere." },
+      { title:"Mapear el calendario de decisión interno", text:"Solicita una conversación de 15 minutos con el champion para mapear el proceso interno de aprobación presupuestaria: ¿cuándo abre el próximo ciclo? ¿qué necesita estar listo para esa ventana?" },
+    ],
+    trust_issue: [
+      { title:"Desplegar activos de referencia en 48 horas", text:"Organiza una llamada de referencia con un cliente actual en situación comparable. Complementa con un caso de estudio escrito y datos específicos de resultado. La brecha de credibilidad se cierra con evidencia concreta, no con argumentos de venta." },
+      { title:"Ofrecer prueba de concepto de bajo riesgo", text:"Propón un piloto acotado (1 departamento, 30 días) que permita validar resultados antes del compromiso total. Eliminar el riesgo percibido convierte una evaluación paralizada en un cierre progresivo." },
+      { title:"Involucrar liderazgo ejecutivo en la conversación", text:"Una llamada de 20 minutos con el VP o Director de tu organización hacia el tomador de decisión de la cuenta envía una señal de compromiso y seriedad que ningún material de marketing puede replicar." },
+    ],
+    competitor: [
+      { title:"Ejecutar análisis de diferenciación específica", text:"Identifica los 3 puntos donde tu solución es superior para la situación específica de esta cuenta — no en general, sino para sus casos de uso, su industria y su escala. Esos 3 puntos son la única conversación que importa." },
+      { title:"Acelerar la cadencia de contacto inmediatamente", text:"En una evaluación activa, retraso equivale a pérdida de posición. Contacto de alto valor cada 48 horas con el champion y cada semana con el tomador de decisión económico hasta que el proceso cierre." },
+      { title:"Solicitar criterios de evaluación formales", text:"Pide una reunión para entender los criterios de decisión del comité de evaluación. Esa conversación te permite ajustar el posicionamiento en tiempo real y posiblemente influenciar los criterios antes de que cristalicen." },
+    ],
+    no_follow_up: [
+      { title:"Auditar el protocolo de SLA de seguimiento", text:"Revisa el proceso: ¿quién es responsable del follow-up? ¿cuál es el SLA de tiempo de respuesta? ¿qué alerta se activa cuando se supera? Este deal es un síntoma — necesitas el diagnóstico del proceso para prevenir la recurrencia." },
+      { title:"Reactivar el deal con nivel ejecutivo", text:"El primer re-contacto debe venir de un nivel ejecutivo superior al que tuvo la conversación original. Eso señala seriedad institucional y compensa el silencio anterior con autoridad." },
+      { title:"Implementar automatización de actividades en CRM", text:"Ningún deal en pipeline activo debería quedar sin actividad por más de 5 días hábiles sin una alerta y escalación automática. Esa regla de negocio debe estar configurada en el CRM antes de la próxima semana." },
+    ],
+    lack_of_urgency: [
+      { title:"Desarrollar análisis de costo de inacción", text:"Cuantifica lo que le está costando a esta cuenta estar en la situación actual: pérdida mensual, ineficiencia operativa, riesgo acumulado. Un número específico de costo de espera es la única forma honesta de crear urgencia real." },
+      { title:"Conectar el deal a un evento de negocio con plazo", text:"Identifica si hay un evento interno (lanzamiento, fin de año fiscal, reorganización) que haga que resolver este problema antes de esa fecha tenga valor estratégico. La urgencia natural supera cualquier urgencia artificial." },
+      { title:"Estructurar una propuesta con ventana de decisión", text:"Presenta dos opciones con diferencias concretas: avanzar esta semana vs. avanzar el próximo trimestre — con el impacto financiero real de cada opción claramente documentado." },
+    ],
+  },
+  en: {
+    price_concern: [
+      { title:"Build a personalised ROI analysis", text:"Develop a one-page financial model specific to this account: investment, projected 12-month return, and cost of inaction. Present it with the economic buyer, not the technical champion." },
+      { title:"Restructure the proposal with entry options", text:"Redesign the proposal with a pilot or tiered entry option that reduces the perceived initial risk. The barrier is not price — it is the perceived risk-to-return ratio." },
+      { title:"Implement a business case SLA", text:"Establish that no deal advances past the proposal stage without a documented business case validated by the internal champion. That document is what justifies the investment internally." },
+    ],
+    timing_issue: [
+      { title:"Activate a timing nurture protocol", text:"Move the deal to a specific 'timing hold' stage in the CRM with an auto re-activation trigger at 30/60/90 days. The deal should not be archived — it should be actively managed in a latent mode." },
+      { title:"Establish an executive presence cadence", text:"The senior AE or Sales Manager contacts the account every 3 weeks with a relevant industry insight — no sales pitch. The goal is to maintain brand visibility until the timing clears." },
+      { title:"Map the internal decision calendar", text:"Request a 15-minute conversation with the champion to map the internal budget approval process: when does the next cycle open? What needs to be ready for that window?" },
+    ],
+    trust_issue: [
+      { title:"Deploy reference assets within 48 hours", text:"Arrange a reference call with a current client in a comparable situation. Complement with a written case study and specific outcome data. Credibility gaps close with concrete evidence, not sales arguments." },
+      { title:"Offer a low-risk proof of concept", text:"Propose a scoped pilot (1 department, 30 days) that validates results before full commitment. Eliminating perceived risk converts a stalled evaluation into a progressive close." },
+      { title:"Involve executive leadership in the conversation", text:"A 20-minute call from your VP or Director to the account's decision maker signals institutional commitment and seriousness that no marketing material can replicate." },
+    ],
+    competitor: [
+      { title:"Execute a specific differentiation analysis", text:"Identify the 3 points where your solution is superior for this account's specific situation — not in general, but for their use cases, industry, and scale. Those 3 points are the only conversation that matters." },
+      { title:"Accelerate contact cadence immediately", text:"In an active evaluation, delay equals loss of position. High-value contact every 48 hours with the champion and weekly with the economic buyer until the process closes." },
+      { title:"Request formal evaluation criteria", text:"Ask for a meeting to understand the evaluation committee's decision criteria. That conversation lets you adjust positioning in real time and potentially influence the criteria before they crystallize." },
+    ],
+    no_follow_up: [
+      { title:"Audit the follow-up SLA protocol", text:"Review the process: who owns the follow-up? What is the response time SLA? What alert fires when it is exceeded? This deal is a symptom — you need a process diagnosis to prevent recurrence." },
+      { title:"Re-engage at executive level", text:"The first re-contact should come from a senior executive level above whoever had the original conversation. That signals institutional seriousness and compensates for the previous silence with authority." },
+      { title:"Implement CRM activity automation", text:"No deal in the active pipeline should have zero activity for more than 5 business days without an automatic alert and escalation. That business rule must be configured in the CRM before next week." },
+    ],
+    lack_of_urgency: [
+      { title:"Develop a cost-of-inaction analysis", text:"Quantify what staying in the current situation is costing this account: monthly loss, operational inefficiency, accumulated risk. A specific cost-of-waiting number is the only honest way to create real urgency." },
+      { title:"Connect the deal to a time-bound business event", text:"Identify whether there is an internal event (launch, fiscal year-end, reorganisation) that makes solving this problem before that date strategically valuable. Natural urgency outperforms any artificial urgency." },
+      { title:"Structure a proposal with a decision window", text:"Present two options with concrete differences: advancing this week vs. next quarter — with the real financial impact of each option clearly documented." },
+    ],
+  },
+};
+
+const ENT_RECS_STATUS: Record<"es"|"en", Record<LeadStatus, { title: string; text: string }[]>> = {
+  es: {
+    interested: [
+      { title:"Concretar el compromiso de próximo paso hoy", text:"Contacta al champion hoy con una agenda de próximos pasos específica: qué sucede, cuándo y quién está involucrado. La ausencia de un próximo paso definido es la causa de muerte más común de los deals de alta intención." },
+      { title:"Validar autoridad de compra y proceso interno", text:"Confirma con el champion: ¿quién más necesita estar involucrado en la decisión? ¿cuál es el proceso interno de aprobación? Sin esa visibilidad, el deal puede bloquearse en una etapa que el equipo no ve." },
+      { title:"Activar cadencia ejecutiva de cierre", text:"El Sales Manager se involucra directamente con un mensaje de alto nivel que refuerce la seriedad institucional y establezca una fecha de decisión con el tomador de decisión económico." },
+    ],
+    follow_up_needed: [
+      { title:"Recuperar el deal con re-engagement de alto nivel", text:"El primer contacto de re-activación debe ser personal, específico y de nivel ejecutivo. Referencia la conversación original, reconoce el silencio y propón un próximo paso concreto con fecha." },
+      { title:"Revisar y fortalecer el business case", text:"Antes del re-engagement, actualiza el business case con información reciente del sector o nuevos datos de resultado. El re-contacto debe tener algo nuevo de valor, no ser una repetición de la propuesta original." },
+      { title:"Automatizar el SLA de seguimiento en CRM", text:"Configura una alerta de actividad en el CRM que escale automáticamente cuando un deal en pipeline activo supere 5 días hábiles sin actividad registrada. Este deal es el caso de uso de esa regla." },
+    ],
+    comparing: [
+      { title:"Solicitar reunión de diferenciación inmediata", text:"Pide una reunión de 30 minutos específicamente para mostrar cómo tu solución aborda los casos de uso concretos de esta cuenta — no una demo genérica, sino una presentación de su situación específica." },
+      { title:"Identificar y fortalecer al champion interno", text:"Asegúrate de que el champion interno tiene los argumentos y el material necesario para defendertu solución ante el comité de evaluación. Tu éxito depende de la calidad de tu representación cuando no estás en la sala." },
+      { title:"No reducir precio — aumentar valor percibido", text:"En una comparación activa, el descuento señala inseguridad y reduce el valor percibido. En cambio, agrega elementos de valor: soporte, implementación, garantía, o acceso a recursos que el competidor no ofrece." },
+    ],
+    no_response: [
+      { title:"Activar protocolo multi-canal en 24 horas", text:"Si el canal actual no funciona, cambia el canal hoy: email → llamada → LinkedIn → WhatsApp/SMS según el perfil del contacto. El silencio en un canal no es rechazo — es falta de visibilidad en el canal correcto." },
+      { title:"Enviar insight de valor antes del pitch", text:"El primer mensaje de re-contacto no debe mencionar la propuesta. Envía algo de valor directo: un insight del sector, un caso relevante, o una pregunta genuina sobre el estado del problema original." },
+      { title:"Involucrar contacto alternativo en la organización", text:"Si el contacto principal no responde, identifica un segundo contacto en la organización — mismo nivel o superior. Una conversación paralela puede desbloquear el acceso al contacto primario." },
+    ],
+    budget_concern: [
+      { title:"Reconstruir el business case con datos duros", text:"Desarrolla un análisis financiero de una página con el ROI específico para esta cuenta: inversión vs. retorno proyectado vs. costo de inacción. Ese documento convierte la conversación de 'gasto' a 'inversión con retorno definido'." },
+      { title:"Validar el proceso interno de aprobación", text:"Entiende cómo se aprueba un presupuesto de este tamaño en la organización: ¿quién firma? ¿qué documentación se necesita? ¿cuándo es el próximo ciclo de aprobación? Esa información define el siguiente paso real." },
+      { title:"Explorar estructura de pago alternativa", text:"Si el problema es flujo de caja y no ROI, propón opciones de estructura de pago que alineen los desembolsos con los resultados: pago en hitos, financiamiento, o un piloto que convierte en deal completo." },
+    ],
+    cold: [
+      { title:"Re-activación con ángulo completamente nuevo", text:"No envíes un recordatorio de la propuesta anterior. Llega con algo completamente nuevo: un resultado relevante logrado para una cuenta en situación similar, un cambio en el mercado que hace el problema más urgente, o una pregunta genuina sobre el estado actual." },
+      { title:"Revisar calificación del deal antes de invertir recursos", text:"Antes de re-activar el deal, valida que la cuenta sigue calificada: ¿tienen el problema? ¿tienen presupuesto? ¿el champion sigue en la organización? Invertir recursos en un deal descalificado es el error más caro del pipeline." },
+      { title:"Activar secuencia de nurturing de largo plazo", text:"Si la cuenta no está lista ahora pero sigue calificada, muévela a una secuencia de nurturing de 90 días con contactos de valor cada 3 semanas. El objetivo no es cerrar — es estar presente cuando el momento cambie." },
+    ],
+  },
+  en: {
+    interested: [
+      { title:"Secure a next-step commitment today", text:"Contact the champion today with a specific next-steps agenda: what happens, when, and who is involved. The absence of a defined next step is the most common cause of death for high-intent deals." },
+      { title:"Validate purchase authority and internal process", text:"Confirm with the champion: who else needs to be involved in the decision? What is the internal approval process? Without that visibility, the deal can stall in a stage the team cannot see." },
+      { title:"Activate an executive closing cadence", text:"The Sales Manager gets involved directly with a high-level message reinforcing institutional seriousness and establishing a decision date with the economic buyer." },
+    ],
+    follow_up_needed: [
+      { title:"Recover the deal with high-level re-engagement", text:"The first re-activation contact must be personal, specific, and at executive level. Reference the original conversation, acknowledge the silence, and propose a concrete next step with a date." },
+      { title:"Review and strengthen the business case", text:"Before re-engagement, update the business case with recent industry data or new outcome figures. The re-contact must bring something new of value, not repeat the original proposal." },
+      { title:"Automate the follow-up SLA in CRM", text:"Configure a CRM activity alert that auto-escalates when a deal in the active pipeline exceeds 5 business days with no recorded activity. This deal is the use case for that rule." },
+    ],
+    comparing: [
+      { title:"Request an immediate differentiation meeting", text:"Ask for a 30-minute meeting specifically to show how your solution addresses this account's concrete use cases — not a generic demo, but a presentation of their specific situation." },
+      { title:"Identify and strengthen the internal champion", text:"Ensure the internal champion has the arguments and material needed to defend your solution in front of the evaluation committee. Your success depends on the quality of your representation when you are not in the room." },
+      { title:"Do not discount — increase perceived value", text:"In an active comparison, discounting signals insecurity and reduces perceived value. Instead, add value elements: support, implementation, guarantee, or access to resources the competitor does not offer." },
+    ],
+    no_response: [
+      { title:"Activate multi-channel protocol within 24 hours", text:"If the current channel is not working, switch channels today: email → call → LinkedIn → WhatsApp/SMS based on the contact's profile. Silence on one channel is not rejection — it is lack of visibility on the right channel." },
+      { title:"Send a value insight before the pitch", text:"The first re-contact message should not mention the proposal. Send something of direct value: an industry insight, a relevant case, or a genuine question about the current state of the original problem." },
+      { title:"Engage an alternative contact in the organisation", text:"If the primary contact is unresponsive, identify a second contact in the organisation at the same or higher level. A parallel conversation can unblock access to the primary contact." },
+    ],
+    budget_concern: [
+      { title:"Rebuild the business case with hard data", text:"Develop a one-page financial analysis with the specific ROI for this account: investment vs. projected return vs. cost of inaction. That document converts the conversation from 'expense' to 'investment with defined return'." },
+      { title:"Validate the internal approval process", text:"Understand how a budget of this size gets approved in the organisation: who signs? What documentation is required? When is the next approval cycle? That information defines the real next step." },
+      { title:"Explore an alternative payment structure", text:"If the issue is cash flow rather than ROI, propose payment structure options that align disbursements with outcomes: milestone payments, financing, or a pilot that converts to a full deal." },
+    ],
+    cold: [
+      { title:"Re-activate with a completely new angle", text:"Do not send a reminder about the previous proposal. Come with something entirely new: a relevant result achieved for an account in a similar situation, a market change that makes the problem more urgent, or a genuine question about the current state." },
+      { title:"Re-qualify the deal before investing resources", text:"Before re-activating the deal, validate that the account is still qualified: do they still have the problem? Do they have budget? Is the champion still at the organisation? Investing resources in a disqualified deal is the most expensive pipeline mistake." },
+      { title:"Activate a long-term nurturing sequence", text:"If the account is not ready now but remains qualified, move it to a 90-day nurturing sequence with value touchpoints every 3 weeks. The goal is not to close — it is to be present when the moment changes." },
+    ],
+  },
+};
+
+// ── Enterprise: build analysis ─────────────────────────────────────────────────
+function buildEnterpriseAnalysis(
+  score:    number,
+  status:   LeadStatus,
+  signals:  SignalType[],
+  leadName: string,
+  companyName: string,
+  days:     number,
+  lang:     "es" | "en",
+): EnterpriseResult {
+  const strongest = signals[0] ?? null;
+
+  // Revenue at risk — enterprise scale
+  const baseRev   = ENTERPRISE_REV[status];
+  const variation = (nameHash(leadName + companyName) % 40) / 100;
+  const revenueAtRisk = Math.round(baseRev * (1 + variation));
+
+  // Pipeline leakage: driven by days elapsed + signals
+  const signalLeakage = signals.reduce((acc, s) => acc + Math.abs(SIGNAL_DEFS[s].scoreDelta) * 1.5, 0);
+  const ageLeakage    = days < 7 ? 0 : days < 30 ? 8 : days < 90 ? 18 : days < 180 ? 28 : 40;
+  const pipelineLeakagePct = Math.min(95, Math.round(signalLeakage + ageLeakage + (100 - score) * 0.3));
+
+  // Recovery probability & recoverable pipeline
+  const recoveryProbability   = score;
+  const recoverablePipeline   = Math.round(revenueAtRisk * (score / 100) * 0.80);
+
+  // Recovery forecast
+  const currentDealValue  = Math.round(revenueAtRisk * (1 - pipelineLeakagePct / 100));
+  const recoveryBoost     = Math.min(0.30, score / 100 * 0.35);
+  const optimizedDealValue = Math.round(revenueAtRisk * (1 - pipelineLeakagePct / 100 + recoveryBoost));
+  const revenueUplift      = Math.max(0, optimizedDealValue - currentDealValue);
+
+  // Text content
+  const rc   = strongest ? ENT_ROOT_CAUSE[lang][strongest]        : ENT_ROOT_CAUSE_STATUS[lang][status];
+  const pf   = strongest ? ENT_PROCESS_FAIL[lang][strongest]      : ENT_PROCESS_FAIL_STATUS[lang][status];
+  const tf   = strongest ? ENT_TEAM_FAIL[lang][strongest]         : ENT_TEAM_FAIL_STATUS[lang][status];
+  const recs = strongest ? ENT_RECS[lang][strongest]              : ENT_RECS_STATUS[lang][status];
+
+  // Recovery campaign touchpoints
+  const tp1Obj = strongest
+    ? (lang === "es"
+        ? `Re-engagement específico — señal primaria: ${SIGNAL_DEFS[strongest].label}`
+        : `Targeted re-engagement — primary signal: ${SIGNAL_DEFS[strongest].label}`)
+    : (lang === "es" ? "Reinicio de conversación ejecutiva" : "Executive conversation restart");
+
+  const touchpoints = [
+    {
+      day: 1,
+      channel: lang === "es" ? "Email directo + llamada de seguimiento" : "Direct email + follow-up call",
+      objective: tp1Obj,
+      action: lang === "es"
+        ? "Enviar mensaje personalizado de re-activación de nivel ejecutivo. Sin argumento de venta — solo reconocimiento, valor y próximo paso específico."
+        : "Send a personalised executive-level re-activation message. No pitch — just acknowledgement, value, and a specific next step.",
+    },
+    {
+      day: 3,
+      channel: lang === "es" ? "LinkedIn + material de apoyo" : "LinkedIn + supporting material",
+      objective: lang === "es" ? "Entrega de activo de valor — caso de estudio o insight de sector" : "Value asset delivery — case study or sector insight",
+      action: lang === "es"
+        ? "Compartir un caso de éxito relevante o un insight de sector que conecte directamente con el problema original de la cuenta. No mencionar la propuesta."
+        : "Share a relevant success case or sector insight that directly connects to the account's original problem. Do not reference the proposal.",
+    },
+    {
+      day: 7,
+      channel: lang === "es" ? "Llamada ejecutiva o video" : "Executive call or video",
+      objective: lang === "es" ? "Calificación de estado actual y re-evaluación de criterios" : "Current state qualification and criteria re-evaluation",
+      action: lang === "es"
+        ? "Llamada de 15 minutos para entender si el problema sigue siendo prioritario, si el proceso de decisión cambió, y si hay una ventana para avanzar."
+        : "15-minute call to understand whether the problem remains a priority, whether the decision process has changed, and whether there is a window to advance.",
+    },
+    {
+      day: 14,
+      channel: lang === "es" ? "Propuesta actualizada o business case" : "Updated proposal or business case",
+      objective: lang === "es" ? "Presentación de valor ajustada con nuevos datos" : "Adjusted value presentation with new data",
+      action: lang === "es"
+        ? "Si la cuenta re-calificó, presentar propuesta actualizada con business case personalizado e incluir análisis de costo de inacción. Establecer fecha de decisión."
+        : "If the account re-qualified, present an updated proposal with a personalised business case including a cost-of-inaction analysis. Establish a decision date.",
+    },
+    {
+      day: 30,
+      channel: lang === "es" ? "Revisión ejecutiva de pipeline" : "Executive pipeline review",
+      objective: lang === "es" ? "Decisión o protocolo de nurturing de largo plazo" : "Decision or long-term nurturing protocol",
+      action: lang === "es"
+        ? "Si no cerró: mover el deal a nurturing estructurado con contactos de valor cada 3 semanas. Si cerró: documentar el proceso de recuperación como playbook para el equipo."
+        : "If not closed: move the deal to structured nurturing with value touchpoints every 3 weeks. If closed: document the recovery process as a team playbook.",
+    },
+  ];
+
+  return {
+    revenueAtRisk,
+    recoverablePipeline,
+    recoveryProbability,
+    pipelineLeakagePct,
+    rootCause:        rc,
+    processFailure:   pf,
+    teamFailurePoint: tf,
+    currentDealValue,
+    optimizedDealValue,
+    revenueUplift,
+    recommendations: recs.map((r, i) => ({ priority: i + 1, ...r })),
+    touchpoints,
+  };
+}
+
+// ── Enterprise UI components ───────────────────────────────────────────────────
+function ExecKPI({
+  label, value, sub, accent = "default",
+}: {
+  label:  string;
+  value:  string;
+  sub?:   string;
+  accent?: "red" | "green" | "amber" | "primary" | "default";
+}) {
+  const colorMap = {
+    red:     "text-red-400",
+    green:   "text-green-400",
+    amber:   "text-amber-400",
+    primary: "text-primary",
+    default: "text-foreground",
+  };
+  return (
+    <div className="glass border border-border rounded-xl p-4 space-y-1.5">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className={`text-2xl font-bold ${colorMap[accent]}`}>{value}</p>
+      {sub && <p className="text-[10px] text-muted-foreground">{sub}</p>}
+    </div>
+  );
+}
+
+function ExecBlock({
+  icon, label, content,
+}: {
+  icon:    React.ReactNode;
+  label:   string;
+  content: string;
+}) {
+  return (
+    <div className="glass border border-border rounded-xl p-4 space-y-2">
+      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-primary">
+        {icon}
+        {label}
+      </div>
+      <p className="text-sm text-foreground/85 leading-relaxed">{content}</p>
+    </div>
+  );
+}
+
+function ExecRec({ priority, title, text }: { priority: number; title: string; text: string }) {
+  const color = priority === 1 ? "text-red-400 border-red-500/30 bg-red-500/10"
+              : priority === 2 ? "text-amber-400 border-amber-500/30 bg-amber-500/10"
+              :                   "text-primary border-primary/30 bg-primary/10";
+  return (
+    <div className="glass border border-border rounded-xl p-4 space-y-2">
+      <div className="flex items-start gap-3">
+        <span className={`shrink-0 mt-0.5 w-6 h-6 flex items-center justify-center rounded-full border text-[10px] font-black ${color}`}>
+          {priority}
+        </span>
+        <div className="space-y-1 flex-1">
+          <p className="text-sm font-semibold text-foreground">{title}</p>
+          <p className="text-xs text-muted-foreground leading-relaxed">{text}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CampaignTimeline({ touchpoints, lang }: {
+  touchpoints: { day: number; channel: string; objective: string; action: string }[];
+  lang: "es"|"en";
+}) {
+  return (
+    <div className="space-y-2">
+      {touchpoints.map((tp, i) => (
+        <div key={tp.day} className="flex gap-3">
+          {/* Day pill + connector */}
+          <div className="flex flex-col items-center shrink-0">
+            <div className="w-10 h-10 rounded-full border border-primary/40 bg-primary/10 flex items-center justify-center flex-col">
+              <span className="text-[8px] font-bold text-primary/70 uppercase leading-none">{lang === "es" ? "DÍA" : "DAY"}</span>
+              <span className="text-sm font-black text-primary leading-none">{tp.day}</span>
+            </div>
+            {i < touchpoints.length - 1 && (
+              <div className="w-px flex-1 my-1 bg-border" style={{ minHeight: 16 }} />
+            )}
+          </div>
+          {/* Content */}
+          <div className="glass border border-border rounded-xl p-3 mb-2 flex-1 space-y-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-primary/80">{tp.channel}</span>
+            </div>
+            <p className="text-xs font-semibold text-foreground">{tp.objective}</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">{tp.action}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: "interested",        label: "Interested" },
   { value: "no_response",       label: "No Response" },
@@ -635,6 +1117,17 @@ export default function LeadRecoveryPage() {
       setLoading(false);
     }, 900);
   };
+
+  const isEnterprise = resolveIsEnterprise(businessStage || "");
+  const entLang: "es"|"en" = language === "Español" ? "es" : "en";
+
+  const enterpriseResult: EnterpriseResult | null = (result && isEnterprise)
+    ? buildEnterpriseAnalysis(
+        result.score, status, result.signals,
+        result.leadName, result.companyName,
+        daysBetween(lastContact), entLang,
+      )
+    : null;
 
   const strongest       = result ? getStrongest(result.signals) : null;
   const recoveryMessage = result
@@ -749,7 +1242,127 @@ export default function LeadRecoveryPage() {
         </div>
 
         {/* ── Results ────────────────────────────────────────────────── */}
-        {result && (
+        {/* ── ENTERPRISE RESULTS ──────────────────────────────────────── */}
+        {result && isEnterprise && enterpriseResult && (
+          <div className="space-y-3 animate-in fade-in-0 slide-in-from-bottom-4 duration-300">
+
+            {/* Enterprise badge */}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/20">
+              <Building2 size={13} className="text-primary shrink-0" />
+              <div>
+                <span className="text-xs font-bold text-primary uppercase tracking-wider">Enterprise Pipeline Analysis</span>
+                <span className="text-xs text-muted-foreground ml-2">
+                  {result.leadName}{result.companyName ? ` · ${result.companyName}` : ""} · {STATUS_OPTIONS.find(o => o.value === status)?.label}
+                  {strongest && <> · <span className={SIGNAL_DEFS[strongest].color}>{SIGNAL_DEFS[strongest].label}</span></>}
+                </span>
+              </div>
+            </div>
+
+            {/* ── Executive Recovery Dashboard ──────────────────────── */}
+            <SectionHeader icon={<BarChart3 size={14} />} label={entLang === "es" ? "Executive Recovery Dashboard" : "Executive Recovery Dashboard"} />
+            <div className="grid grid-cols-2 gap-3">
+              <ExecKPI
+                label={entLang === "es" ? "Revenue at Risk" : "Revenue at Risk"}
+                value={fmtCurrency(enterpriseResult.revenueAtRisk)}
+                sub={entLang === "es" ? "exposición total del deal" : "total deal exposure"}
+                accent="red"
+              />
+              <ExecKPI
+                label={entLang === "es" ? "Recoverable Pipeline" : "Recoverable Pipeline"}
+                value={fmtCurrency(enterpriseResult.recoverablePipeline)}
+                sub={entLang === "es" ? "valor recuperable estimado" : "estimated via strategy"}
+                accent="green"
+              />
+              <ExecKPI
+                label={entLang === "es" ? "Recovery Probability" : "Recovery Probability"}
+                value={`${enterpriseResult.recoveryProbability}%`}
+                sub={entLang === "es" ? "índice de confianza" : "confidence index"}
+                accent="primary"
+              />
+              <ExecKPI
+                label={entLang === "es" ? "Pipeline Leakage" : "Pipeline Leakage"}
+                value={`${enterpriseResult.pipelineLeakagePct}%`}
+                sub={entLang === "es" ? "del valor del deal en riesgo" : "of deal value at risk"}
+                accent="amber"
+              />
+            </div>
+
+            {/* ── Lead Loss Analysis ────────────────────────────────── */}
+            <SectionHeader icon={<AlertCircle size={14} />} label={entLang === "es" ? "Lead Loss Analysis" : "Lead Loss Analysis"} />
+            <ExecBlock
+              icon={<Target size={13} />}
+              label={entLang === "es" ? "Root Cause" : "Root Cause"}
+              content={enterpriseResult.rootCause}
+            />
+            <ExecBlock
+              icon={<Layers size={13} />}
+              label={entLang === "es" ? "Process Failure" : "Process Failure"}
+              content={enterpriseResult.processFailure}
+            />
+            <ExecBlock
+              icon={<Users size={13} />}
+              label={entLang === "es" ? "Team Failure Point" : "Team Failure Point"}
+              content={enterpriseResult.teamFailurePoint}
+            />
+
+            {/* ── Recovery Forecast ─────────────────────────────────── */}
+            <SectionHeader icon={<TrendingUp size={14} />} label={entLang === "es" ? "Recovery Forecast" : "Recovery Forecast"} />
+            <div className="glass border border-border rounded-xl p-4">
+              <div className="flex items-stretch gap-2">
+                {/* Current */}
+                <div className="flex-1 rounded-lg bg-white/5 p-3 space-y-1 text-center">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    {entLang === "es" ? "Current Revenue" : "Current Revenue"}
+                  </p>
+                  <p className="text-lg font-bold text-foreground">{fmtCurrency(enterpriseResult.currentDealValue)}</p>
+                  <p className="text-[10px] text-muted-foreground">{entLang === "es" ? "valor actual del deal" : "current deal value"}</p>
+                </div>
+                <div className="flex items-center shrink-0">
+                  <ArrowRight size={16} className="text-muted-foreground" />
+                </div>
+                {/* Optimized */}
+                <div className="flex-1 rounded-lg bg-primary/10 border border-primary/20 p-3 space-y-1 text-center">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-primary/70">
+                    {entLang === "es" ? "Optimized Revenue" : "Optimized Revenue"}
+                  </p>
+                  <p className="text-lg font-bold text-primary">{fmtCurrency(enterpriseResult.optimizedDealValue)}</p>
+                  <p className="text-[10px] text-primary/60">{entLang === "es" ? "post-recuperación" : "post-recovery"}</p>
+                </div>
+                <div className="flex items-center shrink-0">
+                  <ArrowRight size={16} className="text-muted-foreground" />
+                </div>
+                {/* Uplift */}
+                <div className="flex-1 rounded-lg bg-green-500/10 border border-green-500/20 p-3 space-y-1 text-center">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-green-400/70">
+                    {entLang === "es" ? "Revenue Uplift" : "Revenue Uplift"}
+                  </p>
+                  <p className="text-lg font-bold text-green-400">+{fmtCurrency(enterpriseResult.revenueUplift)}</p>
+                  <p className="text-[10px] text-green-400/60">{entLang === "es" ? "potencial adicional" : "potential uplift"}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Executive Recommendations ─────────────────────────── */}
+            <SectionHeader icon={<Award size={14} />} label={entLang === "es" ? "Executive Recommendations" : "Executive Recommendations"} />
+            {enterpriseResult.recommendations.map(r => (
+              <ExecRec key={r.priority} priority={r.priority} title={r.title} text={r.text} />
+            ))}
+
+            {/* ── Recovery Campaign Plan ────────────────────────────── */}
+            <SectionHeader icon={<Flag size={14} />} label={entLang === "es" ? "Recovery Campaign Plan" : "Recovery Campaign Plan"} />
+            <CampaignTimeline touchpoints={enterpriseResult.touchpoints} lang={entLang} />
+
+            {/* Re-analyze */}
+            <Button variant="outline" className="w-full border-border text-muted-foreground hover:text-foreground"
+              onClick={handleAnalyze} disabled={loading}>
+              {loading ? <Loader2 size={14} className="animate-spin mr-2" /> : <Zap size={14} className="mr-2" />}
+              {entLang === "es" ? "Re-Analizar Deal" : "Re-Analyze Deal"}
+            </Button>
+          </div>
+        )}
+
+        {/* ── STANDARD RESULTS (all non-enterprise stages) ─────────────── */}
+        {result && !isEnterprise && (
           <div className="space-y-3 animate-in fade-in-0 slide-in-from-bottom-4 duration-300">
 
             {/* ── Detected Lead Signals ──────────────────────────────── */}
@@ -850,8 +1463,8 @@ export default function LeadRecoveryPage() {
                 Strategy adapted for primary signal: <span className="font-bold">{SIGNAL_DEFS[strongest].label}</span>
               </div>
             )}
-            <InsightCard icon={<AlertCircle size={14} />}   label="Why This Lead Was Lost"  content={whyLost} />
-            <InsightCard icon={<ChevronRight size={14} />}  label="What Action to Take"     content={action} />
+            <InsightCard icon={<AlertCircle size={14} />}   label="Why This Lead Was Lost"    content={whyLost} />
+            <InsightCard icon={<ChevronRight size={14} />}  label="What Action to Take"       content={action} />
             <InsightCard icon={<Clock size={14} />}         label="Best Timing for Follow-Up" content={timing} copyable={false} />
 
             {/* ── Recommended Message ────────────────────────────────── */}
