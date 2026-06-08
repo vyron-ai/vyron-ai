@@ -1,79 +1,66 @@
 import { useState } from "react";
-import { useVyronSettings } from "@/contexts/settings-context";
-import { BusinessSettings } from "@/components/business-settings";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useVyronSettings } from "@/contexts/settings-context";
+import { BusinessSettings } from "@/components/business-settings";
 import {
-  Activity, TrendingDown, TrendingUp, AlertTriangle,
-  DollarSign, Users, Target, Zap, Copy, Check,
-  Clock, ArrowRight, BarChart3,
+  Activity, TrendingDown, TrendingUp, AlertTriangle, AlertCircle,
+  DollarSign, Users, Target, Zap, ArrowRight, BarChart3,
+  ShieldAlert, CheckCircle2, CircleDot, Lightbulb, Clock,
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-function fmt(n: number, decimals = 0) {
-  return n.toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
-function fmtCurrency(n: number) {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000)     return `$${(n / 1_000).toFixed(1)}K`;
-  return `$${fmt(n, 0)}`;
-}
-function fmtPct(n: number) { return `${n.toFixed(1)}%`; }
+// ── Types ──────────────────────────────────────────────────────────────────────
+type TrafficSource = "Facebook" | "Instagram" | "TikTok" | "Google" | "Referidos" | "WhatsApp" | "Mixto";
+type ResponseTime  = "menos5min" | "menos1h" | "menos24h" | "mas24h";
+type FollowUp      = "ninguno" | "manual" | "crmBasico" | "crmAvanzado";
+type YesNo         = "si" | "no";
 
-// ── Copy button ────────────────────────────────────────────────────────────────
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const { toast } = useToast();
-  const handle = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      toast({ description: "Copied" });
-      setTimeout(() => setCopied(false), 2000);
-    } catch { toast({ description: "Copy failed", variant: "destructive" }); }
-  };
-  return (
-    <button onClick={handle} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors shrink-0">
-      {copied ? <Check size={13} className="text-green-400" /> : <Copy size={13} />}
-    </button>
-  );
+interface Bottleneck {
+  rank:        1 | 2 | 3;
+  label:       string;
+  description: string;
+  impact:      number;
+  severity:    "critical" | "high" | "medium" | "low";
 }
 
-// ── Metric card ────────────────────────────────────────────────────────────────
-function MetricCard({
-  icon, label, value, sub, accent = "default",
+interface DiagnosticResult {
+  score:       number;
+  scoreLabel:  string;
+  scoreColor:  string;
+  bottlenecks: Bottleneck[];
+  actions:     { priority: number; title: string; text: string }[];
+  opportunity: string;
+  convRate:    number;
+  lostSales:   number;
+  potentialRevenue: number;
+}
+
+// ── Pill selector ──────────────────────────────────────────────────────────────
+function PillSelector<T extends string>({
+  options, value, onChange,
 }: {
-  icon: React.ReactNode; label: string; value: string; sub?: string;
-  accent?: "default" | "danger" | "warning" | "success" | "primary";
+  options:  { value: T; label: string }[];
+  value:    T;
+  onChange: (v: T) => void;
 }) {
-  const accents = {
-    default: "border-border",
-    danger:  "border-red-500/40 bg-red-500/5",
-    warning: "border-amber-500/40 bg-amber-500/5",
-    success: "border-green-500/40 bg-green-500/5",
-    primary: "border-primary/40 bg-primary/5",
-  };
-  const textAccents = {
-    default: "text-foreground",
-    danger:  "text-red-400",
-    warning: "text-amber-400",
-    success: "text-green-400",
-    primary: "text-primary",
-  };
   return (
-    <div className={`glass rounded-xl p-4 border ${accents[accent]} space-y-2`}>
-      <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider ${accent === "default" ? "text-muted-foreground" : textAccents[accent]}`}>
-        {icon}
-        {label}
-      </div>
-      <p className={`text-2xl font-bold ${textAccents[accent]}`}>{value}</p>
-      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+    <div className="flex flex-wrap gap-2">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+            value === o.value
+              ? "bg-primary text-primary-foreground border-primary electric-glow"
+              : "bg-background/40 text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -88,167 +75,388 @@ function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }
   );
 }
 
-// ── Priority badge ─────────────────────────────────────────────────────────────
-const PRIORITY_STYLE: Record<string, string> = {
-  Critical: "bg-red-500/15 text-red-400 border-red-500/30",
-  High:     "bg-orange-500/15 text-orange-400 border-orange-500/30",
-  Medium:   "bg-amber-500/15 text-amber-400 border-amber-500/30",
-  Low:      "bg-green-500/15 text-green-400 border-green-500/30",
+// ── Severity config ─────────────────────────────────────────────────────────────
+const SEV: Record<string, { border: string; bg: string; text: string; badge: string; icon: React.ReactNode }> = {
+  critical: {
+    border: "border-red-500/40",
+    bg:     "bg-red-500/5",
+    text:   "text-red-400",
+    badge:  "bg-red-500/15 text-red-400 border-red-500/30",
+    icon:   <AlertCircle size={14} className="text-red-400 shrink-0" />,
+  },
+  high: {
+    border: "border-orange-500/40",
+    bg:     "bg-orange-500/5",
+    text:   "text-orange-400",
+    badge:  "bg-orange-500/15 text-orange-400 border-orange-500/30",
+    icon:   <ShieldAlert size={14} className="text-orange-400 shrink-0" />,
+  },
+  medium: {
+    border: "border-amber-500/40",
+    bg:     "bg-amber-500/5",
+    text:   "text-amber-400",
+    badge:  "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    icon:   <AlertTriangle size={14} className="text-amber-400 shrink-0" />,
+  },
+  low: {
+    border: "border-green-500/40",
+    bg:     "bg-green-500/5",
+    text:   "text-green-400",
+    badge:  "bg-green-500/15 text-green-400 border-green-500/30",
+    icon:   <CheckCircle2 size={14} className="text-green-400 shrink-0" />,
+  },
 };
 
-interface Recommendation { priority: string; title: string; text: string }
+// ── Score arc component ────────────────────────────────────────────────────────
+function ScoreGauge({ score, label, color }: { score: number; label: string; color: string }) {
+  const radius = 54;
+  const circumference = Math.PI * radius;
+  const filled = (score / 100) * circumference;
+  const arcColor =
+    score >= 80 ? "#22c55e" :
+    score >= 60 ? "#6366f1" :
+    score >= 40 ? "#f59e0b" :
+                  "#ef4444";
 
-// ── Response time options ──────────────────────────────────────────────────────
-const RESPONSE_OPTIONS = [
-  { label: "Under 5 minutes",  value: "0.083" },
-  { label: "5–30 minutes",     value: "0.25"  },
-  { label: "30 min – 1 hour",  value: "0.75"  },
-  { label: "1–3 hours",        value: "2"     },
-  { label: "3–12 hours",       value: "7"     },
-  { label: "12–24 hours",      value: "18"    },
-  { label: "Over 24 hours",    value: "36"    },
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <svg width="140" height="80" viewBox="0 0 140 80">
+        <path
+          d="M 14 76 A 56 56 0 0 1 126 76"
+          fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="12" strokeLinecap="round"
+        />
+        <path
+          d="M 14 76 A 56 56 0 0 1 126 76"
+          fill="none"
+          stroke={arcColor}
+          strokeWidth="12"
+          strokeLinecap="round"
+          strokeDasharray={`${filled} ${circumference}`}
+          style={{ filter: `drop-shadow(0 0 6px ${arcColor})`, transition: "stroke-dasharray 1s ease" }}
+        />
+        <text x="70" y="68" textAnchor="middle" fontSize="26" fontWeight="800" fill={arcColor}>{score}</text>
+      </svg>
+      <div className="text-center space-y-0.5">
+        <p className={`text-sm font-bold ${color}`}>{label}</p>
+        <p className="text-xs text-muted-foreground">Sales Health Score</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Diagnostic engine ─────────────────────────────────────────────────────────
+function runDiagnostic(
+  niche: string,
+  product: string,
+  precioPromedio: number,
+  leads: number,
+  ventas: number,
+  trafico: TrafficSource,
+  respuesta: ResponseTime,
+  seguimiento: FollowUp,
+  contenido: YesNo,
+  oferta: YesNo,
+): DiagnosticResult {
+  const convRate   = leads > 0 ? (ventas / leads) * 100 : 0;
+  const lostSales  = Math.max(0, leads - ventas);
+  const ingresos   = ventas * precioPromedio;
+
+  // ── Penalty table ──────────────────────────────────────────────────────────
+  type BotCandidate = {
+    id:          string;
+    label:       string;
+    description: string;
+    impact:      number;
+    severity:    "critical" | "high" | "medium" | "low";
+    penaltyPts:  number;
+    action:      string;
+  };
+
+  const candidates: BotCandidate[] = [];
+
+  // 1. Tasa de conversión
+  if (convRate < 5) {
+    candidates.push({
+      id: "conv",
+      label: "Tasa de cierre crítica",
+      description: `Solo ${convRate.toFixed(1)}% de tus leads se convierten en clientes. El estándar de mercado es 15–25%. Esto indica una brecha grave en calificación, presentación de oferta o proceso de venta.`,
+      impact: -28,
+      severity: "critical",
+      penaltyPts: 28,
+      action: `Implementa un script de calificación de 3 preguntas antes de cualquier conversación. Revisa la presentación de ${product || "tu oferta"} y agrega prueba social específica al nicho ${niche || "de tu negocio"}.`,
+    });
+  } else if (convRate < 10) {
+    candidates.push({
+      id: "conv",
+      label: "Tasa de cierre deficiente",
+      description: `${convRate.toFixed(1)}% de conversión está por debajo del mínimo competitivo (15%). Probablemente tus leads no están suficientemente calificados o la oferta no está clara en el momento de la venta.`,
+      impact: -18,
+      severity: "high",
+      penaltyPts: 18,
+      action: `Agrega una etapa de pre-calificación con 3 criterios clave antes de presentar ${product || "tu servicio"}. Usa testimonios y resultados concretos de clientes anteriores.`,
+    });
+  } else if (convRate < 20) {
+    candidates.push({
+      id: "conv",
+      label: "Tasa de cierre mejorable",
+      description: `${convRate.toFixed(1)}% de conversión está por debajo del benchmark (25%). Hay margen significativo de mejora en la calidad del lead o en el proceso de cierre.`,
+      impact: -10,
+      severity: "medium",
+      penaltyPts: 10,
+      action: `Refina el mensaje de cierre y agrega una garantía o elemento de riesgo cero para aumentar la confianza en el momento de decisión.`,
+    });
+  }
+
+  // 2. Tiempo de respuesta
+  if (respuesta === "mas24h") {
+    candidates.push({
+      id: "respuesta",
+      label: "Velocidad de respuesta crítica",
+      description: `Responder en más de 24 horas es devastador para la conversión. Los estudios muestran una caída de 9× cuando el tiempo supera los 5 minutos. A tu ritmo actual, estás perdiendo la mayoría de leads antes de iniciar la conversación.`,
+      impact: -30,
+      severity: "critical",
+      penaltyPts: 25,
+      action: `Implementa respuesta automática por WhatsApp o email en menos de 5 minutos (bot o plantilla). Establece horario de atención visible. Considera asignar a alguien exclusivo para primera respuesta.`,
+    });
+  } else if (respuesta === "menos24h") {
+    candidates.push({
+      id: "respuesta",
+      label: "Respuesta lenta a leads",
+      description: `Responder en menos de 24 horas te pone en desventaja. Los leads que no reciben respuesta en la primera hora tienen 60% menos probabilidad de convertir. Tu pipeline está perdiendo oportunidades por velocidad.`,
+      impact: -22,
+      severity: "high",
+      penaltyPts: 18,
+      action: `Configura respuesta automática en menos de 1 hora con plantilla de WhatsApp. Crea una secuencia de bienvenida inmediata que caliente el lead mientras preparas la respuesta personalizada.`,
+    });
+  } else if (respuesta === "menos1h") {
+    candidates.push({
+      id: "respuesta",
+      label: "Velocidad de respuesta mejorable",
+      description: `Menos de 1 hora es aceptable, pero el estándar de alto rendimiento es menos de 5 minutos. Una reducción en el tiempo de respuesta podría mejorar tu tasa de conversión entre 15% y 30%.`,
+      impact: -8,
+      severity: "medium",
+      penaltyPts: 8,
+      action: `Automatiza la primera respuesta con un mensaje de valor inmediato que mantenga el interés del lead mientras preparas la respuesta personalizada.`,
+    });
+  }
+
+  // 3. Sistema de seguimiento
+  if (seguimiento === "ninguno") {
+    candidates.push({
+      id: "seguimiento",
+      label: "Sin sistema de seguimiento",
+      description: `Sin un sistema de seguimiento, el 80% de tus leads que no convierten en el primer contacto se pierden para siempre. El 80% de las ventas ocurren entre el 5° y 12° contacto — sin sistema, no llegas a ese punto.`,
+      impact: -22,
+      severity: "critical",
+      penaltyPts: 22,
+      action: `Implementa una secuencia básica de 5 pasos: Día 1 (primer contacto), Día 3 (seguimiento con valor), Día 7 (caso de éxito), Día 14 (oferta especial), Día 30 (reactivación). Usa WhatsApp o email según tu canal principal.`,
+    });
+  } else if (seguimiento === "manual") {
+    candidates.push({
+      id: "seguimiento",
+      label: "Seguimiento manual sin estructura",
+      description: `El seguimiento manual sin sistema genera inconsistencia. Inevitablemente pierdes leads en el proceso porque depende de la memoria o del tiempo disponible, no de un sistema automático.`,
+      impact: -14,
+      severity: "medium",
+      penaltyPts: 12,
+      action: `Migra de seguimiento manual a un CRM básico (HubSpot Free, Notion CRM o similar). Establece recordatorios automáticos y plantillas de mensaje para cada etapa del proceso.`,
+    });
+  } else if (seguimiento === "crmBasico") {
+    candidates.push({
+      id: "seguimiento",
+      label: "CRM básico sin automatización",
+      description: `Tienes CRM básico, lo que es positivo, pero sin automatización el potencial está limitado. La mayoría de los seguimientos siguen dependiendo de acción manual, lo que genera inconsistencia a escala.`,
+      impact: -6,
+      severity: "low",
+      penaltyPts: 5,
+      action: `Agrega automatizaciones básicas a tu CRM: secuencia de bienvenida automática, recordatorio de seguimiento y notificación cuando un lead no ha tenido contacto en 7 días.`,
+    });
+  }
+
+  // 4. Sin oferta clara
+  if (oferta === "no") {
+    candidates.push({
+      id: "oferta",
+      label: "Oferta sin claridad",
+      description: `Una oferta poco clara hace que el cliente no entienda qué está comprando, qué resultado obtendrá ni por qué elegirte a ti. Esto solo puede significar una cosa: tasas de conversión bajas sin importar la calidad del lead.`,
+      impact: -16,
+      severity: "high",
+      penaltyPts: 15,
+      action: `Define tu oferta en una sola oración: "Ayudo a [audiencia] a lograr [resultado específico] en [tiempo] sin [obstáculo principal]." Luego estructura el precio, el entregable y la garantía de forma visible en todos los puntos de contacto.`,
+    });
+  }
+
+  // 5. Sin contenido constante
+  if (contenido === "no") {
+    candidates.push({
+      id: "contenido",
+      label: "Ausencia de contenido constante",
+      description: `Sin contenido constante, tus leads fríos no tienen forma de calentarse antes de la conversación de venta. Esto aumenta la fricción en el cierre y eleva el costo de adquisición de cada cliente.`,
+      impact: -12,
+      severity: "medium",
+      penaltyPts: 10,
+      action: `Publica mínimo 3 piezas de contenido por semana que eduquen, generen confianza y muestren resultados. Usa el Content Planner de VYRON para generar un calendario estratégico de 30 días.`,
+    });
+  }
+
+  // 6. Tráfico concentrado
+  if (trafico !== "Mixto") {
+    const singleChannelImpact =
+      trafico === "TikTok" || trafico === "WhatsApp" ? -10 :
+      trafico === "Facebook" || trafico === "Instagram" ? -8 : -5;
+    const singleChannelSeverity =
+      Math.abs(singleChannelImpact) >= 10 ? "medium" : "low";
+    candidates.push({
+      id: "trafico",
+      label: `Dependencia de canal único (${trafico})`,
+      description: `Depender de una sola fuente de tráfico te hace vulnerable. Si ${trafico} cambia su algoritmo, sube sus costos o baja el alcance, tu negocio pierde su principal fuente de leads de forma inmediata.`,
+      impact: singleChannelImpact,
+      severity: singleChannelSeverity,
+      penaltyPts: Math.abs(singleChannelImpact),
+      action: `Agrega al menos un segundo canal de adquisición. Si tu canal principal es orgánico, complementa con WhatsApp o email marketing. Si es pagado, agrega un componente de referidos o contenido orgánico.`,
+    });
+  }
+
+  // ── Sort by penaltyPts descending ─────────────────────────────────────────
+  const sorted = [...candidates].sort((a, b) => b.penaltyPts - a.penaltyPts);
+  const top3   = sorted.slice(0, 3);
+
+  const bottlenecks: Bottleneck[] = top3.map((b, i) => ({
+    rank:        (i + 1) as 1 | 2 | 3,
+    label:       b.label,
+    description: b.description,
+    impact:      b.impact,
+    severity:    b.severity,
+  }));
+
+  // ── Health Score ────────────────────────────────────────────────────────────
+  const totalPenalty = sorted.reduce((acc, c) => acc + c.penaltyPts, 0);
+  const rawScore     = Math.max(0, Math.min(100, 100 - totalPenalty));
+  const score        = Math.round(rawScore);
+
+  const scoreLabel =
+    score >= 80 ? "Negocio Saludable" :
+    score >= 60 ? "Funcionando con Brechas" :
+    score >= 40 ? "Proceso con Problemas Graves" :
+                  "Sistema en Crisis";
+  const scoreColor =
+    score >= 80 ? "text-green-400" :
+    score >= 60 ? "text-primary" :
+    score >= 40 ? "text-amber-400" :
+                  "text-red-400";
+
+  // ── Action Plan ─────────────────────────────────────────────────────────────
+  const actions = top3.map((b, i) => ({
+    priority: i + 1,
+    title:    b.label,
+    text:     b.action,
+  }));
+
+  // ── Growth Opportunity ──────────────────────────────────────────────────────
+  const maxImpact = Math.abs(top3.reduce((acc, b) => acc + b.impact, 0));
+  const minRecovery = Math.round(maxImpact * 0.4);
+  const maxRecovery = Math.round(maxImpact * 0.85);
+  const potentialRevenue = Math.round(ingresos * (maxRecovery / 100));
+
+  const opportunity =
+    top3.length === 0
+      ? `Tu negocio está funcionando a un nivel de alto rendimiento. El siguiente paso es escalar el volumen de leads manteniendo el proceso actual.`
+      : `Corrigiendo los ${top3.length} cuellos de botella detectados, tu negocio podría recuperar entre ${minRecovery}% y ${maxRecovery}% de ingresos potenciales que actualmente se están perdiendo en el proceso${potentialRevenue > 0 ? ` — un potencial de +$${potentialRevenue.toLocaleString()} adicionales por mes` : ""}.`;
+
+  return {
+    score,
+    scoreLabel,
+    scoreColor,
+    bottlenecks,
+    actions,
+    opportunity,
+    convRate,
+    lostSales,
+    potentialRevenue,
+  };
+}
+
+// ── Option constants ───────────────────────────────────────────────────────────
+const TRAFFIC_OPTIONS: { value: TrafficSource; label: string }[] = [
+  { value: "Facebook",  label: "Facebook" },
+  { value: "Instagram", label: "Instagram" },
+  { value: "TikTok",    label: "TikTok" },
+  { value: "Google",    label: "Google" },
+  { value: "Referidos", label: "Referidos" },
+  { value: "WhatsApp",  label: "WhatsApp" },
+  { value: "Mixto",     label: "Mixto" },
 ];
+
+const RESPONSE_OPTIONS: { value: ResponseTime; label: string }[] = [
+  { value: "menos5min", label: "Menos de 5 min" },
+  { value: "menos1h",   label: "Menos de 1 hora" },
+  { value: "menos24h",  label: "Menos de 24 horas" },
+  { value: "mas24h",    label: "Más de 24 horas" },
+];
+
+const FOLLOWUP_OPTIONS: { value: FollowUp; label: string }[] = [
+  { value: "ninguno",     label: "Ninguno" },
+  { value: "manual",      label: "Manual" },
+  { value: "crmBasico",   label: "CRM Básico" },
+  { value: "crmAvanzado", label: "CRM Avanzado" },
+];
+
+const YESNO_OPTIONS: { value: YesNo; label: string }[] = [
+  { value: "si", label: "Sí" },
+  { value: "no", label: "No" },
+];
+
+const RANK_LABEL: Record<number, string> = {
+  1: "Cuello de Botella Principal",
+  2: "Cuello de Botella Secundario",
+  3: "Cuello de Botella Terciario",
+};
+
+const RANK_ICON: Record<number, React.ReactNode> = {
+  1: <CircleDot size={14} className="text-red-400" />,
+  2: <CircleDot size={14} className="text-orange-400" />,
+  3: <CircleDot size={14} className="text-amber-400" />,
+};
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function SalesDiagnosticPage() {
-  const { language, businessStage } = useVyronSettings();
-  const t = (es: string, en: string) => language === "Español" ? es : en;
+  const { language } = useVyronSettings();
 
-  const [businessName,   setBusinessName]   = useState("");
-  const [monthlyRevenue, setMonthlyRevenue] = useState("");
-  const [monthlyLeads,   setMonthlyLeads]   = useState("");
-  const [closedClients,  setClosedClients]  = useState("");
-  const [responseTime,   setResponseTime]   = useState("2");
-  const [diagnosed,      setDiagnosed]      = useState(false);
+  const [niche,      setNiche]      = useState("");
+  const [product,    setProduct]    = useState("");
+  const [precio,     setPrecio]     = useState("");
+  const [leads,      setLeads]      = useState("");
+  const [ventas,     setVentas]     = useState("");
+  const [trafico,    setTrafico]    = useState<TrafficSource>("Instagram");
+  const [respuesta,  setRespuesta]  = useState<ResponseTime>("menos1h");
+  const [seguimiento, setSeguimiento] = useState<FollowUp>("manual");
+  const [contenido,  setContenido]  = useState<YesNo>("no");
+  const [oferta,     setOferta]     = useState<YesNo>("no");
+  const [result,     setResult]     = useState<DiagnosticResult | null>(null);
 
-  const revVal     = parseFloat(monthlyRevenue);
-  const leadsVal   = parseFloat(monthlyLeads);
-  const closedVal  = parseFloat(closedClients);
+  const leadsNum  = parseFloat(leads)  || 0;
+  const ventasNum = parseFloat(ventas) || 0;
+  const precioNum = parseFloat(precio) || 0;
 
-  const closedExceedsLeads =
-    closedClients.trim() !== "" &&
-    monthlyLeads.trim()  !== "" &&
-    !isNaN(closedVal) && !isNaN(leadsVal) &&
-    closedVal > leadsVal;
-
+  const ventasExcedeLeads = leads.trim() !== "" && ventas.trim() !== "" && ventasNum > leadsNum;
   const canDiagnose =
-    monthlyRevenue.trim() !== "" &&
-    monthlyLeads.trim()   !== "" &&
-    closedClients.trim()  !== "" &&
-    !isNaN(revVal)   && revVal   >= 0 &&
-    !isNaN(leadsVal) && leadsVal  > 0 &&
-    !isNaN(closedVal) && closedVal >= 0 &&
-    !closedExceedsLeads;
+    niche.trim()   !== "" &&
+    precio.trim()  !== "" && precioNum > 0 &&
+    leads.trim()   !== "" && leadsNum  > 0 &&
+    ventas.trim()  !== "" && ventasNum >= 0 &&
+    !ventasExcedeLeads;
 
-  // ── Core calculations ────────────────────────────────────────────────────────
-  const revenue     = Math.max(0, parseFloat(monthlyRevenue)  || 0);
-  const leads       = Math.max(1, parseFloat(monthlyLeads)    || 1);
-  const closed      = Math.max(0, parseFloat(closedClients)   || 0);
-  const rtHours     = parseFloat(responseTime) || 2;
+  const handleDiagnose = () => {
+    if (!canDiagnose) return;
+    setResult(runDiagnostic(
+      niche, product, precioNum, leadsNum, ventasNum,
+      trafico, respuesta, seguimiento, contenido, oferta,
+    ));
+    setTimeout(() => {
+      document.getElementById("diag-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  };
 
-  const safeLeads  = Math.max(leads,  1);
-  const safeClosed = Math.min(closed, leads);
-
-  const closeRate          = (safeClosed / safeLeads) * 100;
-  const lostLeads          = safeLeads - safeClosed;
-  const avgClientValue     = safeClosed > 0 ? revenue / safeClosed : revenue;
-  const revenueLostMonthly = lostLeads * avgClientValue;
-  const annualOpptyCost    = revenueLostMonthly * 12;
-
-  // Response time penalty on effective close rate
-  const rtPenalty =
-    rtHours <= 0.083  ? 1.0  : // <5 min — optimal
-    rtHours <= 0.25   ? 0.95 :
-    rtHours <= 0.75   ? 0.85 :
-    rtHours <= 2      ? 0.72 :
-    rtHours <= 7      ? 0.55 :
-    rtHours <= 18     ? 0.38 :
-                        0.22;  // >24h
-
-  // Optimised scenario — 50% close rate improvement, capped at 60%
-  const benchmarkRate     = 25;
-  const optimisedCloseRate = Math.min(Math.max(closeRate / rtPenalty * 1.35, benchmarkRate), 60);
-  const optimisedClosed    = Math.round((optimisedCloseRate / 100) * safeLeads);
-  const additionalMonthly  = Math.max(0, (optimisedClosed - safeClosed) * avgClientValue);
-  const additionalAnnual   = additionalMonthly * 12;
-  const optimisedRevenue   = revenue + additionalMonthly;
-
-  // ── AI Recommendations ────────────────────────────────────────────────────────
-  const recommendations: Recommendation[] = [];
-
-  if (rtHours > 0.75) {
-    const recoverable = fmtCurrency(lostLeads * 0.15 * avgClientValue);
-    const rtLabel = RESPONSE_OPTIONS.find(o => o.value === responseTime)?.label?.toLowerCase() ?? `${rtHours}h`;
-    recommendations.push({
-      priority: t(rtHours > 7 ? "Crítico" : "Alto", rtHours > 7 ? "Critical" : "High"),
-      title: t(
-        "La Velocidad de Respuesta Está Destruyendo Tu Pipeline",
-        "Speed-to-Lead is Killing Your Pipeline",
-      ),
-      text: t(
-        `Responder en ${rtLabel} te pone en una desventaja seria de conversión. Las investigaciones muestran consistentemente una caída de 9× en la conversión cuando el tiempo de respuesta supera los 5 minutos. Con tu volumen actual de ${fmt(safeLeads)} leads/mes, reducir el tiempo de respuesta a menos de 30 minutos podría recuperar de manera realista hasta ${recoverable}/mes en ingresos perdidos.`,
-        `Responding in ${rtLabel} puts you at a serious conversion disadvantage. Research consistently shows a 9× drop in lead conversion when response time exceeds 5 minutes. At your current lead volume of ${fmt(safeLeads)}/month, reducing response time to under 30 minutes could realistically recover up to ${recoverable}/month in lost revenue.`,
-      ),
-    });
-  }
-
-  if (closeRate < 15) {
-    recommendations.push({
-      priority: t(closeRate < 8 ? "Crítico" : "Alto", closeRate < 8 ? "Critical" : "High"),
-      title: t(
-        "Tasa de Cierre Bajo Mínimo — Posible Brecha de Calificación",
-        "Close Rate Is Below Baseline — Qualification Gap Likely",
-      ),
-      text: t(
-        `Una tasa de cierre de ${fmtPct(closeRate)} indica que prospectos no calificados están llegando a tus conversaciones de venta. Implementar un paso de 3 preguntas de pre-calificación antes de cualquier llamada agendada típicamente eleva las tasas de cierre en 8–15 puntos porcentuales. Aplicado a tu pipeline actual de ${fmt(safeLeads)} leads mensuales, eso representa ${fmtCurrency(safeLeads * 0.1 * avgClientValue)} en ingresos mensuales adicionales del mismo volumen de leads.`,
-        `A ${fmtPct(closeRate)} close rate signals that unqualified leads are reaching your sales conversations. Implementing a 3-question pre-qualification step before any scheduled call typically raises close rates by 8–15 percentage points. Applied to your current pipeline of ${fmt(safeLeads)} monthly leads, that's ${fmtCurrency(safeLeads * 0.1 * avgClientValue)} in additional monthly revenue from the same lead volume.`,
-      ),
-    });
-  }
-
-  if (lostLeads > safeLeads * 0.6) {
-    recommendations.push({
-      priority: t("Alto", "High"),
-      title: t(
-        "Sin Sistema de Seguimiento = Dejando Dinero Sobre la Mesa",
-        "No Follow-Up System = Leaving Money on the Table",
-      ),
-      text: t(
-        `Estás perdiendo ${fmt(lostLeads)} leads por mes. El 80% de los negocios se cierran después de 5 o más contactos de seguimiento, pero la mayoría de los negocios se detienen después de 1–2 intentos. Una secuencia estructurada de 5 pasos (Día 1 · 3 · 7 · 14 · 30) aplicada a tus leads perdidos podría recuperar de forma conservadora el 10–20% de ellos — eso es ${fmtCurrency(lostLeads * 0.15 * avgClientValue)}/mes sin un solo lead nuevo.`,
-        `You're losing ${fmt(lostLeads)} leads per month. 80% of deals close after 5+ follow-up touches, but most businesses stop after 1–2 attempts. A structured 5-step follow-up sequence (Day 1 · 3 · 7 · 14 · 30) applied to your lost leads could conservatively recover 10–20% of them — that's ${fmtCurrency(lostLeads * 0.15 * avgClientValue)}/month without a single new lead.`,
-      ),
-    });
-  }
-
-  if (avgClientValue > 0) {
-    recommendations.push({
-      priority: t("Medio", "Medium"),
-      title: t(
-        "Aumenta el Valor Promedio de Cada Cliente Sin Más Leads",
-        "Increase Average Deal Value Without More Leads",
-      ),
-      text: t(
-        `El valor promedio de tu cliente es ${fmtCurrency(avgClientValue)}/mes. Un aumento del 20% a través de paquetes escalonados u ofertas de upsell sobre tus ${fmt(safeClosed)} clientes mensuales actuales agregaría ${fmtCurrency(safeClosed * avgClientValue * 0.2 * 12)}/año — sin adquirir un solo lead nuevo ni cambiar tu tasa de cierre.`,
-        `Your average client value is ${fmtCurrency(avgClientValue)}/month. A 20% increase through tiered packaging or upsell offers on your existing ${fmt(safeClosed)} monthly clients would add ${fmtCurrency(safeClosed * avgClientValue * 0.2 * 12)}/year — without acquiring a single new lead or changing your close rate.`,
-      ),
-    });
-  }
-
-  if (closeRate >= 20 && rtHours <= 0.75) {
-    recommendations.push({
-      priority: t("Medio", "Medium"),
-      title: t(
-        "Base Sólida — Escala el Volumen de Leads Ahora",
-        "Strong Foundation — Scale Lead Volume Now",
-      ),
-      text: t(
-        `Con una tasa de cierre de ${fmtPct(closeRate)} y tiempo de respuesta rápido, tu operación de ventas está funcionando muy por encima del promedio. La acción de mayor apalancamiento es aumentar el volumen de leads. Un aumento del 25% en leads mensuales a tu tasa de cierre actual agregaría ${fmtCurrency(safeLeads * 0.25 * closeRate / 100 * avgClientValue * 12)}/año sin ningún cambio en tu proceso actual.`,
-        `With a ${fmtPct(closeRate)} close rate and fast response time, your sales operation is performing well above average. The highest-leverage action is increasing lead volume. A 25% increase in monthly leads at your current close rate would add ${fmtCurrency(safeLeads * 0.25 * closeRate / 100 * avgClientValue * 12)}/year with no change to your current process.`,
-      ),
-    });
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <AppLayout title="Sales Diagnostic">
       <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6">
@@ -260,333 +468,295 @@ export default function SalesDiagnosticPage() {
             Sales Diagnostic AI
           </h2>
           <p className="text-muted-foreground text-sm">
-            Enter your business metrics and get a data-driven revenue leak analysis with specific recommendations.
+            Ingresa los datos de tu negocio y obtén un diagnóstico completo de cuellos de botella, impacto estimado y plan de acción priorizado.
           </p>
         </div>
 
         <BusinessSettings />
 
-        {/* Input form */}
-        <div className="glass border border-border rounded-xl p-4 md:p-6 space-y-4">
+        {/* Form */}
+        <div className="glass border border-border rounded-xl p-4 md:p-6 space-y-5">
 
+          {/* Niche */}
           <div className="space-y-2">
-            <Label htmlFor="biz">Business Name</Label>
+            <Label htmlFor="niche">Nicho</Label>
             <Input
-              id="biz"
-              placeholder="e.g. Apex Marketing Agency"
-              value={businessName}
-              onChange={(e) => setBusinessName(e.target.value)}
+              id="niche"
+              placeholder="ej. Barbería, Consultoría, Fitness…"
+              value={niche}
+              onChange={(e) => setNiche(e.target.value)}
               className="bg-background/50 border-border focus-visible:ring-primary/50"
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Product */}
+          <div className="space-y-2">
+            <Label htmlFor="product">Producto o Servicio</Label>
+            <Input
+              id="product"
+              placeholder="ej. Corte premium, Coaching 1:1, Membresía…"
+              value={product}
+              onChange={(e) => setProduct(e.target.value)}
+              className="bg-background/50 border-border focus-visible:ring-primary/50"
+            />
+          </div>
+
+          {/* Precio */}
+          <div className="space-y-2">
+            <Label htmlFor="precio">Precio Promedio ($)</Label>
+            <Input
+              id="precio"
+              type="number"
+              min="1"
+              placeholder="ej. 150"
+              value={precio}
+              onChange={(e) => setPrecio(e.target.value)}
+              className="bg-background/50 border-border focus-visible:ring-primary/50"
+            />
+          </div>
+
+          {/* Leads / Ventas */}
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="rev">Monthly Revenue ($)</Label>
-              <Input
-                id="rev"
-                type="number"
-                min="0"
-                placeholder="e.g. 25000"
-                value={monthlyRevenue}
-                onChange={(e) => setMonthlyRevenue(e.target.value)}
-                className="bg-background/50 border-border focus-visible:ring-primary/50"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="leads">Monthly Leads</Label>
+              <Label htmlFor="leads">Leads por mes</Label>
               <Input
                 id="leads"
                 type="number"
                 min="1"
-                placeholder="e.g. 120"
-                value={monthlyLeads}
-                onChange={(e) => setMonthlyLeads(e.target.value)}
+                placeholder="ej. 80"
+                value={leads}
+                onChange={(e) => setLeads(e.target.value)}
                 className="bg-background/50 border-border focus-visible:ring-primary/50"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="closed" className={closedExceedsLeads ? "text-red-400" : ""}>
-                Closed Clients / Month
+              <Label htmlFor="ventas" className={ventasExcedeLeads ? "text-red-400" : ""}>
+                Ventas por mes
               </Label>
               <Input
-                id="closed"
+                id="ventas"
                 type="number"
                 min="0"
-                placeholder="e.g. 18"
-                value={closedClients}
-                onChange={(e) => { setClosedClients(e.target.value); setDiagnosed(false); }}
+                placeholder="ej. 12"
+                value={ventas}
+                onChange={(e) => setVentas(e.target.value)}
                 className={
-                  closedExceedsLeads
+                  ventasExcedeLeads
                     ? "bg-red-500/10 border-red-500 focus-visible:ring-red-500/50 text-red-400"
                     : "bg-background/50 border-border focus-visible:ring-primary/50"
                 }
               />
-              {closedExceedsLeads && (
-                <div className="flex items-center gap-1.5 text-red-400 text-xs font-medium pt-0.5">
-                  <AlertTriangle size={12} className="shrink-0" />
-                  Closed clients cannot be greater than monthly leads.
+              {ventasExcedeLeads && (
+                <div className="flex items-center gap-1.5 text-red-400 text-xs font-medium">
+                  <AlertTriangle size={11} />
+                  Las ventas no pueden superar los leads.
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Traffic source */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Fuente principal de tráfico</Label>
+            <PillSelector options={TRAFFIC_OPTIONS} value={trafico} onChange={setTrafico} />
+          </div>
+
+          {/* Response time */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Tiempo promedio de respuesta</Label>
+            <PillSelector options={RESPONSE_OPTIONS} value={respuesta} onChange={setRespuesta} />
+          </div>
+
+          {/* Follow-up system */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Sistema de seguimiento</Label>
+            <PillSelector options={FOLLOWUP_OPTIONS} value={seguimiento} onChange={setSeguimiento} />
+          </div>
+
+          {/* Content + Offer */}
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="rt">Avg Response Time to Leads</Label>
-              <select
-                id="rt"
-                value={responseTime}
-                onChange={(e) => setResponseTime(e.target.value)}
-                className="w-full h-10 rounded-md border border-border bg-background/50 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                {RESPONSE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider">Contenido constante</Label>
+              <PillSelector options={YESNO_OPTIONS} value={contenido} onChange={setContenido} />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider">Oferta clara</Label>
+              <PillSelector options={YESNO_OPTIONS} value={oferta} onChange={setOferta} />
             </div>
           </div>
 
           <Button
-            onClick={() => setDiagnosed(true)}
+            onClick={handleDiagnose}
             disabled={!canDiagnose}
             className="w-full electric-glow font-semibold"
           >
             <Activity size={16} className="mr-2" />
-            Run Diagnostic
+            Diagnosticar Negocio
           </Button>
         </div>
 
-        {/* ── Results ───────────────────────────────────────────────────── */}
-        {diagnosed && canDiagnose && (
-          <div className="space-y-3 animate-in fade-in-0 slide-in-from-bottom-4 duration-300">
+        {/* ── Results ───────────────────────────────────────────────────────── */}
+        {result && (
+          <div id="diag-results" className="space-y-3 animate-in fade-in-0 slide-in-from-bottom-4 duration-300">
 
-            {/* Business name banner */}
-            {businessName && (
-              <div className="glass border border-primary/25 rounded-xl px-4 py-3 flex items-center gap-3 bg-primary/5">
-                <Activity size={16} className="text-primary shrink-0" />
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Diagnostic Report for</p>
-                  <p className="text-sm font-bold text-foreground">{businessName}</p>
+            {/* ── Sales Health Score ───────────────────────────────────── */}
+            <SectionHeader icon={<BarChart3 size={14} />} label="Sales Health Score" />
+            <div className="glass border border-border rounded-xl p-5 flex flex-col items-center gap-2">
+              <ScoreGauge score={result.score} label={result.scoreLabel} color={result.scoreColor} />
+
+              {/* Score bar */}
+              <div className="w-full max-w-xs space-y-1.5 mt-1">
+                <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{
+                      width: `${result.score}%`,
+                      background: result.score >= 80 ? "#22c55e" : result.score >= 60 ? "#6366f1" : result.score >= 40 ? "#f59e0b" : "#ef4444",
+                      boxShadow: `0 0 8px ${result.score >= 80 ? "#22c55e" : result.score >= 60 ? "#6366f1" : result.score >= 40 ? "#f59e0b" : "#ef4444"}`,
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>0 — Crisis</span>
+                  <span>100 — Óptimo</span>
+                </div>
+              </div>
+
+              {/* Key metrics row */}
+              <div className="w-full grid grid-cols-3 gap-2 mt-3">
+                <div className="rounded-lg bg-white/5 border border-border p-3 text-center space-y-1">
+                  <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Conversión</p>
+                  <p className={`text-lg font-bold ${result.convRate >= 20 ? "text-green-400" : result.convRate >= 10 ? "text-amber-400" : "text-red-400"}`}>
+                    {result.convRate.toFixed(1)}%
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white/5 border border-border p-3 text-center space-y-1">
+                  <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Leads Perdidos</p>
+                  <p className="text-lg font-bold text-red-400">{result.lostSales}</p>
+                </div>
+                <div className="rounded-lg bg-white/5 border border-border p-3 text-center space-y-1">
+                  <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Cuellos</p>
+                  <p className="text-lg font-bold text-amber-400">{result.bottlenecks.length}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Bottlenecks ───────────────────────────────────────────── */}
+            {result.bottlenecks.length > 0 && (
+              <>
+                <SectionHeader icon={<TrendingDown size={14} />} label="Cuellos de Botella Detectados" />
+                <div className="space-y-3">
+                  {result.bottlenecks.map((b) => {
+                    const s = SEV[b.severity];
+                    return (
+                      <div key={b.rank} className={`glass border ${s.border} ${s.bg} rounded-xl p-4 space-y-3`}>
+                        {/* Header */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {RANK_ICON[b.rank]}
+                            <div>
+                              <p className={`text-[10px] font-bold uppercase tracking-wider ${s.text}`}>
+                                {RANK_LABEL[b.rank]}
+                              </p>
+                              <p className="text-sm font-bold text-foreground leading-snug mt-0.5">{b.label}</p>
+                            </div>
+                          </div>
+                          <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${s.badge}`}>
+                            {b.severity === "critical" ? "Crítico" : b.severity === "high" ? "Alto" : b.severity === "medium" ? "Medio" : "Bajo"}
+                          </span>
+                        </div>
+                        {/* Description */}
+                        <p className="text-xs text-foreground/80 leading-relaxed">{b.description}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* ── Impacto Estimado ──────────────────────────────────────── */}
+            {result.bottlenecks.length > 0 && (
+              <>
+                <SectionHeader icon={<DollarSign size={14} />} label="Impacto Estimado en Conversión" />
+                <div className="glass border border-border rounded-xl p-4 space-y-3">
+                  {result.bottlenecks.map((b) => (
+                    <div key={b.rank} className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-foreground/80 font-medium">{b.label}</span>
+                        <span className="font-bold text-red-400">{b.impact}%</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-red-500/60"
+                          style={{ width: `${Math.min(Math.abs(b.impact), 100)}%`, transition: "width 0.7s ease" }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-muted-foreground pt-1">
+                    * Impacto estimado en tasa de conversión relativa al estado actual del negocio.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {/* ── Plan de Acción ────────────────────────────────────────── */}
+            {result.actions.length > 0 && (
+              <>
+                <SectionHeader icon={<Target size={14} />} label="Plan de Acción" />
+                <div className="space-y-3">
+                  {result.actions.map((a) => (
+                    <div key={a.priority} className="glass border border-primary/25 rounded-xl p-4 space-y-2 bg-primary/5">
+                      <div className="flex items-center gap-2">
+                        <div className="shrink-0 w-6 h-6 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center">
+                          <span className="text-[11px] font-bold text-primary">{a.priority}</span>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-primary uppercase tracking-wider">Prioridad #{a.priority}</p>
+                          <p className="text-sm font-bold text-foreground leading-snug">{a.title}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2 pl-8">
+                        <ArrowRight size={12} className="text-primary shrink-0 mt-0.5" />
+                        <p className="text-xs text-foreground/80 leading-relaxed">{a.text}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* ── Oportunidad de Crecimiento ─────────────────────────────── */}
+            <SectionHeader icon={<TrendingUp size={14} />} label="Oportunidad de Crecimiento" />
+            <div className="glass border border-green-500/30 bg-green-500/5 rounded-xl p-5 space-y-3">
+              <div className="flex items-start gap-3">
+                <Lightbulb size={18} className="text-green-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-foreground/90 leading-relaxed font-medium">{result.opportunity}</p>
+              </div>
+              {result.potentialRevenue > 0 && (
+                <div className="flex items-center gap-2 rounded-lg bg-green-500/10 border border-green-500/20 px-4 py-3">
+                  <DollarSign size={14} className="text-green-400 shrink-0" />
+                  <div>
+                    <p className="text-[10px] font-bold text-green-400 uppercase tracking-wider">Potencial recuperable / mes</p>
+                    <p className="text-xl font-bold text-green-400">+${result.potentialRevenue.toLocaleString()}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── No bottlenecks state ──────────────────────────────────── */}
+            {result.bottlenecks.length === 0 && (
+              <div className="glass border border-green-500/30 bg-green-500/5 rounded-xl p-5 flex items-start gap-3">
+                <CheckCircle2 size={20} className="text-green-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-sm font-bold text-green-400">Proceso de ventas optimizado</p>
+                  <p className="text-xs text-foreground/80 leading-relaxed">
+                    Tu negocio tiene un proceso de ventas sólido. El siguiente paso de alto impacto es escalar el volumen de leads manteniendo los sistemas actuales.
+                  </p>
                 </div>
               </div>
             )}
 
-            {/* ── Section 1: Business Metrics ───────────────────────── */}
-            <SectionHeader icon={<BarChart3 size={14} />} label="Business Metrics" />
-            <div className="grid grid-cols-2 gap-3">
-              <MetricCard
-                icon={<DollarSign size={12} />}
-                label="Monthly Revenue"
-                value={fmtCurrency(revenue)}
-                sub={`${fmtCurrency(revenue * 12)} / year`}
-              />
-              <MetricCard
-                icon={<Users size={12} />}
-                label="Monthly Leads"
-                value={fmt(safeLeads)}
-                sub="incoming per month"
-              />
-              <MetricCard
-                icon={<Target size={12} />}
-                label="Closed Clients"
-                value={fmt(safeClosed)}
-                sub="converted per month"
-              />
-              <MetricCard
-                icon={<DollarSign size={12} />}
-                label="Avg Client Value"
-                value={fmtCurrency(avgClientValue)}
-                sub="revenue per client"
-              />
-            </div>
-
-            {/* ── Section 2: Revenue Leakage Analysis ───────────────── */}
-            <SectionHeader icon={<TrendingDown size={14} />} label="Revenue Leakage Analysis" />
-
-            {/* Close rate with visual bar */}
-            <div className={`glass border rounded-xl p-4 space-y-3 ${
-              closeRate >= 25 ? "border-green-500/30 bg-green-500/5"
-              : closeRate >= 15 ? "border-amber-500/30 bg-amber-500/5"
-              : "border-red-500/30 bg-red-500/5"
-            }`}>
-              <div className="flex items-center justify-between">
-                <div className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider ${
-                  closeRate >= 25 ? "text-green-400" : closeRate >= 15 ? "text-amber-400" : "text-red-400"
-                }`}>
-                  <Target size={12} />
-                  Close Rate
-                </div>
-                <span className={`text-2xl font-bold ${
-                  closeRate >= 25 ? "text-green-400" : closeRate >= 15 ? "text-amber-400" : "text-red-400"
-                }`}>
-                  {fmtPct(closeRate)}
-                </span>
-              </div>
-              <div className="h-2.5 rounded-full bg-white/5 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-700 ${
-                    closeRate >= 25 ? "bg-green-500" : closeRate >= 15 ? "bg-amber-500" : "bg-red-500"
-                  }`}
-                  style={{ width: `${Math.min(closeRate, 100)}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {closeRate >= 25
-                  ? "Above industry average — strong pipeline management."
-                  : closeRate >= 15
-                  ? "Below average (25% benchmark). Significant improvement opportunity."
-                  : "Critical: well below the 25% industry benchmark. Immediate action required."}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <MetricCard
-                icon={<Users size={12} />}
-                label="Lost Leads / Month"
-                value={fmt(lostLeads)}
-                sub="never converted"
-                accent="danger"
-              />
-              <MetricCard
-                icon={<DollarSign size={12} />}
-                label="Revenue Lost / Month"
-                value={fmtCurrency(revenueLostMonthly)}
-                sub="at current close rate"
-                accent="danger"
-              />
-              <MetricCard
-                icon={<TrendingDown size={12} />}
-                label="Annual Opportunity Cost"
-                value={fmtCurrency(annualOpptyCost)}
-                sub="left on the table yearly"
-                accent="danger"
-              />
-            </div>
-
-            {/* ── Section 3: Current Scenario ───────────────────────── */}
-            <SectionHeader icon={<Activity size={14} />} label="Current Scenario" />
-            <div className="glass border border-border rounded-xl p-4 space-y-4">
-              <p className="text-sm text-foreground/85 leading-relaxed">
-                {businessName ? `${businessName} is currently` : "Your business is currently"} closing{" "}
-                <span className="text-foreground font-semibold">{fmtPct(closeRate)}</span> of incoming leads,
-                generating <span className="text-foreground font-semibold">{fmtCurrency(revenue)}/month</span> from{" "}
-                <span className="text-foreground font-semibold">{fmt(safeClosed)} clients</span>. Of the{" "}
-                <span className="text-foreground font-semibold">{fmt(safeLeads)} leads</span> coming in monthly,{" "}
-                <span className="text-red-400 font-semibold">{fmt(lostLeads)} are not converting</span>,
-                representing <span className="text-red-400 font-semibold">{fmtCurrency(revenueLostMonthly)}/month</span> in
-                unrealised revenue. Annualised, that gap is{" "}
-                <span className="text-red-400 font-bold">{fmtCurrency(annualOpptyCost)}</span> walking out the door every year
-                — with no additional lead generation required to close it.
-              </p>
-              <div className="grid grid-cols-3 gap-2 pt-1 border-t border-border/50">
-                {[
-                  { label: "Close Rate",    value: fmtPct(closeRate) },
-                  { label: "Lost Leads",    value: fmt(lostLeads) + "/mo" },
-                  { label: "Revenue Gap",   value: fmtCurrency(revenueLostMonthly) + "/mo" },
-                ].map((item) => (
-                  <div key={item.label} className="text-center">
-                    <p className="text-xs text-muted-foreground">{item.label}</p>
-                    <p className="text-sm font-bold text-foreground">{item.value}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* ── Section 4: Optimised Scenario ─────────────────────── */}
-            <SectionHeader icon={<TrendingUp size={14} />} label="Optimized Scenario" />
-            <div className="glass border border-green-500/30 rounded-xl p-4 space-y-4 bg-green-500/5">
-              <p className="text-sm text-foreground/85 leading-relaxed">
-                By improving your close rate to{" "}
-                <span className="text-green-400 font-semibold">{fmtPct(optimisedCloseRate)}</span> — achievable through faster
-                response times, a lead qualification process, and a structured follow-up sequence —{" "}
-                {businessName || "your business"} would close{" "}
-                <span className="text-green-400 font-semibold">{fmt(optimisedClosed)} clients/month</span> from
-                the same lead volume. That's an additional{" "}
-                <span className="text-green-400 font-bold">{fmtCurrency(additionalMonthly)}/month</span>, scaling to{" "}
-                <span className="text-green-400 font-bold">{fmtCurrency(additionalAnnual)}/year</span> in recovered revenue
-                without a single new lead.
-              </p>
-
-              {/* Before/After comparison */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg border border-border bg-background/30 p-3 space-y-2">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Current</p>
-                  <div className="space-y-1.5">
-                    {[
-                      { label: "Close Rate",        value: fmtPct(closeRate) },
-                      { label: "Clients / Month",   value: fmt(safeClosed) },
-                      { label: "Monthly Revenue",   value: fmtCurrency(revenue) },
-                    ].map((r) => (
-                      <div key={r.label} className="flex justify-between items-center">
-                        <span className="text-xs text-muted-foreground">{r.label}</span>
-                        <span className="text-xs font-semibold text-foreground">{r.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-green-500/30 bg-green-500/8 p-3 space-y-2">
-                  <p className="text-[10px] font-bold text-green-400 uppercase tracking-wider">Optimized</p>
-                  <div className="space-y-1.5">
-                    {[
-                      { label: "Close Rate",        value: fmtPct(optimisedCloseRate) },
-                      { label: "Clients / Month",   value: fmt(optimisedClosed) },
-                      { label: "Monthly Revenue",   value: fmtCurrency(optimisedRevenue) },
-                    ].map((r) => (
-                      <div key={r.label} className="flex justify-between items-center">
-                        <span className="text-xs text-muted-foreground">{r.label}</span>
-                        <span className="text-xs font-bold text-green-400">{r.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Uplift summary */}
-              <div className="flex items-center gap-3 rounded-lg border border-green-500/20 bg-green-500/10 px-4 py-3">
-                <ArrowRight size={16} className="text-green-400 shrink-0" />
-                <div>
-                  <p className="text-xs text-green-400 font-bold">Total Revenue Uplift</p>
-                  <p className="text-sm text-foreground">
-                    <span className="font-bold text-green-400">{fmtCurrency(additionalMonthly)}/month</span>
-                    {" "}·{" "}
-                    <span className="font-bold text-green-400">{fmtCurrency(additionalAnnual)}/year</span>
-                    {" "}from existing lead volume
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* ── Section 5: AI Recommendations ─────────────────────── */}
-            <SectionHeader icon={<Zap size={14} />} label="AI Recommendations" />
-            <div className="space-y-3">
-              {recommendations.map((rec, i) => (
-                <div key={i} className="glass border border-border rounded-xl p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1.5 flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${PRIORITY_STYLE[rec.priority] ?? PRIORITY_STYLE.Medium}`}>
-                          {rec.priority}
-                        </span>
-                        <span className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                          #{i + 1}
-                        </span>
-                      </div>
-                      <p className="text-sm font-bold text-foreground">{rec.title}</p>
-                    </div>
-                    <CopyButton text={`${rec.title}\n\n${rec.text}`} />
-                  </div>
-                  <p className="text-sm text-foreground/80 leading-relaxed">{rec.text}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Re-diagnose */}
-            <Button
-              variant="outline"
-              className="w-full border-border text-muted-foreground hover:text-foreground"
-              onClick={() => setDiagnosed(false)}
-            >
-              <Activity size={14} className="mr-2" />
-              Edit Inputs & Re-Diagnose
-            </Button>
           </div>
         )}
       </div>
