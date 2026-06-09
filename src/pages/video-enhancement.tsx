@@ -101,34 +101,114 @@ const TOGGLE_LABELS: { key: keyof Toggles; label: string; desc: string }[] = [
 
 // ── Analysis types ─────────────────────────────────────────────────────────────
 interface VideoAnalysis {
-  // ── Technical metadata (real values from FFprobe via server headers) ──────
+  // ── Technical metadata (real FFprobe via server headers) ──────────────────
   width:           number;
   height:          number;
-  resolution:      string;   // "1920×1080"
-  codec:           string;   // "h264"
-  audioCodecLabel: string;   // "AAC" | "None"
+  resolution:      string;
+  codec:           string;
+  audioCodecLabel: string;
   fps:             number;
-  bitrate:         number;   // kbps
-  duration:        number;   // seconds
-  fpsDisplay:      string;   // "30 fps"
-  bitrateDisplay:  string;   // "4.8 Mbps" | "480 kbps"
-  durationDisplay: string;   // "00:01:42"
-  // ── Canvas pixel analysis ─────────────────────────────────────────────────
+  bitrate:         number;
+  duration:        number;
+  fpsDisplay:      string;
+  bitrateDisplay:  string;
+  durationDisplay: string;
+  // ── Multi-frame pixel analysis ────────────────────────────────────────────
   brightnessScore: number;
   contrastScore:   number;
   saturationScore: number;
   sharpnessScore:  number;
   noiseLevel:      number;
   audioPresent:    boolean;
-  exposureLabel:   "Underexposed" | "Slightly Dark" | "Normal" | "Slightly Bright" | "Overexposed";
-  contrastLabel:   "Very Low" | "Low" | "Normal" | "High";
-  sharpnessLabel:  "Soft" | "Medium" | "Sharp";
-  noiseLabel:      "Clean" | "Low" | "Moderate" | "Heavy";
-  audioLabel:      "None" | "Detected" | "Good";
+  exposureLabel:   "Very Dark" | "Dark" | "Normal" | "Bright" | "Overexposed";
+  contrastLabel:   "Flat" | "Low" | "Normal" | "High";
+  sharpnessLabel:  "Blurred" | "Soft" | "Medium" | "Sharp" | "Very Sharp";
+  noiseLabel:      "Low" | "Medium" | "High" | "Very High";
+  colorLabel:      "Desaturated" | "Normal" | "Oversaturated";
+  audioLabel:      "None" | "Good";
   clarityScore:    number;
   exposureScore:   number;
   colorScore:      number;
   overallScore:    number;
+  framesAnalyzed:  number;
+}
+
+// ── Raw per-frame metrics ──────────────────────────────────────────────────────
+interface FrameMetrics {
+  avgL:        number;
+  stdL:        number;
+  avgS:        number;
+  lapVar:      number;
+  noiseVar:    number;
+  shadowPct:   number;
+  highlightPct:number;
+}
+
+// ── Per-frame pixel scan ───────────────────────────────────────────────────────
+function analyzeFramePixels(data: Uint8ClampedArray, W: number, H: number): FrameMetrics {
+  const n = W * H;
+  const lums = new Float32Array(n);
+  let sumL = 0, sumS = 0, shadowCount = 0, highlightCount = 0;
+
+  for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+    const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    const l = (mx + mn) / 2;
+    const s = mx === mn ? 0 : l < 0.5
+      ? (mx - mn) / (mx + mn)
+      : (mx - mn) / (2 - mx - mn);
+    lums[j] = l; sumL += l; sumS += s;
+    if (l < 0.18) shadowCount++;
+    if (l > 0.82) highlightCount++;
+  }
+
+  const avgL = sumL / n;
+  const avgS = sumS / n;
+
+  let ssq = 0;
+  for (let i = 0; i < n; i++) ssq += (lums[i] - avgL) ** 2;
+  const stdL = Math.sqrt(ssq / n);
+
+  // Laplacian variance → sharpness
+  let lapSum = 0;
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const c   = lums[y * W + x];
+      const lap = lums[(y - 1) * W + x] + lums[(y + 1) * W + x]
+        + lums[y * W + (x - 1)] + lums[y * W + (x + 1)] - 4 * c;
+      lapSum += lap * lap;
+    }
+  }
+  const lapVar = lapSum / Math.max(1, (W - 2) * (H - 2));
+
+  // 3×3 box-filter residual → noise (captures pixel-grain; ignores low-freq content)
+  let noiseSq = 0, noiseN = 0;
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      let box = 0;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) box += lums[(y + dy) * W + (x + dx)];
+      const d = lums[y * W + x] - box / 9;
+      noiseSq += d * d; noiseN++;
+    }
+  }
+  const noiseVar = noiseN > 0 ? noiseSq / noiseN : 0;
+
+  return { avgL, stdL, avgS, lapVar, noiseVar,
+    shadowPct: shadowCount / n, highlightPct: highlightCount / n };
+}
+
+function avgFrameMetrics(s: FrameMetrics[]): FrameMetrics {
+  const n = s.length || 1;
+  return {
+    avgL:        s.reduce((a, m) => a + m.avgL,        0) / n,
+    stdL:        s.reduce((a, m) => a + m.stdL,        0) / n,
+    avgS:        s.reduce((a, m) => a + m.avgS,        0) / n,
+    lapVar:      s.reduce((a, m) => a + m.lapVar,      0) / n,
+    noiseVar:    s.reduce((a, m) => a + m.noiseVar,    0) / n,
+    shadowPct:   s.reduce((a, m) => a + m.shadowPct,   0) / n,
+    highlightPct:s.reduce((a, m) => a + m.highlightPct,0) / n,
+  };
 }
 
 // ── Formatting helpers ─────────────────────────────────────────────────────────
@@ -191,268 +271,243 @@ async function analyzeVideoFrame(
   audioCodec: string,
   probe?: ProbeOverrides,
 ): Promise<VideoAnalysis> {
-  const hasAudioFallback = (probe?.audioCodec ?? audioCodec) !== "none"
-    && (probe?.audioCodec ?? audioCodec) !== "—"
-    && !!(probe?.audioCodec ?? audioCodec);
+  const effectiveAudioCodec = probe?.audioCodec ?? audioCodec;
+  const hasAudioFallback    = !!effectiveAudioCodec && effectiveAudioCodec !== "none" && effectiveAudioCodec !== "—";
 
   const makeFallback = (): VideoAnalysis => {
-    const h = (file.name + file.size).split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+    const h    = (file.name + file.size).split("").reduce((a, c) => a + c.charCodeAt(0), 0);
     const base = 50 + (h % 20);
-    const w = probe?.width  || 0;
-    const ht = probe?.height || 0;
-    const kbps = probe?.bitrate || 0;
-    const sec  = probe?.durationSec || 0;
-    const bitrateScore = kbps > 0
-      ? kbps < 500 ? 20 : kbps < 1000 ? 38 : kbps < 2000 ? 55 : kbps < 4000 ? 70 : kbps < 8000 ? 85 : 94
-      : base;
-    const resScore = (w * ht) > 0
-      ? (w * ht) < 640 * 480 ? 40 : (w * ht) < 1280 * 720 ? 65 : (w * ht) < 1920 * 1080 ? 80 : 90
-      : base;
-    const overall = Math.round(base * 0.6 + bitrateScore * 0.2 + resScore * 0.2);
+    const w    = probe?.width  || 0, ht = probe?.height || 0;
+    const kbps = probe?.bitrate || 0, sec = probe?.durationSec || 0;
+    const bitrateScore = kbps > 0 ? kbps < 500 ? 20 : kbps < 1000 ? 38 : kbps < 2000 ? 55 : kbps < 4000 ? 70 : kbps < 8000 ? 85 : 94 : base;
+    const resScore     = (w * ht) > 0 ? (w * ht) < 307200 ? 40 : (w * ht) < 921600 ? 65 : (w * ht) < 2073600 ? 80 : 90 : base;
     return {
       width: w, height: ht,
-      resolution:      w && ht ? `${w}×${ht}` : "Unknown",
-      codec:           probe?.codec     || "—",
-      audioCodecLabel: fmtCodec(probe?.audioCodec ?? audioCodec),
-      fps:             probe?.fps       || 0,
-      bitrate:         kbps,
-      duration:        sec,
-      fpsDisplay:      fmtFps(probe?.fps    || 0),
-      bitrateDisplay:  fmtBitrate(kbps),
-      durationDisplay: fmtDuration(sec),
-      brightnessScore: 50, contrastScore: 50, saturationScore: 50,
-      sharpnessScore: 50, noiseLevel: 30,
+      resolution: w && ht ? `${w}×${ht}` : "Unknown",
+      codec: probe?.codec || "—", audioCodecLabel: fmtCodec(effectiveAudioCodec),
+      fps: probe?.fps || 0, bitrate: kbps, duration: sec,
+      fpsDisplay: fmtFps(probe?.fps || 0), bitrateDisplay: fmtBitrate(kbps), durationDisplay: fmtDuration(sec),
+      brightnessScore: 52, contrastScore: 55, saturationScore: 50, sharpnessScore: 52, noiseLevel: 20,
       audioPresent: hasAudioFallback,
-      exposureLabel: "Normal", contrastLabel: "Normal",
-      sharpnessLabel: "Medium", noiseLabel: "Low",
-      audioLabel: hasAudioFallback ? "Good" : "None",
+      exposureLabel: "Normal", contrastLabel: "Normal", sharpnessLabel: "Medium",
+      noiseLabel: "Low", colorLabel: "Normal", audioLabel: hasAudioFallback ? "Good" : "None",
       clarityScore: base, exposureScore: base, colorScore: base,
-      overallScore: Math.max(10, Math.min(99, overall)),
+      overallScore: Math.max(10, Math.min(99, Math.round(base * 0.6 + bitrateScore * 0.2 + resScore * 0.2))),
+      framesAnalyzed: 0,
     };
   };
 
   return new Promise((resolve) => {
     const vid = document.createElement("video");
+    vid.muted = true; vid.preload = "metadata"; vid.crossOrigin = "anonymous";
     vid.src = videoUrl;
-    vid.muted = true;
-    vid.preload = "metadata";
-    vid.crossOrigin = "anonymous";
 
-    const timer = setTimeout(() => resolve(makeFallback()), 9000);
+    const globalTimer = setTimeout(() => resolve(makeFallback()), 22_000);
 
-    vid.onloadedmetadata = () => {
-      const seekTo = Math.min(Math.max(vid.duration * 0.25, 0.5), Math.max(vid.duration - 0.1, 0.1));
-      vid.currentTime = seekTo;
-    };
-
-    vid.onseeked = () => {
-      clearTimeout(timer);
+    vid.onloadedmetadata = async () => {
       try {
+        const dur = vid.duration || 0;
+        if (dur <= 0 || !isFinite(dur)) { clearTimeout(globalTimer); resolve(makeFallback()); return; }
+
+        // Canvas at 320px wide (fast decode)
         const W = Math.min(vid.videoWidth || 640, 320);
         const scale = W / (vid.videoWidth || 640);
         const H = Math.round((vid.videoHeight || 360) * scale) || 180;
-
         const canvas = document.createElement("canvas");
         canvas.width = W; canvas.height = H;
         const ctx = canvas.getContext("2d");
-        if (!ctx) { resolve(makeFallback()); return; }
+        if (!ctx) { clearTimeout(globalTimer); resolve(makeFallback()); return; }
 
-        ctx.drawImage(vid, 0, 0, W, H);
-        const { data } = ctx.getImageData(0, 0, W, H);
+        // ── Multi-frame sampling: 5 evenly-distributed seek points ────────
+        const POINTS = [0.10, 0.30, 0.50, 0.70, 0.90];
+        const samples: FrameMetrics[] = [];
 
-        let sumL = 0, sumS = 0;
-        const lums: number[] = [];
-
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
-          const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-          const l = (mx + mn) / 2;
-          const s = mx === mn ? 0 : l < 0.5
-            ? (mx - mn) / (mx + mn)
-            : (mx - mn) / (2 - mx - mn);
-          sumL += l; sumS += s;
-          lums.push(l);
+        for (const pt of POINTS) {
+          const seekTo = Math.max(0.05, Math.min(dur - 0.05, dur * pt));
+          await new Promise<void>((done) => {
+            const st = setTimeout(() => { vid.removeEventListener("seeked", onS); done(); }, 4_000);
+            const onS = () => {
+              clearTimeout(st);
+              try { ctx.drawImage(vid, 0, 0, W, H); samples.push(analyzeFramePixels(ctx.getImageData(0, 0, W, H).data, W, H)); }
+              catch { /* skip bad frame */ }
+              done();
+            };
+            vid.addEventListener("seeked", onS, { once: true });
+            vid.currentTime = seekTo;
+          });
         }
 
-        const n = lums.length || 1;
-        const avgL = sumL / n;
-        const avgS = sumS / n;
+        clearTimeout(globalTimer);
+        if (samples.length === 0) { resolve(makeFallback()); return; }
 
-        const variance = lums.reduce((a, l) => a + (l - avgL) ** 2, 0) / n;
-        const stdL = Math.sqrt(variance);
+        const avg = avgFrameMetrics(samples);
 
-        let lapSum = 0;
-        for (let y = 1; y < H - 1; y++) {
-          for (let x = 1; x < W - 1; x++) {
-            const c = lums[y * W + x];
-            const lap = lums[(y - 1) * W + x] + lums[(y + 1) * W + x] +
-              lums[y * W + (x - 1)] + lums[y * W + (x + 1)] - 4 * c;
-            lapSum += lap * lap;
-          }
-        }
-        const lapVar = lapSum / Math.max(1, (W - 2) * (H - 2));
+        // ── Derive scores (0-100) ─────────────────────────────────────────
+        const brightnessScore = Math.round(avg.avgL * 100);
+        const contrastScore   = Math.round(Math.min(100, avg.stdL / 0.28 * 100));
+        const saturationScore = Math.round(Math.min(100, avg.avgS / 0.40 * 100));
+        const sharpnessScore  = Math.round(Math.min(100, Math.sqrt(avg.lapVar) / 0.08 * 100));
+        // Box-filter residual RMS × 2500 → noise 0-100
+        const noiseLevel      = Math.round(Math.min(100, Math.sqrt(avg.noiseVar) * 2500));
 
-        let noiseSum = 0, noiseBlocks = 0;
-        const bs = 8;
-        for (let by = 0; by < H - bs; by += bs) {
-          for (let bx = 0; bx < W - bs; bx += bs) {
-            let s1 = 0, s2 = 0;
-            for (let dy = 0; dy < bs; dy++) {
-              for (let dx = 0; dx < bs; dx++) {
-                const l = lums[(by + dy) * W + (bx + dx)];
-                s1 += l; s2 += l * l;
-              }
-            }
-            const bn = bs * bs;
-            noiseSum += s2 / bn - (s1 / bn) ** 2;
-            noiseBlocks++;
-          }
-        }
-        const noiseEst = noiseBlocks > 0 ? noiseSum / noiseBlocks : 0;
+        // ── Exposure: mean luminance + shadow/highlight fraction ──────────
+        // Using BOTH avgL and shadow% catches dark scenes that have a few bright elements
+        const exposureLabel: VideoAnalysis["exposureLabel"] =
+          avg.highlightPct > 0.58 || avg.avgL > 0.80 ? "Overexposed" :
+          avg.avgL > 0.66 || avg.highlightPct > 0.38  ? "Bright" :
+          avg.avgL < 0.18 || avg.shadowPct  > 0.62    ? "Very Dark" :
+          avg.avgL < 0.32 || avg.shadowPct  > 0.42    ? "Dark"      : "Normal";
 
-        const brightnessScore = Math.round(avgL * 100);
-        const contrastScore   = Math.round(Math.min(1, stdL / 0.28) * 100);
-        const saturationScore = Math.round(Math.min(1, avgS / 0.4) * 100);
-        const sharpnessScore  = Math.round(Math.min(1, Math.sqrt(lapVar) / 0.08) * 100);
-        const noiseLevel      = Math.round(Math.min(1, Math.sqrt(noiseEst) / 0.06) * 100);
-
-        const exposureLabel =
-          brightnessScore < 22 ? "Underexposed" :
-          brightnessScore < 38 ? "Slightly Dark" :
-          brightnessScore < 68 ? "Normal" :
-          brightnessScore < 82 ? "Slightly Bright" : "Overexposed";
-
-        const contrastLabel =
-          contrastScore < 25 ? "Very Low" :
-          contrastScore < 45 ? "Low" :
+        const contrastLabel: VideoAnalysis["contrastLabel"] =
+          contrastScore < 18 ? "Flat"   :
+          contrastScore < 40 ? "Low"    :
           contrastScore < 75 ? "Normal" : "High";
 
-        const sharpnessLabel =
-          sharpnessScore < 35 ? "Soft" :
-          sharpnessScore < 65 ? "Medium" : "Sharp";
+        const sharpnessLabel: VideoAnalysis["sharpnessLabel"] =
+          sharpnessScore < 22 ? "Blurred"   :
+          sharpnessScore < 45 ? "Soft"      :
+          sharpnessScore < 72 ? "Medium"    :
+          sharpnessScore < 90 ? "Sharp"     : "Very Sharp";
 
-        const noiseLabel =
-          noiseLevel < 20 ? "Clean" :
-          noiseLevel < 40 ? "Low" :
-          noiseLevel < 65 ? "Moderate" : "Heavy";
+        const noiseLabel: VideoAnalysis["noiseLabel"] =
+          noiseLevel < 32 ? "Low"      :
+          noiseLevel < 58 ? "Medium"   :
+          noiseLevel < 80 ? "High"     : "Very High";
 
-        // Prefer real audio codec from probe
-        const effectiveAudioCodec = probe?.audioCodec ?? audioCodec;
-        const hasAudio = effectiveAudioCodec !== "none" && effectiveAudioCodec !== "—" && !!effectiveAudioCodec;
+        const colorLabel: VideoAnalysis["colorLabel"] =
+          saturationScore < 28 ? "Desaturated"   :
+          saturationScore < 70 ? "Normal"         : "Oversaturated";
+
+        const hasAudio = !!effectiveAudioCodec && effectiveAudioCodec !== "none" && effectiveAudioCodec !== "—";
         const audioLabel = hasAudio ? "Good" : "None";
 
-        const exposureScore = Math.round(Math.max(0, 100 - Math.abs(brightnessScore - 52) * 1.8));
-        const clarityScore  = Math.round(sharpnessScore * 0.65 + (100 - noiseLevel) * 0.35);
-        const colorScore    = Math.round(saturationScore * 0.5 + contrastScore * 0.5);
+        // ── Quality scores ────────────────────────────────────────────────
+        const exposureScore = Math.round(Math.max(0, 100 - Math.abs(brightnessScore - 52) * 1.5));
+        const clarityScore  = Math.round(sharpnessScore * 0.60 + (100 - noiseLevel) * 0.40);
+        const colorScore    = Math.round(saturationScore * 0.45 + contrastScore * 0.55);
         const audioScore    = hasAudio ? 85 : 30;
 
-        // Real metadata — prefer probe values, fall back to canvas/file estimates
-        const realWidth  = probe?.width  || vid.videoWidth  || 0;
-        const realHeight = probe?.height || vid.videoHeight || 0;
-        const realFps    = probe?.fps    || 0;
-        const realBitrate  = probe?.bitrate    || (vid.duration > 0 ? Math.round(file.size * 8 / vid.duration / 1000) : 0);
-        const realDuration = probe?.durationSec || Math.round((vid.duration || 0) * 10) / 10;
+        const realW  = probe?.width      || vid.videoWidth  || 0;
+        const realH  = probe?.height     || vid.videoHeight || 0;
+        const realFps = probe?.fps       || 0;
+        const realBr  = probe?.bitrate   || (dur > 0 ? Math.round(file.size * 8 / dur / 1000) : 0);
+        const realDur = probe?.durationSec || Math.round(dur * 10) / 10;
 
-        // Incorporate technical quality into overall score
-        const bitrateScore = realBitrate > 0
-          ? realBitrate < 500 ? 20 : realBitrate < 1000 ? 38 : realBitrate < 2000 ? 55
-          : realBitrate < 4000 ? 70 : realBitrate < 8000 ? 85 : 94
-          : 70;
-        const resScore = (realWidth * realHeight) > 0
-          ? (realWidth * realHeight) < 640 * 480 ? 40
-          : (realWidth * realHeight) < 1280 * 720  ? 65
-          : (realWidth * realHeight) < 1920 * 1080 ? 80 : 90
-          : 70;
+        const bitrateScore = realBr > 0 ? realBr < 500 ? 20 : realBr < 1000 ? 38 : realBr < 2000 ? 55 : realBr < 4000 ? 70 : realBr < 8000 ? 85 : 94 : 70;
+        const resScore     = (realW * realH) > 0 ? (realW * realH) < 307200 ? 40 : (realW * realH) < 921600 ? 65 : (realW * realH) < 2073600 ? 80 : 90 : 70;
 
         const overallScore = Math.round(
-          exposureScore  * 0.20 +
-          clarityScore   * 0.25 +
-          colorScore     * 0.20 +
-          audioScore     * 0.15 +
-          bitrateScore   * 0.10 +
-          resScore       * 0.10,
+          exposureScore * 0.20 + clarityScore * 0.25 + colorScore  * 0.20 +
+          audioScore    * 0.12 + bitrateScore * 0.12 + resScore    * 0.11,
         );
 
         resolve({
-          width:           realWidth,
-          height:          realHeight,
-          resolution:      realWidth && realHeight ? `${realWidth}×${realHeight}` : "Unknown",
-          codec:           probe?.codec || "—",
-          audioCodecLabel: fmtCodec(effectiveAudioCodec),
-          fps:             realFps,
-          bitrate:         realBitrate,
-          duration:        realDuration,
-          fpsDisplay:      fmtFps(realFps),
-          bitrateDisplay:  fmtBitrate(realBitrate),
-          durationDisplay: fmtDuration(realDuration),
-          brightnessScore, contrastScore, saturationScore,
-          sharpnessScore, noiseLevel,
+          width: realW, height: realH,
+          resolution: realW && realH ? `${realW}×${realH}` : "Unknown",
+          codec: probe?.codec || "—", audioCodecLabel: fmtCodec(effectiveAudioCodec),
+          fps: realFps, bitrate: realBr, duration: realDur,
+          fpsDisplay: fmtFps(realFps), bitrateDisplay: fmtBitrate(realBr), durationDisplay: fmtDuration(realDur),
+          brightnessScore, contrastScore, saturationScore, sharpnessScore, noiseLevel,
           audioPresent: hasAudio,
-          exposureLabel, contrastLabel, sharpnessLabel, noiseLabel, audioLabel,
+          exposureLabel, contrastLabel, sharpnessLabel, noiseLabel, colorLabel, audioLabel,
           clarityScore, exposureScore, colorScore,
           overallScore: Math.max(10, Math.min(99, overallScore)),
+          framesAnalyzed: samples.length,
         });
       } catch {
+        clearTimeout(globalTimer);
         resolve(makeFallback());
       }
     };
 
-    vid.onerror = () => { clearTimeout(timer); resolve(makeFallback()); };
+    vid.onerror = () => { clearTimeout(globalTimer); resolve(makeFallback()); };
   });
 }
 
-// ── AI Recommendation engine ───────────────────────────────────────────────────
+// ── Intelligent Recommendation engine ─────────────────────────────────────────
 function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
+  // ── Detect what's actually wrong ──────────────────────────────────────────
+  const isDark    = analysis.exposureLabel === "Very Dark" || analysis.exposureLabel === "Dark";
+  const isOverexp = analysis.exposureLabel === "Overexposed";
+  const isBright  = analysis.exposureLabel === "Bright";
+  const isFlat    = analysis.contrastLabel === "Flat" || analysis.contrastLabel === "Low";
+  const isBlurry  = analysis.sharpnessLabel === "Blurred" || analysis.sharpnessLabel === "Soft";
+  const isNoisy   = analysis.noiseLabel === "High" || analysis.noiseLabel === "Very High";
+  const isDesat   = analysis.colorLabel === "Desaturated";
+  const noAudio   = !analysis.audioPresent;
+
+  // ── Issue list for the report ─────────────────────────────────────────────
   const issues: string[] = [];
+  if (isDark)    issues.push(`${analysis.exposureLabel} — exposure needs recovery`);
+  if (isOverexp) issues.push("Overexposed — highlights clipping");
+  if (isBright)  issues.push("Bright exposure — mild tone-down needed");
+  if (isNoisy)   issues.push(`${analysis.noiseLabel} noise — visible grain detected`);
+  if (isBlurry)  issues.push(`${analysis.sharpnessLabel} — sharpness recovery needed`);
+  if (isFlat)    issues.push(`${analysis.contrastLabel} contrast — flat image depth`);
+  if (isDesat)   issues.push("Desaturated — colors need boost");
+  if (noAudio)   issues.push("No audio stream — video only");
 
-  if (analysis.exposureLabel === "Underexposed" || analysis.exposureLabel === "Slightly Dark")
-    issues.push(`${analysis.exposureLabel} exposure detected`);
-  if (analysis.exposureLabel === "Overexposed" || analysis.exposureLabel === "Slightly Bright")
-    issues.push(`${analysis.exposureLabel} highlights detected`);
-  if (analysis.contrastLabel === "Low" || analysis.contrastLabel === "Very Low")
-    issues.push("Low contrast — flat image depth");
-  if (analysis.sharpnessLabel === "Soft")
-    issues.push("Low sharpness detected");
-  if (analysis.noiseLabel === "Moderate" || analysis.noiseLabel === "Heavy")
-    issues.push(`${analysis.noiseLabel} noise level`);
-  if (!analysis.audioPresent)
-    issues.push("No audio stream — video only");
+  // ── Priority-based preset selection (most critical issue wins) ────────────
+  let presetId: PresetId;
+  let confidence: number;
+  let autoToggles: Toggles;
 
-  const needsBrightness  = analysis.brightnessScore < 40 || analysis.brightnessScore > 78;
-  const needsContrast    = analysis.contrastScore < 50;
-  const needsSharpness   = analysis.sharpnessScore < 45;
-  const needsNoise       = analysis.noiseLevel > 35 || (needsBrightness && analysis.noiseLevel > 20);
-  const needsColor       = analysis.saturationScore < 40 || analysis.contrastScore < 50;
-  const needsAudio       = analysis.audioPresent;
-
-  const autoToggles: Toggles = {
-    colorCorrection: needsColor,
-    brightness:      needsBrightness,
-    contrast:        needsContrast,
-    sharpness:       needsSharpness,
-    noiseReduction:  needsNoise,
-    audioCleanup:    needsAudio,
-  };
-
-  let presetId: PresetId = "clean_boost";
-  let confidence = 88;
-
-  if (!analysis.audioPresent && !needsBrightness && !needsContrast && !needsSharpness && !needsNoise) {
+  if (noAudio && !isDark && !isNoisy && !isBlurry && !isFlat) {
+    // Pure audio-only problem
     presetId = "audio_cleaner"; confidence = 95;
-  } else if (analysis.brightnessScore < 35 || analysis.noiseLabel === "Heavy") {
-    presetId = "low_light"; confidence = 92;
-  } else if (analysis.sharpnessScore < 40 && analysis.contrastScore < 55) {
-    presetId = "social_sharp"; confidence = 90;
-  } else if (analysis.sharpnessScore > 60 && analysis.contrastScore > 55 && analysis.noiseLevel < 30) {
-    presetId = "cinematic"; confidence = 87;
-  } else {
+    autoToggles = { colorCorrection: false, brightness: false, contrast: false, sharpness: false, noiseReduction: false, audioCleanup: true };
+
+  } else if (isDark && isNoisy) {
+    // Night / low-light + grain — worst combined case
+    presetId = "low_light"; confidence = 94;
+    issues.unshift("Night Recovery — low light + noise combined");
+    autoToggles = { colorCorrection: true, brightness: true, contrast: true, sharpness: false, noiseReduction: true, audioCleanup: analysis.audioPresent };
+
+  } else if (isDark) {
+    // Low-light only
+    presetId = "low_light"; confidence = 93;
+    autoToggles = { colorCorrection: true, brightness: true, contrast: true, sharpness: false, noiseReduction: isNoisy, audioCleanup: analysis.audioPresent };
+
+  } else if (isNoisy) {
+    // Noise without darkness — use low_light (best denoiser chain)
+    presetId = "low_light"; confidence = 91;
+    autoToggles = { colorCorrection: false, brightness: false, contrast: false, sharpness: false, noiseReduction: true, audioCleanup: analysis.audioPresent };
+
+  } else if (isBlurry && isFlat) {
+    // Soft + flat — sharpening + contrast combo
+    presetId = "social_sharp"; confidence = 91;
+    autoToggles = { colorCorrection: true, brightness: false, contrast: true, sharpness: true, noiseReduction: false, audioCleanup: analysis.audioPresent };
+
+  } else if (isBlurry) {
+    // Needs sharpening only
+    presetId = "social_sharp"; confidence = 89;
+    autoToggles = { colorCorrection: false, brightness: false, contrast: true, sharpness: true, noiseReduction: false, audioCleanup: analysis.audioPresent };
+
+  } else if (isOverexp || isBright) {
+    // Overexposed — mild brightness correction + contrast
     presetId = "clean_boost"; confidence = 88;
+    autoToggles = { colorCorrection: true, brightness: true, contrast: true, sharpness: false, noiseReduction: false, audioCleanup: analysis.audioPresent };
+
+  } else if (analysis.sharpnessScore > 68 && analysis.contrastScore > 58 && !isNoisy && !isDesat) {
+    // Already good quality — go cinematic
+    presetId = "cinematic"; confidence = 87;
+    autoToggles = { colorCorrection: true, brightness: false, contrast: true, sharpness: false, noiseReduction: false, audioCleanup: analysis.audioPresent };
+
+  } else {
+    // Clean boost: mild polish for everything else
+    presetId = "clean_boost"; confidence = 86;
+    autoToggles = {
+      colorCorrection: isDesat || isFlat,
+      brightness: analysis.brightnessScore < 44 || analysis.brightnessScore > 74,
+      contrast: isFlat,
+      sharpness: false,
+      noiseReduction: false,
+      audioCleanup: analysis.audioPresent,
+    };
   }
 
   const p = PRESETS.find(x => x.id === presetId)!;
-  const reasons = issues.length > 0
-    ? issues.slice(0, 4)
-    : ["Good baseline — enhancement will polish and refine"];
+  const reasons = issues.length > 0 ? issues.slice(0, 4) : ["Good baseline — enhancement will polish and refine details"];
 
   return { presetId, label: p.label, emoji: p.emoji, confidence, reasons, autoToggles };
 }
@@ -474,34 +529,31 @@ interface QualityReport {
 
 function computeQualityReport(file: File, toggles: Toggles, analysis?: VideoAnalysis | null): QualityReport {
   const h = fileHash(file.name, file.size);
-  const v = (base: number, range: number) => base + (h % range);
-
   const audioStatus = toggles.audioCleanup ? "Normalized" as const : "Not Applied" as const;
 
-  // Use real analysis values if available, else heuristic
   const originalScore = analysis ? analysis.overallScore : (50 + (h % 18));
 
-  const brightnessPct = toggles.brightness
-    ? Math.min(35, Math.max(5, analysis ? Math.round(Math.abs(analysis.brightnessScore - 52) * 0.55) + 6 : v(18, 13)))
-    : 0;
-  const contrastPct = toggles.contrast
-    ? Math.min(28, Math.max(5, analysis ? Math.round((100 - analysis.contrastScore) * 0.22) + 5 : v(14, 12)))
-    : 0;
-  const sharpnessPct = toggles.sharpness
-    ? Math.min(38, Math.max(8, analysis ? Math.round((100 - analysis.sharpnessScore) * 0.28) + 8 : v(22, 14)))
-    : 0;
-  const noiseReductionPct = toggles.noiseReduction
-    ? Math.min(48, Math.max(10, analysis ? Math.round(analysis.noiseLevel * 0.55) + 8 : v(28, 18)))
-    : 0;
+  // Gap-based improvement: proportional to how far each metric is from ideal
+  const brightnessGap = analysis ? Math.abs(analysis.brightnessScore - 52) : 18;
+  const contrastGap   = analysis ? Math.max(0, 68 - analysis.contrastScore) : 18;
+  const sharpnessGap  = analysis ? Math.max(0, 72 - analysis.sharpnessScore) : 20;
+  const noiseGap      = analysis ? analysis.noiseLevel : 22;
 
-  const improvement =
-    (toggles.colorCorrection ? 5 : 0) +
-    (toggles.brightness      ? 4 : 0) +
-    (toggles.contrast        ? 4 : 0) +
-    (toggles.sharpness       ? 6 : 0) +
-    (toggles.noiseReduction  ? 5 : 0) +
-    (toggles.audioCleanup    ? 3 : 0);
-  const enhancedScore = Math.min(97, originalScore + improvement);
+  const brightnessPct     = toggles.brightness     ? Math.min(42, Math.max(4, Math.round(brightnessGap * 0.65))) : 0;
+  const contrastPct       = toggles.contrast       ? Math.min(32, Math.max(4, Math.round(contrastGap   * 0.45))) : 0;
+  const sharpnessPct      = toggles.sharpness      ? Math.min(44, Math.max(5, Math.round(sharpnessGap  * 0.55))) : 0;
+  const noiseReductionPct = toggles.noiseReduction ? Math.min(52, Math.max(8, Math.round(noiseGap      * 0.65))) : 0;
+
+  // Score improvement: each toggle contributes proportionally to its gap
+  const improvement = Math.round(
+    (toggles.brightness     ? brightnessGap * 0.22 : 0) +
+    (toggles.contrast       ? contrastGap   * 0.18 : 0) +
+    (toggles.sharpness      ? sharpnessGap  * 0.22 : 0) +
+    (toggles.noiseReduction ? noiseGap      * 0.16 : 0) +
+    (toggles.colorCorrection ? 4 : 0) +
+    (toggles.audioCleanup   ? 3 : 0),
+  );
+  const enhancedScore = Math.min(97, originalScore + Math.max(2, improvement));
 
   return { brightnessPct, contrastPct, sharpnessPct, noiseReductionPct, audioStatus, originalScore, enhancedScore };
 }
@@ -1236,9 +1288,16 @@ export default function VideoEnhancementPage() {
 
             {/* Visual diagnostics row */}
             <div className="glass border border-border rounded-xl overflow-hidden">
-              <div className="px-4 py-2 border-b border-border/40 flex items-center gap-1.5">
-                <BarChart3 size={11} className="text-primary/70" />
-                <span className="text-[10px] font-bold text-primary/70 uppercase tracking-wider">Smart Diagnostics</span>
+              <div className="px-4 py-2 border-b border-border/40 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <BarChart3 size={11} className="text-primary/70" />
+                  <span className="text-[10px] font-bold text-primary/70 uppercase tracking-wider">Smart Diagnostics</span>
+                </div>
+                {analysis.framesAnalyzed > 0 && (
+                  <span className="text-[9px] font-bold text-green-400/80 bg-green-500/10 border border-green-500/20 rounded-full px-2 py-0.5">
+                    {analysis.framesAnalyzed} frames scanned
+                  </span>
+                )}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 divide-y divide-border/40">
                 {[
@@ -1246,7 +1305,7 @@ export default function VideoEnhancementPage() {
                     label: "Exposure",
                     value: analysis.exposureLabel,
                     score: analysis.exposureScore,
-                    good: analysis.exposureLabel === "Normal",
+                    good: analysis.exposureLabel === "Normal" || analysis.exposureLabel === "Bright",
                   },
                   {
                     label: "Contrast",
@@ -1258,19 +1317,19 @@ export default function VideoEnhancementPage() {
                     label: "Sharpness",
                     value: analysis.sharpnessLabel,
                     score: analysis.sharpnessScore,
-                    good: analysis.sharpnessLabel === "Sharp",
+                    good: analysis.sharpnessLabel === "Sharp" || analysis.sharpnessLabel === "Very Sharp",
                   },
                   {
                     label: "Noise",
                     value: analysis.noiseLabel,
                     score: 100 - analysis.noiseLevel,
-                    good: analysis.noiseLabel === "Clean" || analysis.noiseLabel === "Low",
+                    good: analysis.noiseLabel === "Low",
                   },
                   {
                     label: "Color",
-                    value: analysis.saturationScore >= 55 ? "Vivid" : analysis.saturationScore >= 35 ? "Normal" : "Flat",
+                    value: analysis.colorLabel,
                     score: analysis.colorScore,
-                    good: analysis.saturationScore >= 35,
+                    good: analysis.colorLabel === "Normal",
                   },
                   {
                     label: "Overall Score",
@@ -1294,35 +1353,99 @@ export default function VideoEnhancementPage() {
               </div>
             </div>
 
-            {/* ── AI RECOMMENDATION ── */}
-            {recommendation && (
-              <div className="glass border border-primary/25 bg-primary/[0.03] rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Brain size={15} className="text-primary" />
-                    <span className="text-sm font-bold text-foreground">AI Recommendation</span>
-                  </div>
-                  <span className="text-xs font-black text-green-400 bg-green-500/10 border border-green-500/25 rounded-full px-2 py-0.5">
-                    {recommendation.confidence}% confidence
-                  </span>
-                </div>
-                <div className="flex items-center gap-2.5 rounded-lg border border-border bg-white/[0.02] px-3 py-2.5">
-                  <span className="text-xl">{recommendation.emoji}</span>
-                  <div>
-                    <p className="text-xs text-muted-foreground/60 uppercase tracking-wider">Recommended Mode</p>
-                    <p className="text-sm font-bold text-foreground">{recommendation.label}</p>
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  {recommendation.reasons.map((r, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
-                      <CheckCircle2 size={12} className="text-primary shrink-0 mt-0.5" />
-                      {r}
+            {/* ── PREMIUM DIAGNOSTIC REPORT ── */}
+            {recommendation && (() => {
+              const detectedIssues = [
+                analysis.exposureLabel !== "Normal" && analysis.exposureLabel !== "Bright" && `Low Light: ${analysis.exposureLabel}`,
+                (analysis.noiseLabel === "High" || analysis.noiseLabel === "Very High") && `High Noise: ${analysis.noiseLabel}`,
+                (analysis.sharpnessLabel === "Blurred" || analysis.sharpnessLabel === "Soft") && `Soft Focus: ${analysis.sharpnessLabel}`,
+                (analysis.contrastLabel === "Flat" || analysis.contrastLabel === "Low") && `Low Contrast: ${analysis.contrastLabel}`,
+                analysis.colorLabel === "Desaturated" && "Color: Desaturated",
+                !analysis.audioPresent && "No Audio Stream",
+              ].filter(Boolean) as string[];
+
+              return (
+                <div className="glass border border-primary/25 bg-primary/[0.03] rounded-xl overflow-hidden">
+                  {/* Header */}
+                  <div className="px-4 py-2.5 border-b border-border/40 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Brain size={13} className="text-primary" />
+                      <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Video Diagnostic Report</span>
                     </div>
-                  ))}
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                      <span className="text-[9px] font-bold text-green-400 uppercase tracking-wider">Real Frame Analysis Engine Enabled</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 space-y-4">
+                    {/* Two-column metric summary */}
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                      {[
+                        { label: "Exposure",  value: analysis.exposureLabel,  good: analysis.exposureLabel === "Normal" },
+                        { label: "Contrast",  value: analysis.contrastLabel,  good: analysis.contrastLabel === "Normal" || analysis.contrastLabel === "High" },
+                        { label: "Sharpness", value: analysis.sharpnessLabel, good: analysis.sharpnessLabel === "Sharp" || analysis.sharpnessLabel === "Very Sharp" },
+                        { label: "Noise",     value: analysis.noiseLabel,     good: analysis.noiseLabel === "Low" },
+                        { label: "Color",     value: analysis.colorLabel,     good: analysis.colorLabel === "Normal" },
+                        { label: "Audio",     value: analysis.audioLabel,     good: analysis.audioPresent },
+                      ].map(({ label, value, good }) => (
+                        <div key={label} className="flex items-center justify-between py-1 border-b border-border/20">
+                          <span className="text-[11px] text-muted-foreground/70">{label}</span>
+                          <span className={`text-[11px] font-bold ${good ? "text-foreground" : "text-amber-400"}`}>{value}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Quality score bar */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider shrink-0">Quality Score</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-700 ${
+                            analysis.overallScore >= 75 ? "bg-green-500/70" :
+                            analysis.overallScore >= 55 ? "bg-amber-500/70" : "bg-red-500/60"
+                          }`}
+                          style={{ width: `${analysis.overallScore}%` }}
+                        />
+                      </div>
+                      <span className={`text-sm font-black tabular-nums shrink-0 ${
+                        analysis.overallScore >= 75 ? "text-green-400" :
+                        analysis.overallScore >= 55 ? "text-amber-400" : "text-red-400"
+                      }`}>{analysis.overallScore}/100</span>
+                    </div>
+
+                    {/* Issues detected */}
+                    {detectedIssues.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-wider">Issues Detected</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {detectedIssues.map((issue, i) => (
+                            <span key={i} className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-md px-2 py-0.5">
+                              ✓ {issue}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* AI Recommendation row */}
+                    <div className="flex items-center justify-between rounded-lg bg-primary/[0.06] border border-primary/20 px-3 py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-xl">{recommendation.emoji}</span>
+                        <div>
+                          <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">AI Recommendation</p>
+                          <p className="text-sm font-bold text-foreground">{recommendation.label}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Confidence</p>
+                        <p className="text-sm font-black text-green-400">{recommendation.confidence}%</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         )}
 
