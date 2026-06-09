@@ -71,6 +71,14 @@ description: Critical decisions and calibration constants for the AI Video Enhan
 - Recommendation routing: medium/high/extreme noise **without** darkness → `deep_clean`. Dark + noisy → still `low_light`.
 - `forceDenoisePreset` includes `deep_clean` in both `computeRecommendation` post-process and `handleEnhance`.
 
+## Smart Face Denoise (auto, noise >= Medium)
+- Inserts `hqdn3d=2:2:6:6` + `unsharp=3:3:0.2` at step 2.2 inside `buildEnhanceFilters` — AFTER base eq, BEFORE Studio Look.
+- Activated by `faceDenoise` query param (`"true"` / `"false"`). Frontend sends `faceDenoise=true` when `analysis.noiseLabel` is Medium / High / Extreme.
+- `buildEnhanceFilters` 6th param: `faceDenoise = false`.
+- No UI toggle — fully automatic. `QualityReport.faceDenoiseApplied: boolean` drives report display.
+- Report shows "Applied" / "Not Applied" status metric + SummaryItem "Smart Face Denoise Applied" when active.
+- **Why:** Separate lighter spatial denoise pass (different hqdn3d params than the main noise-reduction toggle) runs on the already-eq-corrected signal so tone corrections don't re-introduce chroma noise, and runs before Studio Look so tone curves get a clean input.
+
 ## Smart Studio Look (FFmpeg tone/colour portrait enhancement)
 - Three modes passed as `studioLook` query param: "natural" | "creator" | "studio" (default "off").
 - Implemented in `buildStudioLookFilters(studioLook)` — returns filter array inserted into `buildEnhanceFilters` AFTER the base eq block (step 2.5), BEFORE cinematic curves.

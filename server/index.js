@@ -2710,7 +2710,7 @@ function buildStudioLookFilters(studioLook) {
   return MODES[studioLook] ?? [];
 }
 
-function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhitening = "off", studioLook = "off") {
+function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhitening = "off", studioLook = "off", faceDenoise = false) {
   if (preset === "audio_cleaner") return [];
   const eq = ENHANCE_EQ[preset] ?? ENHANCE_EQ.clean_boost;
   const filters = [];
@@ -2740,6 +2740,16 @@ function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhi
     if (eq.gamma !== 1.0) eqParts.push(`gamma=${eq.gamma}`);
   }
   if (eqParts.length) filters.push(`eq=${eqParts.join(":")}`);
+
+  // ── 2.2. Smart Face Denoise ───────────────────────────────────────────────
+  // Lighter spatial-only hqdn3d pass targeting facial grain.
+  // Runs after base eq so corrections don't re-introduce chroma noise;
+  // runs before Studio Look so tone curves work on a cleaner signal.
+  // Activated automatically when noise >= Medium (determined by frontend analysis).
+  if (faceDenoise) {
+    filters.push("hqdn3d=2:2:6:6");
+    filters.push("unsharp=3:3:0.2");
+  }
 
   // ── 2.5. Smart Studio Look ────────────────────────────────────────────────
   // Applied after base eq so the studio tone curves work on already-corrected values.
@@ -2988,6 +2998,7 @@ app.post(
       teethWhitening  = "off",      // "off" | "low" | "medium" | "high"
       teethDetected   = "false",    // "true" | "false" — from canvas analysis
       studioLook      = "off",      // "off" | "natural" | "creator" | "studio"
+      faceDenoise     = "false",    // "true" | "false" — auto-derived from noise analysis
     } = req.query ?? {};
 
     const toggles = {
@@ -3013,7 +3024,7 @@ app.post(
       writeFileSync(inputPath, req.body);
 
       // Build base filter chain (teeth whitening handled separately via filter_complex)
-      const baseFilters   = buildEnhanceFilters(preset, toggles, noiseStrength, "off", studioLook);
+      const baseFilters   = buildEnhanceFilters(preset, toggles, noiseStrength, "off", studioLook, faceDenoise === "true");
       const teethActive   = teethWhitening !== "off" && teethDetected === "true";
       const args = ["-y", "-i", inputPath];
 

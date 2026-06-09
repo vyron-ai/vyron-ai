@@ -688,6 +688,7 @@ interface QualityReport {
   noiseReductionPct:  number;
   teethWhiteningPct:  number;
   studioLookPct:      number;
+  faceDenoiseApplied: boolean;
   audioStatus:        "Normalized" | "Not Applied";
   originalScore:      number;
   enhancedScore:      number;
@@ -728,6 +729,13 @@ function computeQualityReport(
     studioLook === "creator" ? 14 :
     studioLook === "natural" ?  8 : 0;
 
+  // Smart Face Denoise — activates automatically when noise >= Medium
+  const faceDenoiseApplied = (
+    analysis?.noiseLabel === "Medium" ||
+    analysis?.noiseLabel === "High"   ||
+    analysis?.noiseLabel === "Extreme"
+  ) ?? false;
+
   // Score improvement uses the same 40/20/15/15/10 weighting as overallScore.
   // Each toggle contributes: gap_closed × filter_effectiveness × metric_weight.
   //   noise:      noiseGap × 0.65 × 0.40 ≈ noiseGap × 0.26
@@ -751,7 +759,7 @@ function computeQualityReport(
     teethWhitening === "medium" ? (originalScore >= 65 ? 12 : 8) :
     teethWhitening === "low"    ? (originalScore >= 65 ? 8 : 5) : 0;
 
-  return { brightnessPct, contrastPct, sharpnessPct, noiseReductionPct, teethWhiteningPct, studioLookPct, audioStatus, originalScore, enhancedScore };
+  return { brightnessPct, contrastPct, sharpnessPct, noiseReductionPct, teethWhiteningPct, studioLookPct, faceDenoiseApplied, audioStatus, originalScore, enhancedScore };
 }
 
 // ── Quality metric bar ────────────────────────────────────────────────────────
@@ -1275,6 +1283,11 @@ export default function VideoEnhancementPage() {
       teethWhitening,
       teethDetected: String(analysis?.teethDetected ?? false),
       studioLook,
+      faceDenoise: String(
+        analysis?.noiseLabel === "Medium" ||
+        analysis?.noiseLabel === "High"   ||
+        analysis?.noiseLabel === "Extreme"
+      ),
     });
 
     const xhr = new XMLHttpRequest();
@@ -2007,6 +2020,12 @@ export default function VideoEnhancementPage() {
                   />
                   <QualityMetric
                     icon={<Sparkles size={11} />}
+                    label="Face Denoise"
+                    value={qualityReport.faceDenoiseApplied ? "Applied" : "Not Applied"}
+                    applied={qualityReport.faceDenoiseApplied}
+                  />
+                  <QualityMetric
+                    icon={<Sparkles size={11} />}
                     label="Studio Look"
                     value={qualityReport.studioLookPct}
                     applied={studioLook !== "off"}
@@ -2041,6 +2060,9 @@ export default function VideoEnhancementPage() {
                   {toggles.contrast       && <SummaryItem text="Contrast improved" sub={`+${qualityReport.contrastPct}% contrast lift applied`} />}
                   {toggles.sharpness      && <SummaryItem text="Sharpness boosted" sub={`+${qualityReport.sharpnessPct}% edge clarity enhancement`} />}
                   {toggles.noiseReduction && <SummaryItem text="Noise reduced" sub={`${qualityReport.noiseReductionPct}% temporal denoise applied`} />}
+                  {qualityReport.faceDenoiseApplied && (
+                    <SummaryItem text="Smart Face Denoise Applied" sub="Facial grain suppression · spatial noise reduction" />
+                  )}
                   {studioLook !== "off" && (
                     <SummaryItem
                       text={`Smart Studio Look — ${studioLook === "natural" ? "Natural" : studioLook === "creator" ? "Creator" : "Studio"} mode`}
