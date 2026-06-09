@@ -2678,33 +2678,33 @@ const HQDN3D = {
 //   • eq adjustments are small (brightness ≤ 0.04) — facial identity never altered
 function buildStudioLookFilters(studioLook) {
   if (!studioLook || studioLook === "off") return [];
+  // unsharp syntax: luma_msize_x:luma_msize_y:luma_amount
+  // Safe values only — chroma params omitted (FFmpeg defaults to luma values).
+  // Explicit 0 for chroma size crashes FFmpeg ("Value out of range" / chroma_size_x).
   const MODES = {
     natural: [
       // Gentle shadow lift — opens dark facial areas without washing out highlights
       "curves=master='0/0.03 0.15/0.17 0.5/0.5 1/1'",
-      // Clarity: wide-radius luma-only unsharp = local contrast, never skin texture damage
-      "unsharp=9:9:0.25:0:0:0",
+      // Subtle clarity (local contrast) — safe luma-only values
+      "unsharp=3:3:0.3",
       // Subtle brightness + micro-contrast recovery
       "eq=brightness=0.02:contrast=1.05:saturation=1.03",
     ],
     creator: [
       // Stronger shadow lift + slight mid-tone push — creator polished look
       "curves=master='0/0.05 0.20/0.23 0.55/0.57 1/1'",
-      // Crisp, punchy clarity
-      "unsharp=7:7:0.40:0:0:0",
+      // Punchy clarity — safe values
+      "unsharp=5:5:0.6",
       // Brighter, crisper, slightly more vibrant
       "eq=brightness=0.03:contrast=1.09:saturation=1.06:gamma=1.05",
     ],
     studio: [
-      // Strong shadow lift — simulates softbox wraparound (no hard shadows on face)
-      "curves=master='0/0.07 0.25/0.29 0.55/0.58 1/1'",
-      // Warm skin tone curve: classic tungsten-balanced studio lighting
-      // Slightly lifts red + restrains blue in mid-tones — natural, not orange
-      "curves=r='0/0 0.4/0.412 0.75/0.768 1/1':b='0/0 0.4/0.392 0.75/0.738 1/1'",
-      // High clarity — professional on-set sharpness
-      "unsharp=9:9:0.50:0:0:0",
-      // Full studio-grade exposure + contrast correction
-      "eq=brightness=0.04:contrast=1.11:saturation=1.04:gamma=1.09",
+      // Warm highlight lift (softbox simulation via FFmpeg built-in lighter preset)
+      "curves=preset=lighter",
+      // Full studio-grade exposure + contrast + saturation
+      "eq=brightness=0.04:contrast=1.12:saturation=1.08",
+      // High clarity — professional on-set sharpness (safe values)
+      "unsharp=5:5:0.6",
     ],
   };
   return MODES[studioLook] ?? [];

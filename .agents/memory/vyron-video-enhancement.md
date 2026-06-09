@@ -77,7 +77,8 @@ description: Critical decisions and calibration constants for the AI Video Enhan
 - Natural: `curves` toe lift (0→0.03), `unsharp=9:9:0.25:0:0:0` (clarity, luma-only), `eq=brightness=0.02:contrast=1.05:saturation=1.03`.
 - Creator: stronger shadow lift (0→0.05), `unsharp=7:7:0.40`, `eq=brightness=0.03:contrast=1.09:saturation=1.06:gamma=1.05`.
 - Studio: strong toe lift (0→0.07) + warm skin-tone curve (`r` lift + `b` restraint in mid-tones) + `unsharp=9:9:0.50` + `eq=brightness=0.04:contrast=1.11:saturation=1.04:gamma=1.09`.
-- Wide-radius unsharp (7:9 luma-only) = clarity effect (macro local contrast) — NOT edge sharpening; preserves beard, pores, skin texture.
+- **FFmpeg unsharp constraint:** NEVER pass explicit chroma params as 0 (e.g. `unsharp=9:9:0.5:0:0:0`). chroma_msize_x/y must be ≥3 and odd, or omitted entirely. `0` causes "Value out of range / chroma_size_x" crash. Safe forms: `unsharp=3:3:0.3` or `unsharp=5:5:0.6` (chroma omitted = defaults to luma values).
+- Wide-radius unsharp = clarity effect (macro local contrast) — NOT edge sharpening; preserves beard, pores, skin texture.
 - `buildEnhanceFilters` signature updated: 5th param `studioLook = "off"`. Route handler passes `studioLook` from query.
 - Display %: Natural=8, Creator=14, Studio=20. Contributes `studioLookPct × 0.30` to overallScore improvement.
 - `studioLookPct` added to `QualityReport` interface + `computeQualityReport`.
