@@ -454,12 +454,19 @@ async function analyzeVideoFrame(
         const realBr  = probe?.bitrate   || (dur > 0 ? Math.round(file.size * 8 / dur / 1000) : 0);
         const realDur = probe?.durationSec || Math.round(dur * 10) / 10;
 
-        const bitrateScore = realBr > 0 ? realBr < 500 ? 20 : realBr < 1000 ? 38 : realBr < 2000 ? 55 : realBr < 4000 ? 70 : realBr < 8000 ? 85 : 94 : 70;
-        const resScore     = (realW * realH) > 0 ? (realW * realH) < 307200 ? 40 : (realW * realH) < 921600 ? 65 : (realW * realH) < 2073600 ? 80 : 90 : 70;
-
+        // Perceptual quality score — weights match user-specified priorities:
+        //   40% noise (clean video = high score, grainy = penalized heavily)
+        //   20% sharpness
+        //   15% contrast
+        //   15% exposure
+        //   10% color
+        const noiseScore   = 100 - noiseLevel; // invert: 0 noise → 100 score
         const overallScore = Math.round(
-          exposureScore * 0.20 + clarityScore * 0.25 + colorScore  * 0.20 +
-          audioScore    * 0.12 + bitrateScore * 0.12 + resScore    * 0.11,
+          noiseScore     * 0.40 +
+          sharpnessScore * 0.20 +
+          contrastScore  * 0.15 +
+          exposureScore  * 0.15 +
+          colorScore     * 0.10,
         );
 
         // ── Debug console output ───────────────────────────────────────────────
@@ -643,18 +650,29 @@ function computeQualityReport(file: File, toggles: Toggles, analysis?: VideoAnal
   const sharpnessGap  = analysis ? Math.max(0, 72 - analysis.sharpnessScore) : 20;
   const noiseGap      = analysis ? analysis.noiseLevel : 22;
 
+  // Displayed improvement %: fraction of original gap that the filter closes.
+  // hqdn3d effectiveness varies with strength: low=25%, medium=50%, high/extreme=65%.
+  const denoiseRate =
+    analysis?.noiseLabel === "Extreme" || analysis?.noiseLabel === "High" ? 0.65 :
+    analysis?.noiseLabel === "Medium"  ? 0.50 : 0.25;
+
   const brightnessPct     = toggles.brightness     ? Math.min(42, Math.max(4, Math.round(brightnessGap * 0.65))) : 0;
   const contrastPct       = toggles.contrast       ? Math.min(32, Math.max(4, Math.round(contrastGap   * 0.45))) : 0;
   const sharpnessPct      = toggles.sharpness      ? Math.min(44, Math.max(5, Math.round(sharpnessGap  * 0.55))) : 0;
-  const noiseReductionPct = toggles.noiseReduction ? Math.min(52, Math.max(8, Math.round(noiseGap      * 0.65))) : 0;
+  const noiseReductionPct = toggles.noiseReduction ? Math.min(55, Math.max(5, Math.round(noiseGap      * denoiseRate))) : 0;
 
-  // Score improvement: each toggle contributes proportionally to its gap
+  // Score improvement uses the same 40/20/15/15/10 weighting as overallScore.
+  // Each toggle contributes: gap_closed × filter_effectiveness × metric_weight.
+  //   noise:      noiseGap × 0.65 × 0.40 ≈ noiseGap × 0.26
+  //   sharpness:  sharpnessGap × 0.55 × 0.20 ≈ sharpnessGap × 0.11
+  //   contrast:   contrastGap × 0.45 × 0.15 ≈ contrastGap × 0.07
+  //   exposure:   brightnessGap × 0.65 × 0.15 ≈ brightnessGap × 0.10
   const improvement = Math.round(
-    (toggles.brightness     ? brightnessGap * 0.22 : 0) +
-    (toggles.contrast       ? contrastGap   * 0.18 : 0) +
-    (toggles.sharpness      ? sharpnessGap  * 0.22 : 0) +
-    (toggles.noiseReduction ? noiseGap      * 0.16 : 0) +
-    (toggles.colorCorrection ? 4 : 0) +
+    (toggles.noiseReduction ? noiseGap      * 0.26 : 0) +
+    (toggles.sharpness      ? sharpnessGap  * 0.11 : 0) +
+    (toggles.contrast       ? contrastGap   * 0.07 : 0) +
+    (toggles.brightness     ? brightnessGap * 0.10 : 0) +
+    (toggles.colorCorrection ? 5 : 0) +
     (toggles.audioCleanup   ? 3 : 0),
   );
   const enhancedScore = Math.min(97, originalScore + Math.max(2, improvement));
@@ -1158,7 +1176,8 @@ export default function VideoEnhancementPage() {
     // Pass noise strength so the server can select the right hqdn3d intensity
     const noiseStrength =
       analysis?.noiseLabel === "Extreme" ? "extreme" :
-      analysis?.noiseLabel === "High"    ? "high"    : "medium";
+      analysis?.noiseLabel === "High"    ? "high"    :
+      analysis?.noiseLabel === "Medium"  ? "medium"  : "low";
 
     const params = new URLSearchParams({
       preset:          activePreset,

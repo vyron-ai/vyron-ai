@@ -2651,12 +2651,35 @@ const ENHANCE_EQ = {
   audio_cleaner: null,
 };
 
-function buildEnhanceFilters(preset, toggles) {
+// noiseStrength tiers map directly to the user-facing noise analysis label:
+//   "low"     → noiseLabel "Low"     → hqdn3d=1.5:1.5:3:3  (gentle — preserves texture)
+//   "medium"  → noiseLabel "Medium"  → hqdn3d=3:3:6:6       (balanced — reduces grain on skin/walls)
+//   "high"    → noiseLabel "High"    → hqdn3d=5:5:10:10     (strong — clears shadows/backgrounds)
+//   "extreme" → noiseLabel "Extreme" → hqdn3d=5:5:10:10     (same — avoid over-processing artefacts)
+const HQDN3D = {
+  low:     "1.5:1.5:3:3",
+  medium:  "3:3:6:6",
+  high:    "5:5:10:10",
+  extreme: "5:5:10:10",
+};
+
+function buildEnhanceFilters(preset, toggles, noiseStrength = "medium") {
   if (preset === "audio_cleaner") return [];
   const eq = ENHANCE_EQ[preset] ?? ENHANCE_EQ.clean_boost;
   const filters = [];
 
-  // ── EQ (brightness / contrast / saturation / gamma) ──────────────────────
+  // ── 1. DENOISE FIRST ─────────────────────────────────────────────────────
+  // Noise must be removed before sharpening: applying unsharp to a noisy frame
+  // amplifies grain, creates halos around skin edges, and destroys fine texture.
+  // Denoising first lets the sharpener work only on genuine content structure.
+  if (toggles.noiseReduction) {
+    filters.push(`hqdn3d=${HQDN3D[noiseStrength] ?? HQDN3D.medium}`);
+  } else if (preset === "low_light") {
+    // low_light always needs a light base pass because gamma lift amplifies grain
+    filters.push(`hqdn3d=${HQDN3D.low}`);
+  }
+
+  // ── 2. EQ (brightness / contrast / saturation / gamma) ───────────────────
   const eqParts = [];
   if (toggles.brightness)      eqParts.push(`brightness=${eq.brightness}`);
   if (toggles.contrast)        eqParts.push(`contrast=${eq.contrast}`);
@@ -2666,44 +2689,26 @@ function buildEnhanceFilters(preset, toggles) {
   }
   if (eqParts.length) filters.push(`eq=${eqParts.join(":")}`);
 
-  // ── Sharpness ─────────────────────────────────────────────────────────────
-  if (toggles.sharpness) {
-    // luma_msize_x:luma_msize_y:luma_amount (larger = stronger)
-    const amt = preset === "social_sharp" ? 2.2 : 1.4;
-    filters.push(`unsharp=5:5:${amt}:5:5:0`);
-  } else if (preset === "social_sharp") {
-    // social_sharp always applies a base clarity pass even without the toggle
-    filters.push("unsharp=3:3:0.8:3:3:0");
-  }
-
-  // ── Noise reduction ───────────────────────────────────────────────────────
-  if (toggles.noiseReduction) {
-    // hqdn3d: luma_spatial:chroma_spatial:luma_tmp:chroma_tmp
-    // Three strength tiers driven by the client's real noise analysis:
-    //   extreme  → Noise >= 81  → aggressive denoising (skin/wall/shadow grain gone)
-    //   high     → Noise 61-80  → strong but preserves fine texture
-    //   medium   → Noise 41-60  → mild pass + temporal smoothing
-    // low_light preset always gets at least the "high" level because gamma lift amplifies grain
-    const str =
-      noiseStrength === "extreme"           ? "8:6:20:15"  :
-      noiseStrength === "high"              ? "5:4:14:10"  :
-      preset        === "low_light"         ? "4:3:12:8"   : "2.5:2:8:6";
-    filters.push(`hqdn3d=${str}`);
-  } else if (preset === "low_light") {
-    // low_light always applies a base denoise pass to control grain from gamma lift
-    filters.push("hqdn3d=2:1.5:6:4");
-  }
-
-  // ── Cinematic colour grade + vignette ────────────────────────────────────
+  // ── 3. Cinematic colour grade + vignette ─────────────────────────────────
   if (preset === "cinematic") {
-    // Subtle teal-orange grade: lift shadows toward blue, warm highlights
     filters.push(
       "curves=r='0/0 0.45/0.48 1/0.97':g='0/0 0.5/0.5 1/1':b='0/0.04 0.5/0.53 1/1.04'"
     );
     filters.push("vignette=angle=PI/5:mode=forward");
   }
 
-  // ── Ensure even pixel dimensions (required for yuv420p / libx264 baseline)
+  // ── 4. SHARPEN LAST ───────────────────────────────────────────────────────
+  // Applied after denoise + colour grade so it recovers micro-detail without
+  // creating halos or amplifying noise. Amounts are intentionally moderate to
+  // avoid clipping-induced ringing on skin and facial texture.
+  if (toggles.sharpness) {
+    const amt = preset === "social_sharp" ? 2.0 : 1.2;
+    filters.push(`unsharp=5:5:${amt}:5:5:0`);
+  } else if (preset === "social_sharp") {
+    filters.push("unsharp=3:3:0.8:3:3:0");
+  }
+
+  // ── 5. Ensure even pixel dimensions (required for yuv420p / libx264) ─────
   filters.push("scale=trunc(iw/2)*2:trunc(ih/2)*2");
 
   return filters;
@@ -2892,7 +2897,7 @@ app.post(
     try {
       writeFileSync(inputPath, req.body);
 
-      const vFilters = buildEnhanceFilters(preset, toggles);
+      const vFilters = buildEnhanceFilters(preset, toggles, noiseStrength);
       const args = ["-y", "-i", inputPath];
 
       // Map streams — make audio optional so it works on silent videos
