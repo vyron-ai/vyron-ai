@@ -140,6 +140,7 @@ interface VideoAnalysis {
   colorScore:      number;
   overallScore:    number;
   framesAnalyzed:  number;
+  teethDetected:   boolean;
 }
 
 // ── Raw per-frame metrics ──────────────────────────────────────────────────────
@@ -152,6 +153,7 @@ interface FrameMetrics {
   edgeDensity: number;  // fraction of pixels with gradient ≥ 0.05 — second sharpness signal
   shadowPct:   number;
   highlightPct:number;
+  teethDensity:number;  // fraction of mouth zone with bright+low-sat warm-white pixels
 }
 
 // ── Per-frame pixel scan ───────────────────────────────────────────────────────
@@ -245,8 +247,31 @@ function analyzeFramePixels(data: Uint8ClampedArray, W: number, H: number): Fram
   const chrNoiseRMS = chrNoiseN > 50 ? Math.sqrt(chrNoiseSq / chrNoiseN) : 0;
   const noiseVar    = Math.max(lumNoiseRMS, chrNoiseRMS * 0.85);
 
+  // ── Teeth detection: bright, near-white warm-white pixels in mouth zone ─────
+  // Zone: centre-horizontal 30–70%, lower-middle vertical 55–80%.
+  // This covers where teeth appear in portrait/talking-head videos.
+  // Teeth profile: high luminance (> 0.53), low saturation (< 0.28), not pure
+  // white (< 0.93), warm bias (R ≥ B). The upper luma bound prevents sky or
+  // bright backgrounds from false-triggering at distance.
+  const tzX1 = Math.floor(W * 0.30), tzX2 = Math.floor(W * 0.70);
+  const tzY1 = Math.floor(H * 0.55), tzY2 = Math.floor(H * 0.80);
+  let teethLike = 0, teethTotal = 0;
+  for (let ty = tzY1; ty < tzY2; ty++) {
+    for (let tx = tzX1; tx < tzX2; tx++) {
+      const pi = (ty * W + tx) * 4;
+      const r = data[pi] / 255, g = data[pi + 1] / 255, b = data[pi + 2] / 255;
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      const luma = (mx + mn) / 2;
+      const denom = luma < 0.5 ? mx + mn : 2 - mx - mn;
+      const sat  = denom < 1e-9 ? 0 : (mx - mn) / denom;
+      teethTotal++;
+      if (luma > 0.53 && luma < 0.93 && sat < 0.28 && r >= b) teethLike++;
+    }
+  }
+  const teethDensity = teethTotal > 0 ? teethLike / teethTotal : 0;
+
   return { avgL, stdL, avgS, lapVar, noiseVar, edgeDensity,
-    shadowPct: shadowCount / n, highlightPct: highlightCount / n };
+    shadowPct: shadowCount / n, highlightPct: highlightCount / n, teethDensity };
 }
 
 function avgFrameMetrics(s: FrameMetrics[]): FrameMetrics {
@@ -260,6 +285,8 @@ function avgFrameMetrics(s: FrameMetrics[]): FrameMetrics {
     edgeDensity: s.reduce((a, m) => a + m.edgeDensity, 0) / n,
     shadowPct:   s.reduce((a, m) => a + m.shadowPct,   0) / n,
     highlightPct:s.reduce((a, m) => a + m.highlightPct,0) / n,
+    // teethDensity: use MAX across frames — detected in any single frame = detected overall
+    teethDensity:s.reduce((a, m) => Math.max(a, m.teethDensity), 0),
   };
 }
 
@@ -346,6 +373,7 @@ async function analyzeVideoFrame(
       clarityScore: base, exposureScore: base, colorScore: base,
       overallScore: Math.max(10, Math.min(99, Math.round(base * 0.6 + bitrateScore * 0.2 + resScore * 0.2))),
       framesAnalyzed: 0,
+      teethDetected: false,
     };
   };
 
@@ -485,8 +513,14 @@ async function analyzeVideoFrame(
           ` | contrast=${contrastScore} (stdL=${avg.stdL.toFixed(4)}) → ${contrastLabel}` +
           ` | sharpness=${sharpnessScore} (lapVar=${avg.lapVar.toFixed(7)}, edgeDensity=${avg.edgeDensity.toFixed(3)}) → ${sharpnessLabel}` +
           ` | noise=${noiseLevel} (noiseRMS=${avg.noiseVar.toFixed(5)}, amp=${noiseAmplifier.toFixed(2)}, scaled=${(avg.noiseVar * 4000 * noiseAmplifier).toFixed(1)}) → ${noiseLabel}` +
-          ` | color=${colorLabel} (sat=${saturationScore}) | score=${Math.max(10, Math.min(99, overallScore))}`
+          ` | color=${colorLabel} (sat=${saturationScore}) | score=${Math.max(10, Math.min(99, overallScore))}` +
+          ` | teethDensity=${avg.teethDensity.toFixed(4)} → ${avg.teethDensity > 0.030 ? "DETECTED" : "none"}`
         );
+
+        // teethDetected: true when any frame shows > 3% bright+low-sat warm-white
+        // pixels in the mouth zone (30-70% x, 55-80% y). avgFrameMetrics uses MAX
+        // across frames so one clear frame is enough to confirm detection.
+        const teethDetected = avg.teethDensity > 0.030;
 
         resolve({
           width: realW, height: realH,
@@ -500,6 +534,7 @@ async function analyzeVideoFrame(
           clarityScore, exposureScore, colorScore,
           overallScore: Math.max(10, Math.min(99, overallScore)),
           framesAnalyzed: samples.length,
+          teethDetected,
         });
       } catch {
         clearTimeout(globalTimer);
@@ -966,6 +1001,7 @@ export default function VideoEnhancementPage() {
   const [recommendation,  setRecommendation]  = useState<AIRecommendation | null>(null);
   const [showPresetsPanel, setShowPresetsPanel] = useState(false);
   const [teethWhitening,  setTeethWhitening]  = useState<"off" | "low" | "medium" | "high">("off");
+  const [teethApplied,   setTeethApplied]   = useState<"off" | "true" | "none-detected">("off");
 
   interface ProbeInfo { container: string; videoCodec: string; videoProfile: string; pixFmt: string; audioCodec: string; }
   const [sourceProbe,  setSourceProbe]  = useState<ProbeInfo | null>(null);
@@ -1222,6 +1258,7 @@ export default function VideoEnhancementPage() {
       audioCleanup:    String(smartToggles.audioCleanup),
       noiseStrength,
       teethWhitening,
+      teethDetected: String(analysis?.teethDetected ?? false),
     });
 
     const xhr = new XMLHttpRequest();
@@ -1253,6 +1290,8 @@ export default function VideoEnhancementPage() {
 
         // Read enhanced output codec info from response headers
         const gh = (h: string) => xhr.getResponseHeader(h) ?? "—";
+        const twHeader = xhr.getResponseHeader("X-Vyron-Teeth-Applied") ?? "off";
+        setTeethApplied(twHeader as "off" | "true" | "none-detected");
         setOutputProbe({
           container:    gh("X-Vyron-Out-Container"),
           videoCodec:   gh("X-Vyron-Out-Video-Codec"),
@@ -1322,6 +1361,7 @@ export default function VideoEnhancementPage() {
     setRecommendation(null);
     setAnalysisLoading(false);
     setShowPresetsPanel(false);
+    setTeethApplied("off");
   };
 
   // Phase 3: Auto Enhance — apply AI recommendation and start enhancement immediately
@@ -1910,8 +1950,12 @@ export default function VideoEnhancementPage() {
                   <QualityMetric
                     icon={<Sparkles size={11} />}
                     label="Teeth Enhancement"
-                    value={qualityReport.teethWhiteningPct}
-                    applied={teethWhitening !== "off"}
+                    value={
+                      teethApplied === "none-detected"
+                        ? "Not Detected"
+                        : qualityReport.teethWhiteningPct
+                    }
+                    applied={teethWhitening !== "off" && teethApplied === "true"}
                   />
                   <QualityMetric
                     icon={<Volume2 size={11} />}
@@ -1933,7 +1977,8 @@ export default function VideoEnhancementPage() {
                   {toggles.contrast       && <SummaryItem text="Contrast improved" sub={`+${qualityReport.contrastPct}% contrast lift applied`} />}
                   {toggles.sharpness      && <SummaryItem text="Sharpness boosted" sub={`+${qualityReport.sharpnessPct}% edge clarity enhancement`} />}
                   {toggles.noiseReduction && <SummaryItem text="Noise reduced" sub={`${qualityReport.noiseReductionPct}% temporal denoise applied`} />}
-                  {teethWhitening !== "off" && <SummaryItem text="Teeth Enhancement Applied" sub={`Natural Whitening +${qualityReport.teethWhiteningPct}%`} />}
+                  {teethWhitening !== "off" && teethApplied === "true" && <SummaryItem text="Teeth Enhancement Applied" sub={`Natural Whitening +${qualityReport.teethWhiteningPct}%`} />}
+                  {teethWhitening !== "off" && teethApplied === "none-detected" && <SummaryItem text="Teeth Enhancement" sub="No visible teeth detected" />}
                   {toggles.colorCorrection && <SummaryItem text="Color correction applied" sub="Saturation and gamma balanced" />}
                   {toggles.audioCleanup   && <SummaryItem text="Audio normalized" sub="Loudness normalisation complete" />}
                   <SummaryItem text="Ready for export" sub="Download the enhanced MP4 above" />

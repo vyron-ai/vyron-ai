@@ -71,13 +71,13 @@ description: Critical decisions and calibration constants for the AI Video Enhan
 - Recommendation routing: medium/high/extreme noise **without** darkness → `deep_clean`. Dark + noisy → still `low_light`.
 - `forceDenoisePreset` includes `deep_clean` in both `computeRecommendation` post-process and `handleEnhance`.
 
-## Smart Teeth Enhancement (FFmpeg curves — yellow cast correction)
-- Implemented as selective warm-tone correction targeting luminance range 0.40–0.75 (teeth zone).
-- Applied as step 3 in filter chain (after eq, before cinematic curves, before unsharp).
-- Three levels:
-  - LOW:    `curves=r='0/0 0.4/0.4 0.75/0.735 1/1':b='0/0 0.4/0.4 0.75/0.765 1/1'`
-  - MEDIUM: `curves=r='0/0 0.4/0.4 0.75/0.720 1/1':b='0/0 0.4/0.4 0.75/0.780 1/1'`
-  - HIGH:   `curves=r='0/0 0.4/0.4 0.75/0.705 1/1':b='0/0 0.4/0.4 0.75/0.795 1/1'`
-- State: `teethWhitening: "off" | "low" | "medium" | "high"` (separate from Toggles, default "off").
-- Display %: LOW=5–8%, MEDIUM=8–12%, HIGH=10–15% (based on `originalScore >= 65` tier).
-- **Why:** True teeth/facial landmark detection requires ML (unavailable in this env). Professional NLEs implement dental correction the same way — selective yellow neutralization via curves, not pixel segmentation.
+## Smart Teeth Enhancement (FFmpeg filter_complex — lumakey masking)
+- Uses `-filter_complex` + `lumakey` + `maskedmerge` NOT `-vf`. The old global `curves` approach produced visually identical output and was removed.
+- `buildTeethWhiteningComplex(preFilters, teethLevel)` builds the graph. Pre-filters (hqdn3d, eq, etc.) are stripped of `scale=` and applied first, then split(3) into base/mask/effect streams.
+- Masking: `lumakey=threshold=0.0:tolerance=0.50:softness=0.20,alphaextract` → pixels with luma < 0.50 become black in mask (skin/lips/gums untouched); bright pixels (luma > 0.50) become white (teeth zone gets correction).
+- Correction applied to `src_effect` only: `hue=s=SAT,eq=brightness=BRIGHT` — never to dark pixels.
+- Three levels (exact user spec): LOW={sat:0.92, bright:0.05}, MEDIUM={sat:0.85, bright:0.10}, HIGH={sat:0.75, bright:0.15}.
+- Canvas teeth detection: `analyzeFramePixels` scans zone (30–70% x, 55–80% y) for pixels with luma > 0.53 AND luma < 0.93 AND sat < 0.28 AND r >= b. `teethDensity` stored as MAX across frames. `teethDetected = density > 0.030`.
+- `teethDetected` passed as query param; if `"false"` → skip filter_complex entirely, server sets `X-Vyron-Teeth-Applied: none-detected`.
+- Response header `X-Vyron-Teeth-Applied`: "true" | "none-detected" | "off". Frontend reads it to show "Not Detected" in QualityMetric and "No visible teeth detected" in Enhancement Summary.
+- **Why:** Global curves affected lips/skin equally — visually identical across levels. lumakey masking restricts correction to bright near-white pixels only. Canvas zone heuristic works for portrait/talking-head video.

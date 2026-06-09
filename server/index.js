@@ -2695,21 +2695,9 @@ function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhi
   }
   if (eqParts.length) filters.push(`eq=${eqParts.join(":")}`);
 
-  // ── 3. Teeth whitening — warm yellow cast correction ────────────────────
-  // Targets the upper-midtone range (0.40–0.75 luminance) where tooth discoloration
-  // sits. Slightly reduces the red channel and lifts the blue channel in that range
-  // to neutralise yellow cast without affecting skin tone or creating artificial whites.
-  // Shadows (< 0.40) and near-whites (> 0.75) are left completely untouched.
-  if (teethWhitening && teethWhitening !== "off") {
-    const TW = {
-      low:    "curves=r='0/0 0.4/0.4 0.75/0.735 1/1':b='0/0 0.4/0.4 0.75/0.765 1/1'",
-      medium: "curves=r='0/0 0.4/0.4 0.75/0.720 1/1':b='0/0 0.4/0.4 0.75/0.780 1/1'",
-      high:   "curves=r='0/0 0.4/0.4 0.75/0.705 1/1':b='0/0 0.4/0.4 0.75/0.795 1/1'",
-    };
-    if (TW[teethWhitening]) filters.push(TW[teethWhitening]);
-  }
-
-  // ── 4. Cinematic colour grade + vignette ─────────────────────────────────
+  // ── 3. Cinematic colour grade + vignette ─────────────────────────────────
+  // NOTE: Teeth whitening is now handled via filter_complex (lumakey masking)
+  // in buildTeethWhiteningComplex() — NOT inside this simple filter chain.
   if (preset === "cinematic") {
     filters.push(
       "curves=r='0/0 0.45/0.48 1/0.97':g='0/0 0.5/0.5 1/1':b='0/0.04 0.5/0.53 1/1.04'"
@@ -2737,6 +2725,52 @@ function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhi
   filters.push("scale=trunc(iw/2)*2:trunc(ih/2)*2");
 
   return filters;
+}
+
+// ── Teeth whitening via lumakey masking ───────────────────────────────────────
+// Applies brightness boost + saturation reduction ONLY to bright, near-white
+// pixels (luma > 0.50) using FFmpeg filter_complex with lumakey + maskedmerge.
+// This targets teeth/whites while leaving lips, skin, gums, and shadows intact.
+//
+// Exact adjustments match user spec:
+//   LOW:    brightness +5%, saturation -8%
+//   MEDIUM: brightness +10%, saturation -15%
+//   HIGH:   brightness +15%, saturation -25%
+function buildTeethWhiteningComplex(preFilters, teethLevel) {
+  const scaleFilter  = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
+  const chainFilters = preFilters.filter(f => !f.startsWith("scale="));
+
+  const TW = {
+    low:    { sat: 0.92, bright: 0.05 },
+    medium: { sat: 0.85, bright: 0.10 },
+    high:   { sat: 0.75, bright: 0.15 },
+  };
+  const { sat, bright } = TW[teethLevel] ?? TW.low;
+
+  // Flow:
+  //   [0:v] → pre-filters → split(3) → [base], [src_mask], [src_effect]
+  //   [src_effect] → hue(s=SAT) + eq(brightness=BRIGHT) → [whitened]
+  //   [src_mask] → lumakey(select bright pixels) + alphaextract → [mask]
+  //   [base][whitened][mask] → maskedmerge → [twout]
+  //   [twout] → scale → [v]
+  //
+  // lumakey threshold=0.0 tolerance=0.50: pixels with luma < 0.50 become
+  // transparent (alpha=0); bright pixels (luma > 0.50) stay opaque (alpha=255).
+  // alphaextract converts this to grayscale: teeth zone = white, rest = black.
+  // maskedmerge applies [whitened] only where mask is white (teeth/whites area).
+  let graph = "";
+  if (chainFilters.length > 0) {
+    graph += `[0:v]${chainFilters.join(",")}[_prefilt];`;
+    graph += `[_prefilt]split=3[_base][_src_mask][_src_effect];`;
+  } else {
+    graph += `[0:v]split=3[_base][_src_mask][_src_effect];`;
+  }
+  graph += `[_src_effect]hue=s=${sat},eq=brightness=${bright}[_whitened];`;
+  graph += `[_src_mask]lumakey=threshold=0.0:tolerance=0.50:softness=0.20,alphaextract[_mask];`;
+  graph += `[_base][_whitened][_mask]maskedmerge[_twout];`;
+  graph += `[_twout]${scaleFilter}[v]`;
+
+  return graph;
 }
 
 // ── POST /api/preview/video — transcode any input to browser-safe H.264 ───────
@@ -2899,6 +2933,7 @@ app.post(
       audioCleanup    = "false",
       noiseStrength   = "medium",   // "low" | "medium" | "high" | "extreme"
       teethWhitening  = "off",      // "off" | "low" | "medium" | "high"
+      teethDetected   = "false",    // "true" | "false" — from canvas analysis
     } = req.query ?? {};
 
     const toggles = {
@@ -2923,19 +2958,31 @@ app.post(
     try {
       writeFileSync(inputPath, req.body);
 
-      const vFilters = buildEnhanceFilters(preset, toggles, noiseStrength, teethWhitening);
+      // Build base filter chain (teeth whitening handled separately via filter_complex)
+      const baseFilters   = buildEnhanceFilters(preset, toggles, noiseStrength, "off");
+      const teethActive   = teethWhitening !== "off" && teethDetected === "true";
       const args = ["-y", "-i", inputPath];
 
-      // Map streams — make audio optional so it works on silent videos
-      args.push("-map", "0:v:0", "-map", "0:a:0?");
-
-      // Video — always re-encode to ensure browser-compatible H.264/yuv420p
-      // buildEnhanceFilters() always includes a scale=trunc(iw/2)*2:trunc(ih/2)*2 step
-      // for non-audio-cleaner presets; audio_cleaner returns [] so we add it here.
-      const vFilterChain = vFilters.length > 0
-        ? vFilters.join(",")
-        : "scale=trunc(iw/2)*2:trunc(ih/2)*2";
-      args.push("-vf", vFilterChain);
+      if (teethActive) {
+        // Use filter_complex: lumakey mask ensures correction only hits bright
+        // near-white pixels (teeth zone). Lips, skin, gums, shadows are untouched.
+        const complexGraph = buildTeethWhiteningComplex(baseFilters, teethWhitening);
+        args.push("-filter_complex", complexGraph);
+        // [v] is the labelled output from buildTeethWhiteningComplex
+        args.push("-map", "[v]", "-map", "0:a:0?");
+        res.setHeader("X-Vyron-Teeth-Applied", "true");
+      } else {
+        // Standard simple filter chain
+        args.push("-map", "0:v:0", "-map", "0:a:0?");
+        const vFilterChain = baseFilters.length > 0
+          ? baseFilters.join(",")
+          : "scale=trunc(iw/2)*2:trunc(ih/2)*2";
+        args.push("-vf", vFilterChain);
+        res.setHeader(
+          "X-Vyron-Teeth-Applied",
+          teethWhitening !== "off" ? "none-detected" : "off"
+        );
+      }
       // libx264 + yuv420p is required for in-browser playback across all browsers
       args.push(
         "-c:v",       "libx264",
