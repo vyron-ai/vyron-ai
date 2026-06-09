@@ -122,7 +122,7 @@ interface VideoAnalysis {
   audioPresent:    boolean;
   exposureLabel:   "Very Dark" | "Dark" | "Normal" | "Bright" | "Overexposed";
   contrastLabel:   "Flat" | "Low" | "Normal" | "High";
-  sharpnessLabel:  "Blurred" | "Soft" | "Medium" | "Sharp" | "Very Sharp";
+  sharpnessLabel:  "Very Soft" | "Soft" | "Medium" | "Sharp" | "Very Sharp";
   noiseLabel:      "Very Low" | "Low" | "Medium" | "High" | "Extreme";
   colorLabel:      "Desaturated" | "Normal" | "Oversaturated";
   audioLabel:      "None" | "Good";
@@ -139,9 +139,8 @@ interface FrameMetrics {
   stdL:        number;
   avgS:        number;
   lapVar:      number;
-  noiseVar:    number;  // combined RMS² for compatibility with the rest of the pipeline
-  flatRMS:     number;  // Signal A: flat-block RMS (skin / walls / surfaces)
-  darkRMS:     number;  // Signal B: dark-region neighbour deviation (shadows / dark BGs)
+  noiseVar:    number;  // combined noise RMS (luminance vs chroma max; stored as RMS, not squared)
+  edgeDensity: number;  // fraction of pixels with gradient ≥ 0.05 — second sharpness signal
   shadowPct:   number;
   highlightPct:number;
 }
@@ -171,7 +170,25 @@ function analyzeFramePixels(data: Uint8ClampedArray, W: number, H: number): Fram
   for (let i = 0; i < n; i++) ssq += (lums[i] - avgL) ** 2;
   const stdL = Math.sqrt(ssq / n);
 
-  // Laplacian variance → sharpness
+  // ── Gradient array (computed once; reused for edge density + noise mask) ──
+  // Chebyshev gradient: max(|gx|, |gy|) via central differences.
+  const grads = new Float32Array(n);
+  let edgeCount = 0;
+  const EDGE_THRESH = 0.05;
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const gx = Math.abs(lums[y * W + (x + 1)] - lums[y * W + (x - 1)]);
+      const gy = Math.abs(lums[(y + 1) * W + x] - lums[(y - 1) * W + x]);
+      const g  = Math.max(gx, gy);
+      grads[y * W + x] = g;
+      if (g >= EDGE_THRESH) edgeCount++;
+    }
+  }
+  // edgeDensity: fraction of pixels with crisp edges — second sharpness signal.
+  // High = fine detail preserved. Low = soft / blurry / out of focus.
+  const edgeDensity = edgeCount / Math.max(1, (W - 2) * (H - 2));
+
+  // ── Laplacian variance → primary sharpness signal ─────────────────────────
   let lapSum = 0;
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
@@ -183,77 +200,43 @@ function analyzeFramePixels(data: Uint8ClampedArray, W: number, H: number): Fram
   }
   const lapVar = lapSum / Math.max(1, (W - 2) * (H - 2));
 
-  // ── Dual-Signal Noise Estimation ──────────────────────────────────────────
+  // ── Noise: luminance + chroma flat-pixel box-residual ────────────────────
   //
-  // Signal A — 4×4 flat-block intra-variance
-  //   Divides the frame into non-overlapping 4×4 pixel blocks.
-  //   A block is "flat" when its maximum pixel-to-adjacent-pixel gradient is
-  //   below 0.06 (no edges or hard transitions inside).  In flat blocks, ALL
-  //   remaining pixel-to-pixel variation is grain/noise, never content structure.
-  //   Covers: skin, plain walls, skies, blurred backgrounds — everywhere the
-  //   eye notices grain at any luminance level.
+  // Restricted to flat pixels (gradient < 0.10): inside flat regions ALL
+  // residual pixel-to-pixel variation is grain — never content structure.
   //
-  // Signal B — Dark-region neighbour deviation
-  //   For each pixel darker than L 0.42 (shadows, low-lit surfaces, dark BGs),
-  //   measures how much it deviates from its 8 surrounding neighbours.  Noise
-  //   is perceptually amplified in dark areas, so this signal is extra-sensitive
-  //   to the grain types users most commonly complain about.
+  //   Lum signal : deviation of pixel luminance from its 3×3 luma mean
+  //   Chroma signal: deviation of each RGB channel from its 3×3 channel mean
   //
-  // Final score = max(signalA, signalB * 0.88)
-  //   We take the dominant signal rather than averaging so that an otherwise
-  //   clean video with noisy shadows still scores correctly.
-
-  // — Signal A: 4×4 flat-block variance —
-  const BSIZE = 4;
-  let flatVarSum = 0, flatBlockCount = 0;
-  for (let by = 0; by + BSIZE <= H; by += BSIZE) {
-    for (let bx = 0; bx + BSIZE <= W; bx += BSIZE) {
-      let bSum = 0, bSumSq = 0, maxEdge = 0;
-      for (let dy = 0; dy < BSIZE; dy++) {
-        for (let dx = 0; dx < BSIZE; dx++) {
-          const v = lums[(by + dy) * W + (bx + dx)];
-          bSum += v; bSumSq += v * v;
-          if (dx > 0) {
-            const e = Math.abs(v - lums[(by + dy) * W + (bx + dx - 1)]);
-            if (e > maxEdge) maxEdge = e;
-          }
-          if (dy > 0) {
-            const e = Math.abs(v - lums[(by + dy - 1) * W + (bx + dx)]);
-            if (e > maxEdge) maxEdge = e;
-          }
-        }
-      }
-      if (maxEdge < 0.06) { // flat block — variance is pure noise
-        const bMean = bSum / (BSIZE * BSIZE);
-        const bVar  = bSumSq / (BSIZE * BSIZE) - bMean * bMean;
-        flatVarSum += bVar; flatBlockCount++;
-      }
-    }
-  }
-  const flatRMS = flatBlockCount > 5 ? Math.sqrt(flatVarSum / flatBlockCount) : 0;
-
-  // — Signal B: dark-region neighbour deviation —
-  let darkSq = 0, darkN = 0;
-  for (let y = 1; y < H - 1; y++) {
-    for (let x = 1; x < W - 1; x++) {
-      const l = lums[y * W + x];
-      if (l > 0.42) continue; // shadow / dark-background pixels only
-      let nbSum = 0;
+  // Chroma noise (coloured grain, colour fringing) is often more perceptually
+  // salient than luma noise — measuring both ensures neither is missed.
+  // noiseVar = max(lumRMS, chromaRMS × 0.85) stored as RMS (not squared).
+  const NOISE_GRAD = 0.10;
+  let lumNoiseSq = 0, lumNoiseN = 0;
+  let chrNoiseSq = 0, chrNoiseN = 0;
+  for (let y = 2; y < H - 2; y++) {
+    for (let x = 2; x < W - 2; x++) {
+      if (grads[y * W + x] >= NOISE_GRAD) continue;
+      let lumBox = 0;
       for (let dy = -1; dy <= 1; dy++)
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dy !== 0 || dx !== 0) nbSum += lums[(y + dy) * W + (x + dx)];
-        }
-      const d = l - nbSum / 8;
-      darkSq += d * d; darkN++;
+        for (let dx = -1; dx <= 1; dx++) lumBox += lums[(y + dy) * W + (x + dx)];
+      const dL = lums[y * W + x] - lumBox / 9;
+      lumNoiseSq += dL * dL; lumNoiseN++;
+      const pi = (y * W + x) * 4;
+      for (let ch = 0; ch < 3; ch++) {
+        let cBox = 0;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) cBox += data[((y + dy) * W + (x + dx)) * 4 + ch] / 255;
+        const dC = data[pi + ch] / 255 - cBox / 9;
+        chrNoiseSq += dC * dC; chrNoiseN++;
+      }
     }
   }
-  const darkRMS = darkN > 50 ? Math.sqrt(darkSq / darkN) : 0;
+  const lumNoiseRMS = lumNoiseN > 50 ? Math.sqrt(lumNoiseSq / lumNoiseN) : 0;
+  const chrNoiseRMS = chrNoiseN > 50 ? Math.sqrt(chrNoiseSq / chrNoiseN) : 0;
+  const noiseVar    = Math.max(lumNoiseRMS, chrNoiseRMS * 0.85);
 
-  // — Combine: dominant signal wins —
-  const combinedRMS = Math.max(flatRMS, darkRMS * 0.88);
-  const noiseVar    = combinedRMS * combinedRMS;
-
-  return { avgL, stdL, avgS, lapVar, noiseVar, flatRMS, darkRMS,
+  return { avgL, stdL, avgS, lapVar, noiseVar, edgeDensity,
     shadowPct: shadowCount / n, highlightPct: highlightCount / n };
 }
 
@@ -265,8 +248,7 @@ function avgFrameMetrics(s: FrameMetrics[]): FrameMetrics {
     avgS:        s.reduce((a, m) => a + m.avgS,        0) / n,
     lapVar:      s.reduce((a, m) => a + m.lapVar,      0) / n,
     noiseVar:    s.reduce((a, m) => a + m.noiseVar,    0) / n,
-    flatRMS:     s.reduce((a, m) => a + m.flatRMS,     0) / n,
-    darkRMS:     s.reduce((a, m) => a + m.darkRMS,     0) / n,
+    edgeDensity: s.reduce((a, m) => a + m.edgeDensity, 0) / n,
     shadowPct:   s.reduce((a, m) => a + m.shadowPct,   0) / n,
     highlightPct:s.reduce((a, m) => a + m.highlightPct,0) / n,
   };
@@ -370,10 +352,16 @@ async function analyzeVideoFrame(
         const dur = vid.duration || 0;
         if (dur <= 0 || !isFinite(dur)) { clearTimeout(globalTimer); resolve(makeFallback()); return; }
 
-        // Canvas at 320px wide (fast decode)
-        const W = Math.min(vid.videoWidth || 640, 320);
-        const scale = W / (vid.videoWidth || 640);
-        const H = Math.round((vid.videoHeight || 360) * scale) || 180;
+        // Canvas at 640px wide — balances accuracy vs. speed.
+        // At 320px a 1080p source averages 36 pixels per canvas pixel, attenuating
+        // noise RMS by √36 = 6× and making all videos read "Very Low". At 640px
+        // attenuation is only √9 = 3× and noiseAmplifier compensates for the rest.
+        const W = Math.min(vid.videoWidth || 1280, 640);
+        const scale = W / (vid.videoWidth || 1280);
+        const H = Math.round((vid.videoHeight || 720) * scale) || 360;
+        // noiseAmplifier: restores noise lost to canvas downscaling.
+        // 1080p → 640px: amp = 3.0. Native / small sources: amp = 1.0.
+        const noiseAmplifier = Math.min(3.0, Math.max(1.0, (vid.videoWidth || W) / W));
         const canvas = document.createElement("canvas");
         canvas.width = W; canvas.height = H;
         const ctx = canvas.getContext("2d");
@@ -407,16 +395,20 @@ async function analyzeVideoFrame(
         const brightnessScore = Math.round(avg.avgL * 100);
         const contrastScore   = Math.round(Math.min(100, avg.stdL / 0.28 * 100));
         const saturationScore = Math.round(Math.min(100, avg.avgS / 0.40 * 100));
-        const sharpnessScore  = Math.round(Math.min(100, Math.sqrt(avg.lapVar) / 0.08 * 100));
-        // Dual-signal combined RMS × 3000 → noise 0-100
-        // combinedRMS = max(flatBlockRMS, darkRMS * 0.88); stored as noiseVar = combinedRMS²
-        // Scale reference (combinedRMS → noiseLevel):
-        //   Clean H.264 flat areas:       ≈ 0.003-0.007  →  9-21   → "Very Low"
-        //   Slight compression artifacts: ≈ 0.007-0.013  → 21-39   → "Low"
-        //   Mild grain / phone night:     ≈ 0.014-0.020  → 42-60   → "Medium"
-        //   Visible grain / high ISO:     ≈ 0.021-0.027  → 63-81   → "High"
-        //   Heavy noise / extreme night:  ≈ 0.027+       → 81-100  → "Extreme"
-        const noiseLevel      = Math.round(Math.min(100, Math.sqrt(avg.noiseVar) * 3000));
+        // Sharpness = Laplacian variance (primary) + edge density (secondary).
+        // Divisor 0.065 calibrated for 640px canvas. edgeDensity / 0.30 maps
+        // sharp video (~0.25-0.30 edge fraction) to 80-100 and soft to < 30.
+        const lapScore        = Math.min(100, Math.sqrt(avg.lapVar) / 0.065 * 100);
+        const edgeScore       = Math.min(100, avg.edgeDensity / 0.30 * 100);
+        const sharpnessScore  = Math.round(lapScore * 0.70 + edgeScore * 0.30);
+        // noiseVar stores the dominant RMS (lum vs chroma) directly — not squared.
+        // noiseAmplifier compensates for the √(scale_factor²) attenuation from
+        // downscaling (1080p→640px: each pixel averages 9 src pixels → ÷ √9 = 3).
+        // Scale reference (noiseRMS × 4000 × amp → noiseLevel):
+        //   Clean H.264 at 640px:       ≈ 0.0013-0.0025  → amp=3 →  16-30 → "Very Low"/"Low"
+        //   Mild grain / phone night:   ≈ 0.0035-0.0060  → amp=3 →  42-72 → "Medium"/"High"
+        //   Visible grain / high ISO:   ≈ 0.006-0.010     → amp=3 →  72-120→ "High"/"Extreme"
+        const noiseLevel      = Math.round(Math.min(100, avg.noiseVar * 4000 * noiseAmplifier));
 
         // ── Exposure: mean luminance + shadow/highlight fraction ──────────
         // Using BOTH avgL and shadow% catches dark scenes that have a few bright elements
@@ -432,7 +424,7 @@ async function analyzeVideoFrame(
           contrastScore < 75 ? "Normal" : "High";
 
         const sharpnessLabel: VideoAnalysis["sharpnessLabel"] =
-          sharpnessScore < 22 ? "Blurred"   :
+          sharpnessScore < 22 ? "Very Soft" :
           sharpnessScore < 45 ? "Soft"      :
           sharpnessScore < 72 ? "Medium"    :
           sharpnessScore < 90 ? "Sharp"     : "Very Sharp";
@@ -475,8 +467,8 @@ async function analyzeVideoFrame(
           `[VYRON Analysis] frames=${samples.length}` +
           ` | brightness=${brightnessScore} (avgL=${avg.avgL.toFixed(3)}, shadow=${(avg.shadowPct * 100).toFixed(1)}%) → ${exposureLabel}` +
           ` | contrast=${contrastScore} (stdL=${avg.stdL.toFixed(4)}) → ${contrastLabel}` +
-          ` | sharpness=${sharpnessScore} (lapVar=${avg.lapVar.toFixed(7)}) → ${sharpnessLabel}` +
-          ` | noise=${noiseLevel} (flatRMS=${avg.flatRMS.toFixed(5)}, darkRMS=${avg.darkRMS.toFixed(5)}, combined=${Math.sqrt(avg.noiseVar).toFixed(5)}) → ${noiseLabel}` +
+          ` | sharpness=${sharpnessScore} (lapVar=${avg.lapVar.toFixed(7)}, edgeDensity=${avg.edgeDensity.toFixed(3)}) → ${sharpnessLabel}` +
+          ` | noise=${noiseLevel} (noiseRMS=${avg.noiseVar.toFixed(5)}, amp=${noiseAmplifier.toFixed(2)}, scaled=${(avg.noiseVar * 4000 * noiseAmplifier).toFixed(1)}) → ${noiseLabel}` +
           ` | color=${colorLabel} (sat=${saturationScore}) | score=${Math.max(10, Math.min(99, overallScore))}`
         );
 
@@ -510,7 +502,7 @@ function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
   const isOverexp      = analysis.exposureLabel === "Overexposed";
   const isBright       = analysis.exposureLabel === "Bright";
   const isFlat         = analysis.contrastLabel === "Flat" || analysis.contrastLabel === "Low";
-  const isBlurry       = analysis.sharpnessLabel === "Blurred" || analysis.sharpnessLabel === "Soft";
+  const isBlurry       = analysis.sharpnessLabel === "Very Soft" || analysis.sharpnessLabel === "Soft";
   const isExtremeNoisy = analysis.noiseLabel === "Extreme";
   const isNoisy        = analysis.noiseLabel === "High";            // High → Noise Recovery
   const isMedNoisy     = analysis.noiseLabel === "Medium";          // Medium → denoise toggle only
@@ -603,7 +595,7 @@ function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
   } else if (analysis.sharpnessScore > 68 && analysis.contrastScore > 58 && !anyNoise && !isDesat) {
     // Already good quality — cinematic grade
     presetId = "cinematic"; confidence = 87;
-    autoToggles = { colorCorrection: true, brightness: false, contrast: true, sharpness: false, noiseReduction: false, audioCleanup: analysis.audioPresent };
+    autoToggles = { colorCorrection: true, brightness: false, contrast: true, sharpness: isBlurry, noiseReduction: false, audioCleanup: analysis.audioPresent };
 
   } else {
     // Clean boost — always apply colorCorrection + contrast polish
@@ -612,7 +604,7 @@ function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
       colorCorrection: true,
       brightness: analysis.brightnessScore < 44 || analysis.brightnessScore > 74,
       contrast: isFlat || analysis.contrastScore < 60,
-      sharpness: false,
+      sharpness: isBlurry,
       noiseReduction: false,
       audioCleanup: analysis.audioPresent,
     };
@@ -1476,7 +1468,7 @@ export default function VideoEnhancementPage() {
               const detectedIssues = [
                 analysis.exposureLabel !== "Normal" && analysis.exposureLabel !== "Bright" && `Low Light: ${analysis.exposureLabel}`,
                 (analysis.noiseLabel === "High" || analysis.noiseLabel === "Extreme") && `High Noise: ${analysis.noiseLabel}`,
-                (analysis.sharpnessLabel === "Blurred" || analysis.sharpnessLabel === "Soft") && `Soft Focus: ${analysis.sharpnessLabel}`,
+                (analysis.sharpnessLabel === "Very Soft" || analysis.sharpnessLabel === "Soft") && `Soft Focus: ${analysis.sharpnessLabel}`,
                 (analysis.contrastLabel === "Flat" || analysis.contrastLabel === "Low") && `Low Contrast: ${analysis.contrastLabel}`,
                 analysis.colorLabel === "Desaturated" && "Color: Desaturated",
                 !analysis.audioPresent && "No Audio Stream",
