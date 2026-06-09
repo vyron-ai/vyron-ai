@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type PresetId   = "clean_boost" | "cinematic" | "social_sharp" | "low_light" | "audio_cleaner";
+type PresetId   = "clean_boost" | "deep_clean" | "cinematic" | "social_sharp" | "low_light" | "audio_cleaner";
 type Status     = "idle" | "uploading" | "enhancing" | "done" | "error";
 
 interface Toggles {
@@ -42,6 +42,15 @@ const PRESETS: Preset[] = [
     defaults: { colorCorrection: true, brightness: true, contrast: true, sharpness: false, noiseReduction: false, audioCleanup: false },
     tags:     ["Natural", "Balanced"],
     tagColor: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  },
+  {
+    id:       "deep_clean",
+    label:    "Deep Clean",
+    emoji:    "🧹",
+    desc:     "Strong noise removal with gentle facial detail recovery.",
+    defaults: { colorCorrection: true, brightness: true, contrast: true, sharpness: false, noiseReduction: true, audioCleanup: false },
+    tags:     ["Heavy Denoise", "Face Safe"],
+    tagColor: "bg-teal-500/10 text-teal-400 border-teal-500/20",
   },
   {
     id:       "cinematic",
@@ -549,10 +558,10 @@ function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
     autoToggles = { colorCorrection: true, brightness: true, contrast: true, sharpness: false, noiseReduction: true, audioCleanup: analysis.audioPresent };
 
   } else if (isExtremeNoisy) {
-    // Extreme grain without low light → Heavy Noise Recovery
-    presetId = "low_light"; confidence = 94;
-    issues.unshift("Heavy Noise Recovery — extreme grain detected");
-    autoToggles = { colorCorrection: false, brightness: false, contrast: false, sharpness: false, noiseReduction: true, audioCleanup: analysis.audioPresent };
+    // Extreme grain without low light → Deep Clean
+    presetId = "deep_clean"; confidence = 94;
+    issues.unshift("Heavy Noise Recovery — extreme grain, Deep Clean recommended");
+    autoToggles = { colorCorrection: true, brightness: false, contrast: true, sharpness: false, noiseReduction: true, audioCleanup: analysis.audioPresent };
 
   } else if (isDark && isNoisy) {
     // Night / low-light + high grain → Night Recovery
@@ -561,10 +570,10 @@ function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
     autoToggles = { colorCorrection: true, brightness: true, contrast: true, sharpness: false, noiseReduction: true, audioCleanup: analysis.audioPresent };
 
   } else if (isNoisy) {
-    // High noise without darkness → Noise Recovery
-    presetId = "low_light"; confidence = 91;
-    issues.unshift("Noise Recovery — visible grain detected");
-    autoToggles = { colorCorrection: false, brightness: false, contrast: false, sharpness: false, noiseReduction: true, audioCleanup: analysis.audioPresent };
+    // High noise without darkness → Deep Clean
+    presetId = "deep_clean"; confidence = 91;
+    issues.unshift("Noise Recovery — visible grain, Deep Clean recommended");
+    autoToggles = { colorCorrection: true, brightness: false, contrast: true, sharpness: false, noiseReduction: true, audioCleanup: analysis.audioPresent };
 
   } else if (isDark && isMedNoisy) {
     // Low-light + medium grain
@@ -577,9 +586,9 @@ function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
     autoToggles = { colorCorrection: true, brightness: true, contrast: true, sharpness: false, noiseReduction: false, audioCleanup: analysis.audioPresent };
 
   } else if (isMedNoisy) {
-    // Medium noise — enable denoiser with mild pass
-    presetId = "low_light"; confidence = 87;
-    autoToggles = { colorCorrection: false, brightness: false, contrast: false, sharpness: false, noiseReduction: true, audioCleanup: analysis.audioPresent };
+    // Medium noise without darkness → Deep Clean
+    presetId = "deep_clean"; confidence = 88;
+    autoToggles = { colorCorrection: true, brightness: false, contrast: true, sharpness: false, noiseReduction: true, audioCleanup: analysis.audioPresent };
 
   } else if (isBlurry && isFlat) {
     // Soft + flat — sharpening + contrast combo
@@ -622,7 +631,7 @@ function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
   // Auto-enable noise reduction for visual enhancement presets whenever noise is
   // detected at any level (Very Low → Extreme). A gentle hqdn3d pass is harmless
   // on clean video and removes the light grain that causes the "Low/Very Low" complaint.
-  if (presetId === "clean_boost" || presetId === "low_light" || presetId === "social_sharp") {
+  if (presetId === "clean_boost" || presetId === "deep_clean" || presetId === "low_light" || presetId === "social_sharp") {
     autoToggles = { ...autoToggles, noiseReduction: true };
   }
 
@@ -642,12 +651,13 @@ interface QualityReport {
   contrastPct:        number;
   sharpnessPct:       number;
   noiseReductionPct:  number;
+  teethWhiteningPct:  number;
   audioStatus:        "Normalized" | "Not Applied";
   originalScore:      number;
   enhancedScore:      number;
 }
 
-function computeQualityReport(file: File, toggles: Toggles, analysis?: VideoAnalysis | null): QualityReport {
+function computeQualityReport(file: File, toggles: Toggles, analysis?: VideoAnalysis | null, teethWhitening: "off" | "low" | "medium" | "high" = "off"): QualityReport {
   const h = fileHash(file.name, file.size);
   const audioStatus = toggles.audioCleanup ? "Normalized" as const : "Not Applied" as const;
 
@@ -686,7 +696,13 @@ function computeQualityReport(file: File, toggles: Toggles, analysis?: VideoAnal
   );
   const enhancedScore = Math.min(97, originalScore + Math.max(2, improvement));
 
-  return { brightnessPct, contrastPct, sharpnessPct, noiseReductionPct, audioStatus, originalScore, enhancedScore };
+  // Teeth whitening correction % — based on quality tier of the source video
+  const teethWhiteningPct =
+    teethWhitening === "high"   ? (originalScore >= 65 ? 15 : 10) :
+    teethWhitening === "medium" ? (originalScore >= 65 ? 12 : 8) :
+    teethWhitening === "low"    ? (originalScore >= 65 ? 8 : 5) : 0;
+
+  return { brightnessPct, contrastPct, sharpnessPct, noiseReductionPct, teethWhiteningPct, audioStatus, originalScore, enhancedScore };
 }
 
 // ── Quality metric bar ────────────────────────────────────────────────────────
@@ -949,6 +965,7 @@ export default function VideoEnhancementPage() {
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [recommendation,  setRecommendation]  = useState<AIRecommendation | null>(null);
   const [showPresetsPanel, setShowPresetsPanel] = useState(false);
+  const [teethWhitening,  setTeethWhitening]  = useState<"off" | "low" | "medium" | "high">("off");
 
   interface ProbeInfo { container: string; videoCodec: string; videoProfile: string; pixFmt: string; audioCodec: string; }
   const [sourceProbe,  setSourceProbe]  = useState<ProbeInfo | null>(null);
@@ -1181,6 +1198,7 @@ export default function VideoEnhancementPage() {
     // Manual override (user toggled off) is still respected — only auto-enables, never auto-disables.
     const forceDenoisePreset =
       activePreset === "clean_boost" ||
+      activePreset === "deep_clean"  ||
       activePreset === "low_light"   ||
       activePreset === "social_sharp";
     const smartToggles: Toggles = {
@@ -1203,6 +1221,7 @@ export default function VideoEnhancementPage() {
       noiseReduction:  String(smartToggles.noiseReduction),
       audioCleanup:    String(smartToggles.audioCleanup),
       noiseStrength,
+      teethWhitening,
     });
 
     const xhr = new XMLHttpRequest();
@@ -1319,7 +1338,7 @@ export default function VideoEnhancementPage() {
   const isProcessing   = status === "uploading" || status === "enhancing";
   const selectedPreset = PRESETS.find(p => p.id === preset)!;
   const qualityReport: QualityReport | null = (status === "done" && file)
-    ? computeQualityReport(file, toggles, analysis)
+    ? computeQualityReport(file, toggles, analysis, teethWhitening)
     : null;
 
   return (
@@ -1685,6 +1704,40 @@ export default function VideoEnhancementPage() {
               </div>
             </div>
 
+            {/* Smart Teeth Enhancement */}
+            {preset !== "audio_cleaner" && (
+              <div className="space-y-3">
+                <SectionHeader label="Smart Teeth Enhancement" />
+                <div className="glass border border-border rounded-xl p-4 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Teeth Whitening</p>
+                    <p className="text-xs text-muted-foreground">Natural warm cast correction — reduces yellow &amp; brown tones</p>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(["off", "low", "medium", "high"] as const).map((level) => (
+                      <button
+                        key={level}
+                        onClick={() => {
+                          if (!isProcessing) {
+                            setTeethWhitening(level);
+                            setEnhancedUrl(null);
+                            setStatus("idle");
+                          }
+                        }}
+                        className={`py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide border transition-all ${
+                          teethWhitening === level
+                            ? "bg-primary/20 border-primary/50 text-primary"
+                            : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                        }`}
+                      >
+                        {level === "off" ? "Off" : level === "low" ? "Low" : level === "medium" ? "Med" : "High"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Preparing preview indicator */}
             {origConverting && !isProcessing && (
               <div className="glass border border-primary/20 rounded-xl px-4 py-3 flex items-center gap-3">
@@ -1855,6 +1908,12 @@ export default function VideoEnhancementPage() {
                     applied={toggles.noiseReduction}
                   />
                   <QualityMetric
+                    icon={<Sparkles size={11} />}
+                    label="Teeth Enhancement"
+                    value={qualityReport.teethWhiteningPct}
+                    applied={teethWhitening !== "off"}
+                  />
+                  <QualityMetric
                     icon={<Volume2 size={11} />}
                     label="Audio Normalization"
                     value={qualityReport.audioStatus}
@@ -1874,6 +1933,7 @@ export default function VideoEnhancementPage() {
                   {toggles.contrast       && <SummaryItem text="Contrast improved" sub={`+${qualityReport.contrastPct}% contrast lift applied`} />}
                   {toggles.sharpness      && <SummaryItem text="Sharpness boosted" sub={`+${qualityReport.sharpnessPct}% edge clarity enhancement`} />}
                   {toggles.noiseReduction && <SummaryItem text="Noise reduced" sub={`${qualityReport.noiseReductionPct}% temporal denoise applied`} />}
+                  {teethWhitening !== "off" && <SummaryItem text="Teeth Enhancement Applied" sub={`Natural Whitening +${qualityReport.teethWhiteningPct}%`} />}
                   {toggles.colorCorrection && <SummaryItem text="Color correction applied" sub="Saturation and gamma balanced" />}
                   {toggles.audioCleanup   && <SummaryItem text="Audio normalized" sub="Loudness normalisation complete" />}
                   <SummaryItem text="Ready for export" sub="Download the enhanced MP4 above" />

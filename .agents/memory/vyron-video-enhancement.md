@@ -63,3 +63,21 @@ description: Critical decisions and calibration constants for the AI Video Enhan
 ## noiseReductionPct (displayed %)
 - Uses denoiseRate based on noiseLabel: High/Extreme → 0.65, Medium → 0.50, Low → 0.25.
 - noiseReductionPct = min(55, max(5, round(noiseGap × denoiseRate)))
+
+## Deep Clean preset
+- `preset === "deep_clean"` → always applies `hqdn3d=3:3:8:8` regardless of `noiseStrength` toggle (it's the defining feature).
+- Unsharp always applied: `unsharp=3:3:0.3:3:3:0` (base); `unsharp=3:3:0.5:3:3:0` when sharpness toggle ON.
+- EQ: `brightness=0.04, contrast=1.14, saturation=1.10` (conservative — preserves face tone).
+- Recommendation routing: medium/high/extreme noise **without** darkness → `deep_clean`. Dark + noisy → still `low_light`.
+- `forceDenoisePreset` includes `deep_clean` in both `computeRecommendation` post-process and `handleEnhance`.
+
+## Smart Teeth Enhancement (FFmpeg curves — yellow cast correction)
+- Implemented as selective warm-tone correction targeting luminance range 0.40–0.75 (teeth zone).
+- Applied as step 3 in filter chain (after eq, before cinematic curves, before unsharp).
+- Three levels:
+  - LOW:    `curves=r='0/0 0.4/0.4 0.75/0.735 1/1':b='0/0 0.4/0.4 0.75/0.765 1/1'`
+  - MEDIUM: `curves=r='0/0 0.4/0.4 0.75/0.720 1/1':b='0/0 0.4/0.4 0.75/0.780 1/1'`
+  - HIGH:   `curves=r='0/0 0.4/0.4 0.75/0.705 1/1':b='0/0 0.4/0.4 0.75/0.795 1/1'`
+- State: `teethWhitening: "off" | "low" | "medium" | "high"` (separate from Toggles, default "off").
+- Display %: LOW=5–8%, MEDIUM=8–12%, HIGH=10–15% (based on `originalScore >= 65` tier).
+- **Why:** True teeth/facial landmark detection requires ML (unavailable in this env). Professional NLEs implement dental correction the same way — selective yellow neutralization via curves, not pixel segmentation.

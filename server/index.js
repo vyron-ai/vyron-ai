@@ -2645,6 +2645,7 @@ app.post("/api/content-strategy/generate", (req, res) => {
 const ENHANCE_EQ = {
   //              brightness  contrast  saturation  gamma
   clean_boost:  { brightness:  0.06,  contrast: 1.18, saturation: 1.25, gamma: 1.0  },
+  deep_clean:   { brightness:  0.04,  contrast: 1.14, saturation: 1.10, gamma: 1.0  },
   cinematic:    { brightness: -0.03,  contrast: 1.28, saturation: 0.78, gamma: 1.10 },
   social_sharp: { brightness:  0.08,  contrast: 1.32, saturation: 1.42, gamma: 1.0  },
   low_light:    { brightness:  0.20,  contrast: 1.22, saturation: 1.15, gamma: 1.65 },
@@ -2663,7 +2664,7 @@ const HQDN3D = {
   extreme: "3:3:8:8",
 };
 
-function buildEnhanceFilters(preset, toggles, noiseStrength = "medium") {
+function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhitening = "off") {
   if (preset === "audio_cleaner") return [];
   const eq = ENHANCE_EQ[preset] ?? ENHANCE_EQ.clean_boost;
   const filters = [];
@@ -2672,7 +2673,11 @@ function buildEnhanceFilters(preset, toggles, noiseStrength = "medium") {
   // Noise must be removed before sharpening: applying unsharp to a noisy frame
   // amplifies grain, creates halos around skin edges, and destroys fine texture.
   // Denoising first lets the sharpener work only on genuine content structure.
-  if (toggles.noiseReduction) {
+  if (preset === "deep_clean") {
+    // Deep Clean always uses strong denoise — it is the defining feature of the preset.
+    // Fixed at hqdn3d=3:3:8:8 regardless of noiseStrength for consistent heavy removal.
+    filters.push("hqdn3d=3:3:8:8");
+  } else if (toggles.noiseReduction) {
     filters.push(`hqdn3d=${HQDN3D[noiseStrength] ?? HQDN3D.medium}`);
   } else if (preset === "low_light") {
     // low_light always needs a medium-strength base pass: gamma lift amplifies grain
@@ -2690,7 +2695,21 @@ function buildEnhanceFilters(preset, toggles, noiseStrength = "medium") {
   }
   if (eqParts.length) filters.push(`eq=${eqParts.join(":")}`);
 
-  // ── 3. Cinematic colour grade + vignette ─────────────────────────────────
+  // ── 3. Teeth whitening — warm yellow cast correction ────────────────────
+  // Targets the upper-midtone range (0.40–0.75 luminance) where tooth discoloration
+  // sits. Slightly reduces the red channel and lifts the blue channel in that range
+  // to neutralise yellow cast without affecting skin tone or creating artificial whites.
+  // Shadows (< 0.40) and near-whites (> 0.75) are left completely untouched.
+  if (teethWhitening && teethWhitening !== "off") {
+    const TW = {
+      low:    "curves=r='0/0 0.4/0.4 0.75/0.735 1/1':b='0/0 0.4/0.4 0.75/0.765 1/1'",
+      medium: "curves=r='0/0 0.4/0.4 0.75/0.720 1/1':b='0/0 0.4/0.4 0.75/0.780 1/1'",
+      high:   "curves=r='0/0 0.4/0.4 0.75/0.705 1/1':b='0/0 0.4/0.4 0.75/0.795 1/1'",
+    };
+    if (TW[teethWhitening]) filters.push(TW[teethWhitening]);
+  }
+
+  // ── 4. Cinematic colour grade + vignette ─────────────────────────────────
   if (preset === "cinematic") {
     filters.push(
       "curves=r='0/0 0.45/0.48 1/0.97':g='0/0 0.5/0.5 1/1':b='0/0.04 0.5/0.53 1/1.04'"
@@ -2698,18 +2717,23 @@ function buildEnhanceFilters(preset, toggles, noiseStrength = "medium") {
     filters.push("vignette=angle=PI/5:mode=forward");
   }
 
-  // ── 4. SHARPEN LAST ───────────────────────────────────────────────────────
+  // ── 5. SHARPEN LAST ───────────────────────────────────────────────────────
   // Applied after denoise + colour grade so it recovers micro-detail without
   // creating halos or amplifying noise. Amounts are intentionally moderate to
   // avoid clipping-induced ringing on skin and facial texture.
-  if (toggles.sharpness) {
+  if (preset === "deep_clean") {
+    // Always apply gentle facial detail recovery after the strong denoise.
+    // unsharp=3:3:0.3 recovers subtle edge structure without over-sharpening skin.
+    const amt = toggles.sharpness ? 0.5 : 0.3;
+    filters.push(`unsharp=3:3:${amt}:3:3:0`);
+  } else if (toggles.sharpness) {
     const amt = preset === "social_sharp" ? 2.0 : 1.2;
     filters.push(`unsharp=5:5:${amt}:5:5:0`);
   } else if (preset === "social_sharp") {
     filters.push("unsharp=3:3:0.8:3:3:0");
   }
 
-  // ── 5. Ensure even pixel dimensions (required for yuv420p / libx264) ─────
+  // ── 6. Ensure even pixel dimensions (required for yuv420p / libx264) ─────
   filters.push("scale=trunc(iw/2)*2:trunc(ih/2)*2");
 
   return filters;
@@ -2873,7 +2897,8 @@ app.post(
       sharpness       = "false",
       noiseReduction  = "false",
       audioCleanup    = "false",
-      noiseStrength   = "medium",   // "medium" | "high" | "extreme"
+      noiseStrength   = "medium",   // "low" | "medium" | "high" | "extreme"
+      teethWhitening  = "off",      // "off" | "low" | "medium" | "high"
     } = req.query ?? {};
 
     const toggles = {
@@ -2898,7 +2923,7 @@ app.post(
     try {
       writeFileSync(inputPath, req.body);
 
-      const vFilters = buildEnhanceFilters(preset, toggles, noiseStrength);
+      const vFilters = buildEnhanceFilters(preset, toggles, noiseStrength, teethWhitening);
       const args = ["-y", "-i", inputPath];
 
       // Map streams — make audio optional so it works on silent videos
