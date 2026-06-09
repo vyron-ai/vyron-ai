@@ -687,12 +687,19 @@ interface QualityReport {
   sharpnessPct:       number;
   noiseReductionPct:  number;
   teethWhiteningPct:  number;
+  studioLookPct:      number;
   audioStatus:        "Normalized" | "Not Applied";
   originalScore:      number;
   enhancedScore:      number;
 }
 
-function computeQualityReport(file: File, toggles: Toggles, analysis?: VideoAnalysis | null, teethWhitening: "off" | "low" | "medium" | "high" = "off"): QualityReport {
+function computeQualityReport(
+  file: File,
+  toggles: Toggles,
+  analysis?: VideoAnalysis | null,
+  teethWhitening: "off" | "low" | "medium" | "high" = "off",
+  studioLook: "off" | "natural" | "creator" | "studio" = "off",
+): QualityReport {
   const h = fileHash(file.name, file.size);
   const audioStatus = toggles.audioCleanup ? "Normalized" as const : "Not Applied" as const;
 
@@ -715,6 +722,12 @@ function computeQualityReport(file: File, toggles: Toggles, analysis?: VideoAnal
   const sharpnessPct      = toggles.sharpness      ? Math.min(44, Math.max(5, Math.round(sharpnessGap  * 0.55))) : 0;
   const noiseReductionPct = toggles.noiseReduction ? Math.min(55, Math.max(5, Math.round(noiseGap      * denoiseRate))) : 0;
 
+  // Studio Look improvement % — reflects shadow lift + clarity + skin balance depth
+  const studioLookPct =
+    studioLook === "studio"  ? 20 :
+    studioLook === "creator" ? 14 :
+    studioLook === "natural" ?  8 : 0;
+
   // Score improvement uses the same 40/20/15/15/10 weighting as overallScore.
   // Each toggle contributes: gap_closed × filter_effectiveness × metric_weight.
   //   noise:      noiseGap × 0.65 × 0.40 ≈ noiseGap × 0.26
@@ -727,7 +740,8 @@ function computeQualityReport(file: File, toggles: Toggles, analysis?: VideoAnal
     (toggles.contrast       ? contrastGap   * 0.07 : 0) +
     (toggles.brightness     ? brightnessGap * 0.10 : 0) +
     (toggles.colorCorrection ? 5 : 0) +
-    (toggles.audioCleanup   ? 3 : 0),
+    (toggles.audioCleanup   ? 3 : 0) +
+    (studioLook !== "off"   ? studioLookPct * 0.30 : 0),
   );
   const enhancedScore = Math.min(97, originalScore + Math.max(2, improvement));
 
@@ -737,7 +751,7 @@ function computeQualityReport(file: File, toggles: Toggles, analysis?: VideoAnal
     teethWhitening === "medium" ? (originalScore >= 65 ? 12 : 8) :
     teethWhitening === "low"    ? (originalScore >= 65 ? 8 : 5) : 0;
 
-  return { brightnessPct, contrastPct, sharpnessPct, noiseReductionPct, teethWhiteningPct, audioStatus, originalScore, enhancedScore };
+  return { brightnessPct, contrastPct, sharpnessPct, noiseReductionPct, teethWhiteningPct, studioLookPct, audioStatus, originalScore, enhancedScore };
 }
 
 // ── Quality metric bar ────────────────────────────────────────────────────────
@@ -1002,6 +1016,7 @@ export default function VideoEnhancementPage() {
   const [showPresetsPanel, setShowPresetsPanel] = useState(false);
   const [teethWhitening,  setTeethWhitening]  = useState<"off" | "low" | "medium" | "high">("off");
   const [teethApplied,   setTeethApplied]   = useState<"off" | "true" | "none-detected">("off");
+  const [studioLook,     setStudioLook]     = useState<"off" | "natural" | "creator" | "studio">("off");
 
   interface ProbeInfo { container: string; videoCodec: string; videoProfile: string; pixFmt: string; audioCodec: string; }
   const [sourceProbe,  setSourceProbe]  = useState<ProbeInfo | null>(null);
@@ -1259,6 +1274,7 @@ export default function VideoEnhancementPage() {
       noiseStrength,
       teethWhitening,
       teethDetected: String(analysis?.teethDetected ?? false),
+      studioLook,
     });
 
     const xhr = new XMLHttpRequest();
@@ -1362,6 +1378,7 @@ export default function VideoEnhancementPage() {
     setAnalysisLoading(false);
     setShowPresetsPanel(false);
     setTeethApplied("off");
+    setStudioLook("off");
   };
 
   // Phase 3: Auto Enhance — apply AI recommendation and start enhancement immediately
@@ -1378,7 +1395,7 @@ export default function VideoEnhancementPage() {
   const isProcessing   = status === "uploading" || status === "enhancing";
   const selectedPreset = PRESETS.find(p => p.id === preset)!;
   const qualityReport: QualityReport | null = (status === "done" && file)
-    ? computeQualityReport(file, toggles, analysis, teethWhitening)
+    ? computeQualityReport(file, toggles, analysis, teethWhitening, studioLook)
     : null;
 
   return (
@@ -1744,6 +1761,47 @@ export default function VideoEnhancementPage() {
               </div>
             </div>
 
+            {/* Smart Studio Look */}
+            {preset !== "audio_cleaner" && (
+              <div className="space-y-3">
+                <SectionHeader label="Smart Studio Look" />
+                <div className="glass border border-border rounded-xl p-4 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Lighting Mode</p>
+                    <p className="text-xs text-muted-foreground">Shadow lift · local contrast · skin tone balance</p>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(["off", "natural", "creator", "studio"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => {
+                          if (!isProcessing) {
+                            setStudioLook(mode);
+                            setEnhancedUrl(null);
+                            setStatus("idle");
+                          }
+                        }}
+                        className={`py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide border transition-all ${
+                          studioLook === mode
+                            ? "bg-primary/20 border-primary/50 text-primary"
+                            : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                        }`}
+                      >
+                        {mode === "off" ? "Off" : mode === "natural" ? "Natural" : mode === "creator" ? "Creator" : "Studio"}
+                      </button>
+                    ))}
+                  </div>
+                  {studioLook !== "off" && (
+                    <p className="text-xs text-muted-foreground/70 leading-relaxed">
+                      {studioLook === "natural" && "Subtle shadow lift and local contrast — natural-looking portrait enhancement."}
+                      {studioLook === "creator" && "Polished, punchy look optimised for YouTube and social content."}
+                      {studioLook === "studio" && "Simulates professional softbox lighting — warm skin tones, open shadows, high clarity."}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Smart Teeth Enhancement */}
             {preset !== "audio_cleaner" && (
               <div className="space-y-3">
@@ -1949,6 +2007,12 @@ export default function VideoEnhancementPage() {
                   />
                   <QualityMetric
                     icon={<Sparkles size={11} />}
+                    label="Studio Look"
+                    value={qualityReport.studioLookPct}
+                    applied={studioLook !== "off"}
+                  />
+                  <QualityMetric
+                    icon={<Sparkles size={11} />}
                     label="Teeth Enhancement"
                     value={
                       teethApplied === "none-detected"
@@ -1977,6 +2041,12 @@ export default function VideoEnhancementPage() {
                   {toggles.contrast       && <SummaryItem text="Contrast improved" sub={`+${qualityReport.contrastPct}% contrast lift applied`} />}
                   {toggles.sharpness      && <SummaryItem text="Sharpness boosted" sub={`+${qualityReport.sharpnessPct}% edge clarity enhancement`} />}
                   {toggles.noiseReduction && <SummaryItem text="Noise reduced" sub={`${qualityReport.noiseReductionPct}% temporal denoise applied`} />}
+                  {studioLook !== "off" && (
+                    <SummaryItem
+                      text={`Smart Studio Look — ${studioLook === "natural" ? "Natural" : studioLook === "creator" ? "Creator" : "Studio"} mode`}
+                      sub={`Shadow lift · local contrast · ${studioLook === "studio" ? "skin tone balance" : "portrait enhancement"} +${qualityReport.studioLookPct}%`}
+                    />
+                  )}
                   {teethWhitening !== "off" && teethApplied === "true" && <SummaryItem text="Teeth Enhancement Applied" sub={`Natural Whitening +${qualityReport.teethWhiteningPct}%`} />}
                   {teethWhitening !== "off" && teethApplied === "none-detected" && <SummaryItem text="Teeth Enhancement" sub="No visible teeth detected" />}
                   {toggles.colorCorrection && <SummaryItem text="Color correction applied" sub="Saturation and gamma balanced" />}

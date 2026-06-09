@@ -2664,7 +2664,53 @@ const HQDN3D = {
   extreme: "3:3:8:8",
 };
 
-function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhitening = "off") {
+// ── Smart Studio Look filter sets ─────────────────────────────────────────────
+// Simulates professional portrait lighting using purely FFmpeg tone/colour filters.
+// No ML or face detection — works on any video content.
+//
+// Design principles:
+//   • Shadow lifting via master tone curve (toe lift) — opens up dark mid-tones
+//     without clipping highlights, avoids flat plastic skin look
+//   • Wide-radius unsharp (9:9) = "clarity" effect (local contrast) — NOT edge
+//     sharpening. Preserves pores, beard texture, skin micro-detail.
+//   • Skin-tone curve (studio only): warm R/B midtone curve = classic tungsten/
+//     softbox colour balance without altering hue or identity
+//   • eq adjustments are small (brightness ≤ 0.04) — facial identity never altered
+function buildStudioLookFilters(studioLook) {
+  if (!studioLook || studioLook === "off") return [];
+  const MODES = {
+    natural: [
+      // Gentle shadow lift — opens dark facial areas without washing out highlights
+      "curves=master='0/0.03 0.15/0.17 0.5/0.5 1/1'",
+      // Clarity: wide-radius luma-only unsharp = local contrast, never skin texture damage
+      "unsharp=9:9:0.25:0:0:0",
+      // Subtle brightness + micro-contrast recovery
+      "eq=brightness=0.02:contrast=1.05:saturation=1.03",
+    ],
+    creator: [
+      // Stronger shadow lift + slight mid-tone push — creator polished look
+      "curves=master='0/0.05 0.20/0.23 0.55/0.57 1/1'",
+      // Crisp, punchy clarity
+      "unsharp=7:7:0.40:0:0:0",
+      // Brighter, crisper, slightly more vibrant
+      "eq=brightness=0.03:contrast=1.09:saturation=1.06:gamma=1.05",
+    ],
+    studio: [
+      // Strong shadow lift — simulates softbox wraparound (no hard shadows on face)
+      "curves=master='0/0.07 0.25/0.29 0.55/0.58 1/1'",
+      // Warm skin tone curve: classic tungsten-balanced studio lighting
+      // Slightly lifts red + restrains blue in mid-tones — natural, not orange
+      "curves=r='0/0 0.4/0.412 0.75/0.768 1/1':b='0/0 0.4/0.392 0.75/0.738 1/1'",
+      // High clarity — professional on-set sharpness
+      "unsharp=9:9:0.50:0:0:0",
+      // Full studio-grade exposure + contrast correction
+      "eq=brightness=0.04:contrast=1.11:saturation=1.04:gamma=1.09",
+    ],
+  };
+  return MODES[studioLook] ?? [];
+}
+
+function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhitening = "off", studioLook = "off") {
   if (preset === "audio_cleaner") return [];
   const eq = ENHANCE_EQ[preset] ?? ENHANCE_EQ.clean_boost;
   const filters = [];
@@ -2694,6 +2740,13 @@ function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhi
     if (eq.gamma !== 1.0) eqParts.push(`gamma=${eq.gamma}`);
   }
   if (eqParts.length) filters.push(`eq=${eqParts.join(":")}`);
+
+  // ── 2.5. Smart Studio Look ────────────────────────────────────────────────
+  // Applied after base eq so the studio tone curves work on already-corrected values.
+  // Shadow lift + clarity (wide unsharp) + optional skin tone curve (studio mode).
+  if (studioLook && studioLook !== "off") {
+    buildStudioLookFilters(studioLook).forEach(f => filters.push(f));
+  }
 
   // ── 3. Cinematic colour grade + vignette ─────────────────────────────────
   // NOTE: Teeth whitening is now handled via filter_complex (lumakey masking)
@@ -2934,6 +2987,7 @@ app.post(
       noiseStrength   = "medium",   // "low" | "medium" | "high" | "extreme"
       teethWhitening  = "off",      // "off" | "low" | "medium" | "high"
       teethDetected   = "false",    // "true" | "false" — from canvas analysis
+      studioLook      = "off",      // "off" | "natural" | "creator" | "studio"
     } = req.query ?? {};
 
     const toggles = {
@@ -2959,7 +3013,7 @@ app.post(
       writeFileSync(inputPath, req.body);
 
       // Build base filter chain (teeth whitening handled separately via filter_complex)
-      const baseFilters   = buildEnhanceFilters(preset, toggles, noiseStrength, "off");
+      const baseFilters   = buildEnhanceFilters(preset, toggles, noiseStrength, "off", studioLook);
       const teethActive   = teethWhitening !== "off" && teethDetected === "true";
       const args = ["-y", "-i", inputPath];
 

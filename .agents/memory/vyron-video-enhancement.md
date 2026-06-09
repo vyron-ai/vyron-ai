@@ -71,6 +71,19 @@ description: Critical decisions and calibration constants for the AI Video Enhan
 - Recommendation routing: medium/high/extreme noise **without** darkness → `deep_clean`. Dark + noisy → still `low_light`.
 - `forceDenoisePreset` includes `deep_clean` in both `computeRecommendation` post-process and `handleEnhance`.
 
+## Smart Studio Look (FFmpeg tone/colour portrait enhancement)
+- Three modes passed as `studioLook` query param: "natural" | "creator" | "studio" (default "off").
+- Implemented in `buildStudioLookFilters(studioLook)` — returns filter array inserted into `buildEnhanceFilters` AFTER the base eq block (step 2.5), BEFORE cinematic curves.
+- Natural: `curves` toe lift (0→0.03), `unsharp=9:9:0.25:0:0:0` (clarity, luma-only), `eq=brightness=0.02:contrast=1.05:saturation=1.03`.
+- Creator: stronger shadow lift (0→0.05), `unsharp=7:7:0.40`, `eq=brightness=0.03:contrast=1.09:saturation=1.06:gamma=1.05`.
+- Studio: strong toe lift (0→0.07) + warm skin-tone curve (`r` lift + `b` restraint in mid-tones) + `unsharp=9:9:0.50` + `eq=brightness=0.04:contrast=1.11:saturation=1.04:gamma=1.09`.
+- Wide-radius unsharp (7:9 luma-only) = clarity effect (macro local contrast) — NOT edge sharpening; preserves beard, pores, skin texture.
+- `buildEnhanceFilters` signature updated: 5th param `studioLook = "off"`. Route handler passes `studioLook` from query.
+- Display %: Natural=8, Creator=14, Studio=20. Contributes `studioLookPct × 0.30` to overallScore improvement.
+- `studioLookPct` added to `QualityReport` interface + `computeQualityReport`.
+- UI: 4-button selector (Off/Natural/Creator/Studio) + mode description text. Appears ABOVE Teeth Enhancement section.
+- **Why:** True per-region face analysis requires ML. Wide-radius clarity + tone curve toe lift + skin-tone R/B curve achieves professionally-lit portrait look reliably across all portrait content.
+
 ## Smart Teeth Enhancement (FFmpeg filter_complex — lumakey masking)
 - Uses `-filter_complex` + `lumakey` + `maskedmerge` NOT `-vf`. The old global `curves` approach produced visually identical output and was removed.
 - `buildTeethWhiteningComplex(preFilters, teethLevel)` builds the graph. Pre-filters (hqdn3d, eq, etc.) are stripped of `scale=` and applied first, then split(3) into base/mask/effect streams.
