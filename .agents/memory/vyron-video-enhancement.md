@@ -1,6 +1,6 @@
 ---
 name: VYRON Video Enhancement Engine
-description: Critical decisions and calibration constants for the AI Video Enhancement system (noise detection, filter chain, scoring).
+description: Critical decisions and calibration constants for the AI Video Enhancement system (noise detection, filter chain, scoring, auto-enable logic).
 ---
 
 ## Canvas size for pixel analysis
@@ -30,16 +30,23 @@ description: Critical decisions and calibration constants for the AI Video Enhan
 - **Why:** Applying unsharp before denoise amplifies grain and creates halos on skin edges.
 
 ## hqdn3d strength tiers (luma_spatial:chroma_spatial:luma_tmp:chroma_tmp)
-- "low" (noiseLabel Low): 1.5:1.5:3:3
-- "medium" (noiseLabel Medium): 3:3:6:6
-- "high" (noiseLabel High): 5:5:10:10
-- "extreme" (noiseLabel Extreme): 5:5:10:10 (same as high to avoid over-processing)
-- low_light base pass (no toggle): 1.5:1.5:3:3
+- "low" (noiseLabel Low/Very Low): 1.5:1.5:4:4
+- "medium" (noiseLabel Medium): 2.5:2.5:6:6
+- "high" (noiseLabel High): 3:3:8:8
+- "extreme" (noiseLabel Extreme): 3:3:8:8 (same as high — avoids over-smoothing)
+- low_light base pass (toggle off): 2.5:2.5:6:6 (medium — gamma lift amplifies grain)
+
+## Auto-enable noise reduction rule
+- clean_boost, low_light, social_sharp presets → noiseReduction ALWAYS auto-enabled.
+- Also forced at enhance time via `smartToggles` in `handleEnhance()`.
+- Cinematic and audio_cleaner presets do NOT auto-enable noise reduction.
+- **Why:** "Low" and "Very Low" noise was never triggering denoise; `anyNoise` previously excluded those tiers and all clean_boost/social_sharp branches had `noiseReduction: false`.
 
 ## noiseStrength must be passed as parameter to buildEnhanceFilters
 - buildEnhanceFilters(preset, toggles, noiseStrength) — third arg required.
 - Previously was missing: noiseStrength was undefined inside the function → always used weakest fallback.
 - Frontend sends: "low" | "medium" | "high" | "extreme" based on analysis.noiseLabel.
+- Very Low and Low both map to "low" tier.
 
 ## Score weights (overallScore)
 40% noise (100 - noiseLevel), 20% sharpness, 15% contrast, 15% exposure, 10% color.
@@ -51,8 +58,7 @@ description: Critical decisions and calibration constants for the AI Video Enhan
 - sharpnessGap × 0.11 (sharp effectiveness 55% × weight 20%)
 - contrastGap × 0.07 (contrast effectiveness 45% × weight 15%)
 - brightnessGap × 0.10 (brightness effectiveness 65% × weight 15%)
-- colorCorrection: +5 pts flat
-- audioCleanup: +3 pts flat
+- colorCorrection: +5 pts flat; audioCleanup: +3 pts flat
 
 ## noiseReductionPct (displayed %)
 - Uses denoiseRate based on noiseLabel: High/Extreme → 0.65, Medium → 0.50, Low → 0.25.

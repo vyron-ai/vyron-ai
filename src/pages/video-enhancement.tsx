@@ -512,8 +512,9 @@ function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
   const isBlurry       = analysis.sharpnessLabel === "Very Soft" || analysis.sharpnessLabel === "Soft";
   const isExtremeNoisy = analysis.noiseLabel === "Extreme";
   const isNoisy        = analysis.noiseLabel === "High";            // High → Noise Recovery
-  const isMedNoisy     = analysis.noiseLabel === "Medium";          // Medium → denoise toggle only
-  const anyNoise       = isExtremeNoisy || isNoisy || isMedNoisy;
+  const isMedNoisy     = analysis.noiseLabel === "Medium";          // Medium → balanced denoise
+  const isLowNoisy     = analysis.noiseLabel === "Low";             // Low → gentle denoise pass
+  const anyNoise       = isExtremeNoisy || isNoisy || isMedNoisy || isLowNoisy;
   const isDesat        = analysis.colorLabel === "Desaturated";
   const noAudio        = !analysis.audioPresent;
 
@@ -525,6 +526,7 @@ function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
   if (isExtremeNoisy)    issues.push("Extreme noise — heavy grain requires aggressive denoising");
   if (isNoisy)           issues.push("High noise — visible grain detected");
   if (isMedNoisy)        issues.push("Medium noise — grain present in flat areas / shadows");
+  if (isLowNoisy)        issues.push("Low noise — light grain detected, gentle denoise applied");
   if (isBlurry)          issues.push(`${analysis.sharpnessLabel} — sharpness recovery needed`);
   if (isFlat)            issues.push(`${analysis.contrastLabel} contrast — flat image depth`);
   if (isDesat)           issues.push("Desaturated — colors need boost");
@@ -615,6 +617,13 @@ function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
       noiseReduction: false,
       audioCleanup: analysis.audioPresent,
     };
+  }
+
+  // Auto-enable noise reduction for visual enhancement presets whenever noise is
+  // detected at any level (Very Low → Extreme). A gentle hqdn3d pass is harmless
+  // on clean video and removes the light grain that causes the "Low/Very Low" complaint.
+  if (presetId === "clean_boost" || presetId === "low_light" || presetId === "social_sharp") {
+    autoToggles = { ...autoToggles, noiseReduction: true };
   }
 
   const p = PRESETS.find(x => x.id === presetId)!;
@@ -1167,10 +1176,16 @@ export default function VideoEnhancementPage() {
     const activeToggles = overrideToggles ?? toggles;
     const activePreset  = overridePreset  ?? preset;
 
-    // Phase 5: Smart Denoise — if brightness correction is on, force noiseReduction to avoid grain
+    // Smart Denoise: force noise reduction for all visual enhancement presets.
+    // Even "Very Low" noise benefits from hqdn3d=1.5:1.5:4:4 and it's invisible on clean video.
+    // Manual override (user toggled off) is still respected — only auto-enables, never auto-disables.
+    const forceDenoisePreset =
+      activePreset === "clean_boost" ||
+      activePreset === "low_light"   ||
+      activePreset === "social_sharp";
     const smartToggles: Toggles = {
       ...activeToggles,
-      noiseReduction: activeToggles.brightness ? true : activeToggles.noiseReduction,
+      noiseReduction: activeToggles.noiseReduction || forceDenoisePreset,
     };
 
     // Pass noise strength so the server can select the right hqdn3d intensity

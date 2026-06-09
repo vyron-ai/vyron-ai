@@ -2652,15 +2652,15 @@ const ENHANCE_EQ = {
 };
 
 // noiseStrength tiers map directly to the user-facing noise analysis label:
-//   "low"     → noiseLabel "Low"     → hqdn3d=1.5:1.5:3:3  (gentle — preserves texture)
-//   "medium"  → noiseLabel "Medium"  → hqdn3d=3:3:6:6       (balanced — reduces grain on skin/walls)
-//   "high"    → noiseLabel "High"    → hqdn3d=5:5:10:10     (strong — clears shadows/backgrounds)
-//   "extreme" → noiseLabel "Extreme" → hqdn3d=5:5:10:10     (same — avoid over-processing artefacts)
+//   "low"     → noiseLabel "Low"/"Very Low"  → hqdn3d=1.5:1.5:4:4  (gentle — preserves skin texture)
+//   "medium"  → noiseLabel "Medium"          → hqdn3d=2.5:2.5:6:6  (balanced — clears flat-area grain)
+//   "high"    → noiseLabel "High"            → hqdn3d=3:3:8:8      (strong — removes shadow/wall grain)
+//   "extreme" → noiseLabel "Extreme"         → hqdn3d=3:3:8:8      (same as high — avoids over-smoothing)
 const HQDN3D = {
-  low:     "1.5:1.5:3:3",
-  medium:  "3:3:6:6",
-  high:    "5:5:10:10",
-  extreme: "5:5:10:10",
+  low:     "1.5:1.5:4:4",
+  medium:  "2.5:2.5:6:6",
+  high:    "3:3:8:8",
+  extreme: "3:3:8:8",
 };
 
 function buildEnhanceFilters(preset, toggles, noiseStrength = "medium") {
@@ -2675,8 +2675,9 @@ function buildEnhanceFilters(preset, toggles, noiseStrength = "medium") {
   if (toggles.noiseReduction) {
     filters.push(`hqdn3d=${HQDN3D[noiseStrength] ?? HQDN3D.medium}`);
   } else if (preset === "low_light") {
-    // low_light always needs a light base pass because gamma lift amplifies grain
-    filters.push(`hqdn3d=${HQDN3D.low}`);
+    // low_light always needs a medium-strength base pass: gamma lift amplifies grain
+    // so the "low" tier is not enough to suppress it visibly
+    filters.push(`hqdn3d=${HQDN3D.medium}`);
   }
 
   // ── 2. EQ (brightness / contrast / saturation / gamma) ───────────────────
