@@ -2679,10 +2679,18 @@ function buildEnhanceFilters(preset, toggles) {
   // ── Noise reduction ───────────────────────────────────────────────────────
   if (toggles.noiseReduction) {
     // hqdn3d: luma_spatial:chroma_spatial:luma_tmp:chroma_tmp
-    const str = preset === "low_light" ? "4:3:12:8" : "2.5:2:8:6";
+    // Three strength tiers driven by the client's real noise analysis:
+    //   extreme  → Noise >= 81  → aggressive denoising (skin/wall/shadow grain gone)
+    //   high     → Noise 61-80  → strong but preserves fine texture
+    //   medium   → Noise 41-60  → mild pass + temporal smoothing
+    // low_light preset always gets at least the "high" level because gamma lift amplifies grain
+    const str =
+      noiseStrength === "extreme"           ? "8:6:20:15"  :
+      noiseStrength === "high"              ? "5:4:14:10"  :
+      preset        === "low_light"         ? "4:3:12:8"   : "2.5:2:8:6";
     filters.push(`hqdn3d=${str}`);
   } else if (preset === "low_light") {
-    // low_light always denoises a little to control grain from gamma lift
+    // low_light always applies a base denoise pass to control grain from gamma lift
     filters.push("hqdn3d=2:1.5:6:4");
   }
 
@@ -2852,13 +2860,14 @@ app.post(
     }
 
     const {
-      preset         = "clean_boost",
+      preset          = "clean_boost",
       colorCorrection = "true",
-      brightness     = "true",
-      contrast       = "true",
-      sharpness      = "false",
-      noiseReduction = "false",
-      audioCleanup   = "false",
+      brightness      = "true",
+      contrast        = "true",
+      sharpness       = "false",
+      noiseReduction  = "false",
+      audioCleanup    = "false",
+      noiseStrength   = "medium",   // "medium" | "high" | "extreme"
     } = req.query ?? {};
 
     const toggles = {
