@@ -325,12 +325,13 @@ function fmtCodec(raw: string): string {
 }
 
 interface AIRecommendation {
-  presetId:    PresetId;
-  label:       string;
-  emoji:       string;
-  confidence:  number;
-  reasons:     string[];
-  autoToggles: Toggles;
+  presetId:       PresetId;
+  label:          string;
+  emoji:          string;
+  confidence:     number;
+  reasons:        string[];
+  autoToggles:    Toggles;
+  studioLookMode: "off" | "natural" | "creator" | "studio";
 }
 
 // ── AI Analysis engine ─────────────────────────────────────────────────────────
@@ -673,7 +674,17 @@ function computeRecommendation(analysis: VideoAnalysis): AIRecommendation {
   const p = PRESETS.find(x => x.id === presetId)!;
   const reasons = issues.length > 0 ? issues.slice(0, 4) : ["Good baseline — enhancement will polish and refine details"];
 
-  return { presetId, label: p.label, emoji: p.emoji, confidence, reasons, autoToggles };
+  // Studio Look auto-recommendation — based on lighting/contrast quality only.
+  // Dark + flat contrast = classic bad indoor/mobile lighting → full Studio mode.
+  // Dark only (has some contrast) = Natural (shadow lift without over-processing).
+  // Flat/dull but not dark = Creator (clarity + polish for content creation).
+  const studioLookMode: "off" | "natural" | "creator" | "studio" =
+    isDark && isFlat ? "studio" :
+    isDark           ? "natural" :
+    isFlat && analysis.exposureScore < 52 ? "creator" :
+    "off";
+
+  return { presetId, label: p.label, emoji: p.emoji, confidence, reasons, autoToggles, studioLookMode };
 }
 
 // ── Quality computation ────────────────────────────────────────────────────────
@@ -1397,9 +1408,14 @@ export default function VideoEnhancementPage() {
   // Phase 3: Auto Enhance — apply AI recommendation and start enhancement immediately
   const handleAutoEnhance = () => {
     if (!recommendation || !file) return;
-    const { autoToggles, presetId } = recommendation;
+    const { autoToggles, presetId, studioLookMode } = recommendation;
     setPreset(presetId);
     setToggles({ ...autoToggles });
+    // Apply auto Studio Look only when the engine found lighting issues.
+    // Never override a user's manual selection (studioLook !== "off").
+    if (studioLookMode && studioLookMode !== "off") {
+      setStudioLook(studioLookMode);
+    }
     setEnhancedUrl(null);
     setStatus("idle");
     handleEnhance(autoToggles, presetId);
@@ -2120,6 +2136,7 @@ export default function VideoEnhancementPage() {
               />
               {(enhancedUrl || isProcessing) && (
                 <VideoCard
+                  key={enhancedUrl ?? "enh-processing"}
                   label="Enhanced"
                   badge={
                     status === "done" && qualityReport

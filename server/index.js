@@ -2699,11 +2699,17 @@ function buildStudioLookFilters(studioLook) {
       "eq=brightness=0.03:contrast=1.09:saturation=1.06:gamma=1.05",
     ],
     studio: [
-      // Warm highlight lift (softbox simulation via FFmpeg built-in lighter preset)
-      "curves=preset=lighter",
-      // Full studio-grade exposure + contrast + saturation
-      "eq=brightness=0.04:contrast=1.12:saturation=1.08",
-      // High clarity — professional on-set sharpness (safe values)
+      // Shadow-lift curve — raises blacks and dark midtones only.
+      // Highlight protection: 0.85→0.86, 1→1 (whites untouched, no burn).
+      // Face shadow lift: 0→0.07 (fill-light effect), 0.2→0.27 (jaw/neck/eye shadows).
+      // Midtones barely touched (0.5→0.52) — skin tone identity preserved.
+      "curves=master='0/0.07 0.2/0.27 0.5/0.52 0.85/0.86 1/1'",
+      // Warm skin-tone balance — very subtle R lift + B restraint in midtones.
+      // Classic tungsten/softbox colour balance, no orange cast.
+      "curves=r='0/0 0.35/0.365 0.65/0.667 1/1':b='0/0 0.35/0.337 0.65/0.633 1/1'",
+      // Studio-grade eq — moderate lift, gamma for natural skin depth
+      "eq=brightness=0.04:contrast=1.12:saturation=1.08:gamma=1.07",
+      // Clarity — macro local contrast, safe luma-only values
       "unsharp=5:5:0.6",
     ],
   };
@@ -2714,6 +2720,26 @@ function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhi
   if (preset === "audio_cleaner") return [];
   const eq = ENHANCE_EQ[preset] ?? ENHANCE_EQ.clean_boost;
   const filters = [];
+
+  // ── 0. Deblock ────────────────────────────────────────────────────────────
+  // Removes DCT block artifacts from mobile/low-bitrate compression before any
+  // enhancement filter — ensures hqdn3d and eq operate on a clean signal, not
+  // on block-edge ringing. pp=hb/vb = H+V deblock via MPEG post-processing.
+  // Only applied for medium+ noise presets to avoid softening already-clean video.
+  const needsHeavyClean = preset === "deep_clean" || preset === "low_light" ||
+    noiseStrength === "medium" || noiseStrength === "high" || noiseStrength === "extreme";
+  if (needsHeavyClean) {
+    filters.push("pp=hb/vb");
+  }
+
+  // ── 0.5. Chroma noise reduction ───────────────────────────────────────────
+  // Targets the green/magenta chroma blotches from smartphone CMOS sensors.
+  // hqdn3d=0.5:1.5:3:6 — very low luma spatial (0.5) preserves facial detail;
+  // stronger chroma spatial (1.5) + temporal (6) cleans colour grain over time.
+  // Runs before the main denoise so the temporal pass works on colour-clean frames.
+  if (needsHeavyClean) {
+    filters.push("hqdn3d=0.5:1.5:3:6");
+  }
 
   // ── 1. DENOISE FIRST ─────────────────────────────────────────────────────
   // Noise must be removed before sharpening: applying unsharp to a noisy frame

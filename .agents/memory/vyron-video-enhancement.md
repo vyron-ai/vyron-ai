@@ -71,6 +71,21 @@ description: Critical decisions and calibration constants for the AI Video Enhan
 - Recommendation routing: medium/high/extreme noise **without** darkness → `deep_clean`. Dark + noisy → still `low_light`.
 - `forceDenoisePreset` includes `deep_clean` in both `computeRecommendation` post-process and `handleEnhance`.
 
+## VYRON Studio Clean Pipeline — full filter order
+Filter chain inside `buildEnhanceFilters` (in execution order):
+1. `pp=hb/vb` — deblock (H+V, libpostproc): only when needsHeavyClean (deep_clean, low_light, or noiseStrength medium/high/extreme)
+2. `hqdn3d=0.5:1.5:3:6` — chroma NR: low luma spatial, stronger chroma temporal; same needsHeavyClean gate
+3. main hqdn3d (preset-specific or noiseStrength-driven)
+4. eq (brightness/contrast/saturation/gamma)
+5. Smart Face Denoise (hqdn3d=2:2:6:6 + unsharp=3:3:0.2, noise>=medium)
+6. Smart Studio Look (mode filters)
+7. Cinematic curves+vignette (cinematic preset only)
+8. Sharpen (unsharp, safe chroma amount=0)
+9. scale=trunc(iw/2)*2:trunc(ih/2)*2
+
+**Why deblock before NR:** block artifact edges would be amplified by hqdn3d if not removed first.
+**Why chroma NR before main NR:** temporal chroma pass works on colour-clean frames.
+
 ## Smart Face Denoise (auto, noise >= Medium)
 - Inserts `hqdn3d=2:2:6:6` + `unsharp=3:3:0.2` at step 2.2 inside `buildEnhanceFilters` — AFTER base eq, BEFORE Studio Look.
 - Activated by `faceDenoise` query param (`"true"` / `"false"`). Frontend sends `faceDenoise=true` when `analysis.noiseLabel` is Medium / High / Extreme.
@@ -84,14 +99,16 @@ description: Critical decisions and calibration constants for the AI Video Enhan
 - Implemented in `buildStudioLookFilters(studioLook)` — returns filter array inserted into `buildEnhanceFilters` AFTER the base eq block (step 2.5), BEFORE cinematic curves.
 - Natural: `curves` toe lift (0→0.03), `unsharp=9:9:0.25:0:0:0` (clarity, luma-only), `eq=brightness=0.02:contrast=1.05:saturation=1.03`.
 - Creator: stronger shadow lift (0→0.05), `unsharp=7:7:0.40`, `eq=brightness=0.03:contrast=1.09:saturation=1.06:gamma=1.05`.
-- Studio: strong toe lift (0→0.07) + warm skin-tone curve (`r` lift + `b` restraint in mid-tones) + `unsharp=9:9:0.50` + `eq=brightness=0.04:contrast=1.11:saturation=1.04:gamma=1.09`.
+- Studio: custom shadow-lift curve `curves=master='0/0.07 0.2/0.27 0.5/0.52 0.85/0.86 1/1'` + warm R/B skin-tone curve + `eq=brightness=0.04:contrast=1.12:saturation=1.08:gamma=1.07` + `unsharp=5:5:0.6`. Highlights protected (0.85→0.86, 1→1). NEVER use `curves=preset=lighter` — it burns highlights.
 - **FFmpeg unsharp constraint:** NEVER pass explicit chroma params as 0 (e.g. `unsharp=9:9:0.5:0:0:0`). chroma_msize_x/y must be ≥3 and odd, or omitted entirely. `0` causes "Value out of range / chroma_size_x" crash. Safe forms: `unsharp=3:3:0.3` or `unsharp=5:5:0.6` (chroma omitted = defaults to luma values).
 - Wide-radius unsharp = clarity effect (macro local contrast) — NOT edge sharpening; preserves beard, pores, skin texture.
 - `buildEnhanceFilters` signature updated: 5th param `studioLook = "off"`. Route handler passes `studioLook` from query.
 - Display %: Natural=8, Creator=14, Studio=20. Contributes `studioLookPct × 0.30` to overallScore improvement.
 - `studioLookPct` added to `QualityReport` interface + `computeQualityReport`.
 - UI: 4-button selector (Off/Natural/Creator/Studio) + mode description text. Appears ABOVE Teeth Enhancement section.
-- **Why:** True per-region face analysis requires ML. Wide-radius clarity + tone curve toe lift + skin-tone R/B curve achieves professionally-lit portrait look reliably across all portrait content.
+- **Why:** True per-region face analysis requires ML. Wide-radius clarity + shadow-lift curve + skin-tone R/B curve achieves professionally-lit portrait look reliably across all portrait content.
+- `AIRecommendation.studioLookMode` computed in `computeRecommendation`: `isDark&&isFlat`→studio, `isDark`→natural, `isFlat&&exposureScore<52`→creator. Applied in `handleAutoEnhance` (never overrides manual user selection).
+- Enhanced VideoCard gets `key={enhancedUrl ?? "enh-processing"}` to force full remount on new export — prevents stale `hasError` state causing "preview not appearing" bug.
 
 ## Smart Teeth Enhancement (FFmpeg filter_complex — lumakey masking)
 - Uses `-filter_complex` + `lumakey` + `maskedmerge` NOT `-vf`. The old global `curves` approach produced visually identical output and was removed.
