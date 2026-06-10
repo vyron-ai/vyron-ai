@@ -2741,47 +2741,62 @@ function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhi
     filters.push("hqdn3d=0.5:1.5:3:6");
   }
 
-  // ── 1. DENOISE FIRST ─────────────────────────────────────────────────────
-  // Noise must be removed before sharpening: applying unsharp to a noisy frame
-  // amplifies grain, creates halos around skin edges, and destroys fine texture.
-  // Denoising first lets the sharpener work only on genuine content structure.
+  // ── 1. Temporal Denoise ───────────────────────────────────────────────────
+  // Main hqdn3d pass. Runs on the raw (deblocked, chroma-cleaned) signal —
+  // before any luma change. Lifting brightness or gamma before this pass
+  // multiplies noise by the same factor (gamma=1.65 → noise ×1.65).
   if (preset === "deep_clean") {
-    // Deep Clean always uses strong denoise — it is the defining feature of the preset.
-    // Fixed at hqdn3d=3:3:8:8 regardless of noiseStrength for consistent heavy removal.
     filters.push("hqdn3d=3:3:8:8");
   } else if (toggles.noiseReduction) {
     filters.push(`hqdn3d=${HQDN3D[noiseStrength] ?? HQDN3D.medium}`);
   } else if (preset === "low_light") {
-    // low_light always needs a medium-strength base pass: gamma lift amplifies grain
-    // so the "low" tier is not enough to suppress it visibly
+    // low_light has gamma=1.65: must denoise before that lift, not after.
     filters.push(`hqdn3d=${HQDN3D.medium}`);
   }
 
-  // ── 2. EQ (brightness / contrast / saturation / gamma) ───────────────────
-  const eqParts = [];
-  if (toggles.brightness)      eqParts.push(`brightness=${eq.brightness}`);
-  if (toggles.contrast)        eqParts.push(`contrast=${eq.contrast}`);
-  if (toggles.colorCorrection) {
-    eqParts.push(`saturation=${eq.saturation}`);
-    if (eq.gamma !== 1.0) eqParts.push(`gamma=${eq.gamma}`);
-  }
-  if (eqParts.length) filters.push(`eq=${eqParts.join(":")}`);
-
-  // ── 2.2. Smart Face Denoise ───────────────────────────────────────────────
-  // Lighter spatial-only hqdn3d pass targeting facial grain.
-  // Runs after base eq so corrections don't re-introduce chroma noise;
-  // runs before Studio Look so tone curves work on a cleaner signal.
-  // Activated automatically when noise >= Medium (determined by frontend analysis).
+  // ── 1.5. Face temporal denoise ────────────────────────────────────────────
+  // Second, lighter hqdn3d pass targeting residual facial / skin grain.
+  // Deliberately placed BEFORE any exposure change: if brightness/gamma runs
+  // first, the residual noise is amplified and this pass has to work much harder,
+  // leaving visible sandy texture on skin, walls, and shadows.
   if (faceDenoise) {
     filters.push("hqdn3d=2:2:6:6");
-    filters.push("unsharp=3:3:0.2");
   }
 
-  // ── 2.5. Smart Studio Look ────────────────────────────────────────────────
-  // Applied after base eq so the studio tone curves work on already-corrected values.
-  // Shadow lift + clarity (wide unsharp) + optional skin tone curve (studio mode).
+  // ── 2. Color Correction (saturation only) ─────────────────────────────────
+  // Chroma-only adjustment — does not affect luma noise level.
+  // Safe to run after all denoise passes and before the luma lift.
+  const ccParts = [];
+  if (toggles.colorCorrection) {
+    ccParts.push(`saturation=${eq.saturation}`);
+  }
+  if (ccParts.length) filters.push(`eq=${ccParts.join(":")}`);
+
+  // ── 3. Exposure Recovery (brightness + contrast + gamma) ──────────────────
+  // Luma adjustments happen ONLY after ALL denoise passes are complete.
+  // Raising brightness before denoise amplifies grain by the same factor;
+  // raising contrast spreads the variance; gamma=1.65 on low_light scales noise
+  // to 1.65× its original amplitude. Post-denoise recovery reveals clean pixels.
+  const expParts = [];
+  if (toggles.brightness) expParts.push(`brightness=${eq.brightness}`);
+  if (toggles.contrast)   expParts.push(`contrast=${eq.contrast}`);
+  if (toggles.colorCorrection && eq.gamma !== 1.0) expParts.push(`gamma=${eq.gamma}`);
+  if (expParts.length) filters.push(`eq=${expParts.join(":")}`);
+
+  // ── 4. Studio Look ────────────────────────────────────────────────────────
+  // Tone curves and skin-balance applied after exposure recovery so the shadow-
+  // lift curve works on correctly-exposed values, not dark raw signal.
   if (studioLook && studioLook !== "off") {
     buildStudioLookFilters(studioLook).forEach(f => filters.push(f));
+  }
+
+  // ── 5. Face Preserve (definition recovery) ───────────────────────────────
+  // Gentle positive unsharp at fine radius — recovers eye, eyebrow, and beard
+  // micro-detail softened by the two hqdn3d passes. Runs after exposure so the
+  // sharpener operates on the final luma level, not an artificially dark signal.
+  // Luma only (no chroma sharpening); amount intentionally conservative (0.2).
+  if (faceDenoise) {
+    filters.push("unsharp=3:3:0.2");
   }
 
   // ── 3. Cinematic colour grade + vignette ─────────────────────────────────

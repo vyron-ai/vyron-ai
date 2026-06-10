@@ -71,18 +71,23 @@ description: Critical decisions and calibration constants for the AI Video Enhan
 - Recommendation routing: medium/high/extreme noise **without** darkness → `deep_clean`. Dark + noisy → still `low_light`.
 - `forceDenoisePreset` includes `deep_clean` in both `computeRecommendation` post-process and `handleEnhance`.
 
-## VYRON Studio Clean Pipeline — full filter order
+## VYRON Studio Clean Pipeline — full filter order (MANDATORY — do not reorder)
 Filter chain inside `buildEnhanceFilters` (in execution order):
-1. `pp=hb/vb` — deblock (H+V, libpostproc): only when needsHeavyClean (deep_clean, low_light, or noiseStrength medium/high/extreme)
-2. `hqdn3d=0.5:1.5:3:6` — chroma NR: low luma spatial, stronger chroma temporal; same needsHeavyClean gate
-3. main hqdn3d (preset-specific or noiseStrength-driven)
-4. eq (brightness/contrast/saturation/gamma)
-5. Smart Face Denoise (hqdn3d=2:2:6:6 + unsharp=3:3:0.2, noise>=medium)
-6. Smart Studio Look (mode filters)
-7. Cinematic curves+vignette (cinematic preset only)
-8. Sharpen (unsharp, safe chroma amount=0)
-9. scale=trunc(iw/2)*2:trunc(ih/2)*2
+1. `pp=hb/vb` — deblock (needsHeavyClean gate)
+2. `hqdn3d=0.5:1.5:3:6` — chroma NR (needsHeavyClean gate)
+3. main hqdn3d — temporal denoise (preset/noiseStrength driven)
+4. `hqdn3d=2:2:6:6` — face temporal denoise (faceDenoise gate) ← BEFORE any eq
+5. `eq=saturation` only — color correction (chroma-safe, no luma change)
+6. `eq=brightness:contrast:gamma` — exposure recovery (ALL denoise done first)
+7. Studio Look (tone curves work on correctly-exposed values)
+8. `unsharp=3:3:0.2` — face preserve / definition recovery (faceDenoise gate)
+9. Cinematic curves+vignette (cinematic preset only)
+10. `unsharp=X:X:Y:X:X:0` — sharpen localized (per-preset)
+11. `scale=trunc(iw/2)*2:trunc(ih/2)*2`
 
+**CRITICAL:** Steps 3+4 (ALL hqdn3d) MUST run before steps 5+6 (any eq luma change).
+low_light has gamma=1.65, brightness=0.20 — applying these before denoise multiplies noise ×1.65.
+Eq is split into two passes: saturation-only first (chroma safe), then brightness+contrast+gamma.
 **Why deblock before NR:** block artifact edges would be amplified by hqdn3d if not removed first.
 **Why chroma NR before main NR:** temporal chroma pass works on colour-clean frames.
 
