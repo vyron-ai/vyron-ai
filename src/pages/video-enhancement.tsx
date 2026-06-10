@@ -141,6 +141,9 @@ interface VideoAnalysis {
   overallScore:    number;
   framesAnalyzed:  number;
   teethDetected:   boolean;
+  // Face bounding box in normalised (0-1) coords — from YCrCb skin-tone scan.
+  // Used server-side for region-aware denoise (gentle inside face, strong outside).
+  faceBounds?:     { nx: number; ny: number; nw: number; nh: number };
 }
 
 // ── Raw per-frame metrics ──────────────────────────────────────────────────────
@@ -345,6 +348,60 @@ interface ProbeOverrides {
   audioCodec:  string;
 }
 
+// ── YCrCb skin-tone face ROI detection ────────────────────────────────────────
+// Scans one canvas frame using the Chai & Ngan YCrCb thresholds.
+// Returns normalised (0-1) face bounding box padded by 18% for hair/chin/ears.
+// Returns null when skin coverage is < 4% (no subject) or bounds are implausible.
+function detectFaceROI(
+  data: Uint8ClampedArray,
+  W: number,
+  H: number,
+): { nx: number; ny: number; nw: number; nh: number } | null {
+  // Scan the inner 90 % of the frame — avoids letterbox bars and hard background edges
+  const xMin = Math.floor(W * 0.05), xMax = Math.ceil(W * 0.95);
+  const yMin = Math.floor(H * 0.03), yMax = Math.ceil(H * 0.93);
+
+  let bx1 = W, by1 = H, bx2 = 0, by2 = 0, skinCount = 0;
+
+  for (let y = yMin; y < yMax; y++) {
+    for (let x = xMin; x < xMax; x++) {
+      const i = (y * W + x) * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      // BT.601 RGB → YCrCb
+      const Y  =  0.299 * r + 0.587 * g + 0.114 * b;
+      const Cr = (r - Y) * 0.713 + 128;
+      const Cb = (b - Y) * 0.564 + 128;
+      // Chai & Ngan skin-tone range (covers most ethnicities under indoor / natural light)
+      if (Y > 40 && Cr >= 133 && Cr <= 177 && Cb >= 77 && Cb <= 127) {
+        skinCount++;
+        if (x < bx1) bx1 = x;
+        if (y < by1) by1 = y;
+        if (x > bx2) bx2 = x;
+        if (y > by2) by2 = y;
+      }
+    }
+  }
+
+  const scanArea = (xMax - xMin) * (yMax - yMin);
+  // Need ≥ 4 % skin pixels in the scanned region for a credible face detection
+  if (skinCount / scanArea < 0.04 || bx2 <= bx1 || by2 <= by1) return null;
+
+  // 18 % padding to include hair, forehead, chin, ears
+  const pw = Math.round((bx2 - bx1) * 0.18);
+  const ph = Math.round((by2 - by1) * 0.18);
+  const px1 = Math.max(0, bx1 - pw);
+  const py1 = Math.max(0, by1 - ph);
+  const px2 = Math.min(W - 1, bx2 + pw);
+  const py2 = Math.min(H - 1, by2 + ph);
+
+  const rw = (px2 - px1) / W;
+  const rh = (py2 - py1) / H;
+  // Reject implausible detections: too small (noise) or too large (background wall)
+  if (rw < 0.08 || rh < 0.08 || rw > 0.92 || rh > 0.92) return null;
+
+  return { nx: px1 / W, ny: py1 / H, nw: rw, nh: rh };
+}
+
 async function analyzeVideoFrame(
   videoUrl: string,
   file: File,
@@ -408,14 +465,23 @@ async function analyzeVideoFrame(
         // ── Multi-frame sampling: 5 evenly-distributed seek points ────────
         const POINTS = [0.10, 0.30, 0.50, 0.70, 0.90];
         const samples: FrameMetrics[] = [];
+        // Pixel data from the middle sample (50 % point) used for face ROI detection.
+        // Captured here to avoid a redundant seek — reuses the frame already drawn.
+        let faceDetectPixels: Uint8ClampedArray | null = null;
 
-        for (const pt of POINTS) {
-          const seekTo = Math.max(0.05, Math.min(dur - 0.05, dur * pt));
+        for (let ptIdx = 0; ptIdx < POINTS.length; ptIdx++) {
+          const seekTo = Math.max(0.05, Math.min(dur - 0.05, dur * POINTS[ptIdx]));
           await new Promise<void>((done) => {
             const st = setTimeout(() => { vid.removeEventListener("seeked", onS); done(); }, 4_000);
             const onS = () => {
               clearTimeout(st);
-              try { ctx.drawImage(vid, 0, 0, W, H); samples.push(analyzeFramePixels(ctx.getImageData(0, 0, W, H).data, W, H)); }
+              try {
+                ctx.drawImage(vid, 0, 0, W, H);
+                const imgData = ctx.getImageData(0, 0, W, H);
+                samples.push(analyzeFramePixels(imgData.data, W, H));
+                // Reuse middle frame (50 % into video) for face ROI skin detection
+                if (ptIdx === 2) faceDetectPixels = imgData.data;
+              }
               catch { /* skip bad frame */ }
               done();
             };
@@ -523,6 +589,13 @@ async function analyzeVideoFrame(
         // across frames so one clear frame is enough to confirm detection.
         const teethDetected = avg.teethDensity > 0.030;
 
+        // Face ROI: skin-tone scan of the middle frame.
+        // Passed to the server for region-aware denoise (gentle inside face, strong
+        // outside) — prevents wax-doll / plastic skin while cleaning backgrounds.
+        const faceBounds = faceDetectPixels
+          ? detectFaceROI(faceDetectPixels, W, H)
+          : null;
+
         resolve({
           width: realW, height: realH,
           resolution: realW && realH ? `${realW}×${realH}` : "Unknown",
@@ -536,6 +609,7 @@ async function analyzeVideoFrame(
           overallScore: Math.max(10, Math.min(99, overallScore)),
           framesAnalyzed: samples.length,
           teethDetected,
+          ...(faceBounds ? { faceBounds } : {}),
         });
       } catch {
         clearTimeout(globalTimer);
@@ -1300,6 +1374,18 @@ export default function VideoEnhancementPage() {
         analysis?.noiseLabel === "Extreme"
       ),
     });
+
+    // Pass face ROI bounds when the skin-tone detector found a subject.
+    // The server uses these normalised coordinates to build a two-stream
+    // filter_complex: light temporal-only denoise inside the face, strong
+    // spatial+temporal denoise outside — eliminates wax-doll effect.
+    if (analysis?.faceBounds) {
+      const { nx, ny, nw, nh } = analysis.faceBounds;
+      params.set("faceBoundsNX", nx.toFixed(4));
+      params.set("faceBoundsNY", ny.toFixed(4));
+      params.set("faceBoundsNW", nw.toFixed(4));
+      params.set("faceBoundsNH", nh.toFixed(4));
+    }
 
     const xhr = new XMLHttpRequest();
     xhrRef.current = xhr;

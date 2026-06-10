@@ -2877,6 +2877,138 @@ function buildTeethWhiteningComplex(preFilters, teethLevel) {
   return graph;
 }
 
+// ── VYRON Face Preserve — region-aware filter_complex ─────────────────────────
+// Builds a filter_complex graph that applies different denoise strength inside
+// and outside the detected face region:
+//   • Outside face (background, walls): strong spatial+temporal hqdn3d
+//   • Inside face:  temporal-only hqdn3d=0:0:5:5 (spatial=0 → no pore/beard blur)
+//                   + unsharp=3:3:0.4 micro-contrast (eyes, brows, beard definition)
+//
+// faceBounds contains normalised (0-1) coordinates from the frontend YCrCb scan.
+// FFmpeg crop/overlay use iw/ih expressions so the graph is resolution-independent.
+// If teethActive, the teeth whitening maskedmerge is chained after face preserve.
+function buildFacePreserveComplex(
+  preset,
+  toggles,
+  noiseStrength,
+  studioLook,
+  faceBounds,   // { nx, ny, nw, nh } — normalised 0-1
+  teethLevel,   // "off"|"low"|"medium"|"high"
+  teethActive   // boolean
+) {
+  const eq = ENHANCE_EQ[preset] ?? ENHANCE_EQ.clean_boost;
+  const needsHeavyClean = preset === "deep_clean" || preset === "low_light" ||
+    ["medium","high","extreme"].includes(noiseStrength);
+
+  // ── Pre-denoise (deblock + chroma NR) — applied to both streams ──────────
+  const preFilters = [];
+  if (needsHeavyClean) {
+    preFilters.push("pp=hb/vb");
+    preFilters.push("hqdn3d=0.5:1.5:3:6");
+  }
+  const preChain = preFilters.length > 0 ? `${preFilters.join(",")},` : "";
+
+  // ── Background: full spatial+temporal denoise ─────────────────────────────
+  const bgDenoise =
+    preset === "deep_clean"  ? "hqdn3d=3:3:8:8" :
+    toggles.noiseReduction   ? `hqdn3d=${HQDN3D[noiseStrength] ?? HQDN3D.medium}` :
+    preset === "low_light"   ? `hqdn3d=${HQDN3D.medium}` : null;
+
+  // ── Post-denoise chain: color correction → exposure → studio → sharpen ────
+  const post = [];
+  // Color correction (saturation only — chroma safe, no luma change)
+  if (toggles.colorCorrection) post.push(`eq=saturation=${eq.saturation}`);
+  // Exposure recovery (luma AFTER all denoise to avoid amplifying grain)
+  const expP = [];
+  if (toggles.brightness) expP.push(`brightness=${eq.brightness}`);
+  if (toggles.contrast)   expP.push(`contrast=${eq.contrast}`);
+  if (toggles.colorCorrection && eq.gamma !== 1.0) expP.push(`gamma=${eq.gamma}`);
+  if (expP.length) post.push(`eq=${expP.join(":")}`);
+  // Studio Look
+  if (studioLook && studioLook !== "off") {
+    buildStudioLookFilters(studioLook).forEach(f => post.push(f));
+  }
+  // Cinematic grade
+  if (preset === "cinematic") {
+    post.push("curves=r='0/0 0.45/0.48 1/0.97':g='0/0 0.5/0.5 1/1':b='0/0.04 0.5/0.53 1/1.04'");
+    post.push("vignette=angle=PI/5:mode=forward");
+  }
+  // Localised sharpen (not global — tied to preset / user toggle)
+  if (preset === "deep_clean") {
+    const amt = toggles.sharpness ? 0.5 : 0.3;
+    post.push(`unsharp=3:3:${amt}:3:3:0`);
+  } else if (toggles.sharpness) {
+    const amt = preset === "social_sharp" ? 2.0 : 1.2;
+    post.push(`unsharp=5:5:${amt}:5:5:0`);
+  } else if (preset === "social_sharp") {
+    post.push("unsharp=3:3:0.8:3:3:0");
+  }
+
+  // ── Face crop/overlay FFmpeg expressions (even-pixel rounding for yuv420p) ─
+  // In crop context  → iw/ih  = dimensions of the stream being cropped (full frame)
+  // In overlay context → main_w/main_h = dimensions of the background stream
+  const { nx, ny, nw, nh } = faceBounds;
+  const cW = `trunc(${nw}*iw/2)*2`;
+  const cH = `trunc(${nh}*ih/2)*2`;
+  const cX = `trunc(${nx}*iw/2)*2`;
+  const cY = `trunc(${ny}*ih/2)*2`;
+  const oX = `trunc(${nx}*main_w/2)*2`;
+  const oY = `trunc(${ny}*main_h/2)*2`;
+
+  const scaleFilter = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
+
+  // ── Build graph ────────────────────────────────────────────────────────────
+  let graph = "";
+  let curLabel = "";
+
+  if (bgDenoise) {
+    // Two-stream split: background uses strong hqdn3d, face region uses temporal only
+    graph += `[0:v]${preChain}split=2[_bg_src][_face_src];`;
+    // Background: strong spatial+temporal denoise — walls, floors, clothing
+    graph += `[_bg_src]${bgDenoise}[_bg_denoised];`;
+    // Face region: temporal-only (spatial=0 → pores/beard/brows untouched)
+    //   hqdn3d=0:0:5:5 — zero luma spatial, zero chroma spatial, temporal=5
+    //   unsharp=3:3:0.4 — micro-contrast to recover eye/eyebrow/beard/lip definition
+    graph += `[_face_src]crop=${cW}:${cH}:${cX}:${cY},hqdn3d=0:0:5:5,unsharp=3:3:0.4[_face_proc];`;
+    // Overlay lightly-processed face onto strongly-denoised background
+    graph += `[_bg_denoised][_face_proc]overlay=${oX}:${oY}[_merged];`;
+    curLabel = "_merged";
+  } else {
+    // No denoise active — pre-filters only
+    if (preFilters.length > 0) {
+      graph += `[0:v]${preFilters.join(",")}[_pre_only];`;
+      curLabel = "_pre_only";
+    } else {
+      curLabel = "0:v";
+    }
+  }
+
+  // Apply post-denoise chain if any
+  if (post.length > 0) {
+    graph += `[${curLabel}]${post.join(",")}[_post_out];`;
+    curLabel = "_post_out";
+  }
+
+  // ── Teeth whitening (chained after face preserve, before scale) ───────────
+  if (teethActive) {
+    const TW = {
+      low:    { sat: 0.92, bright: 0.05 },
+      medium: { sat: 0.85, bright: 0.10 },
+      high:   { sat: 0.75, bright: 0.15 },
+    };
+    const { sat, bright } = TW[teethLevel] ?? TW.low;
+    graph += `[${curLabel}]split=3[_tw_base][_tw_sm][_tw_se];`;
+    graph += `[_tw_se]hue=s=${sat},eq=brightness=${bright}[_tw_white];`;
+    graph += `[_tw_sm]lumakey=threshold=0.0:tolerance=0.50:softness=0.20,alphaextract[_tw_mask];`;
+    graph += `[_tw_base][_tw_white][_tw_mask]maskedmerge[_tw_out];`;
+    graph += `[_tw_out]${scaleFilter}[v]`;
+  } else {
+    graph += `[${curLabel}]${scaleFilter}[v]`;
+  }
+
+  return graph;
+}
+
 // ── POST /api/preview/video — transcode any input to browser-safe H.264 ───────
 app.post(
   "/api/preview/video",
@@ -3040,6 +3172,12 @@ app.post(
       teethDetected   = "false",    // "true" | "false" — from canvas analysis
       studioLook      = "off",      // "off" | "natural" | "creator" | "studio"
       faceDenoise     = "false",    // "true" | "false" — auto-derived from noise analysis
+      // Face ROI bounds — normalised 0-1 coords from frontend YCrCb skin detection.
+      // Present only when a face was detected with sufficient confidence (≥ 4% skin).
+      faceBoundsNX    = null,
+      faceBoundsNY    = null,
+      faceBoundsNW    = null,
+      faceBoundsNH    = null,
     } = req.query ?? {};
 
     const toggles = {
@@ -3061,24 +3199,65 @@ app.post(
       }
     };
 
+    // ── Validate face bounds ─────────────────────────────────────────────────
+    // Parse normalised bounds sent by the frontend. Accept only when all four
+    // params are present, the region is large enough to be a real face (≥ 8 %
+    // of frame), and the box stays within the frame boundary.
+    let parsedFaceBounds = null;
+    if (faceBoundsNX !== null && faceBoundsNY !== null &&
+        faceBoundsNW !== null && faceBoundsNH !== null) {
+      const nx = parseFloat(faceBoundsNX);
+      const ny = parseFloat(faceBoundsNY);
+      const nw = parseFloat(faceBoundsNW);
+      const nh = parseFloat(faceBoundsNH);
+      if (
+        !isNaN(nx) && !isNaN(ny) && !isNaN(nw) && !isNaN(nh) &&
+        nx >= 0 && ny >= 0 &&
+        nw >= 0.08 && nh >= 0.08 &&          // too small = noise / false positive
+        nx + nw <= 1.0 && ny + nh <= 1.0      // must stay within frame
+      ) {
+        parsedFaceBounds = { nx, ny, nw, nh };
+      }
+    }
+
+    // Face preserve is active when: face detected + noise is medium+ + video preset
+    const facePreserveActive =
+      parsedFaceBounds !== null &&
+      faceDenoise === "true" &&
+      preset !== "audio_cleaner";
+
     try {
       writeFileSync(inputPath, req.body);
 
-      // Build base filter chain (teeth whitening handled separately via filter_complex)
+      // Build base filter chain (used for simple path + teeth-only path)
       const baseFilters   = buildEnhanceFilters(preset, toggles, noiseStrength, "off", studioLook, faceDenoise === "true");
       const teethActive   = teethWhitening !== "off" && teethDetected === "true";
       const args = ["-y", "-i", inputPath];
 
-      if (teethActive) {
-        // Use filter_complex: lumakey mask ensures correction only hits bright
-        // near-white pixels (teeth zone). Lips, skin, gums, shadows are untouched.
+      if (facePreserveActive) {
+        // ── Face Preserve path: region-aware filter_complex ──────────────────
+        // Two-stream graph: strong hqdn3d for background, temporal-only for face.
+        // Teeth whitening is chained inside the same graph if also active.
+        const complexGraph = buildFacePreserveComplex(
+          preset, toggles, noiseStrength, studioLook,
+          parsedFaceBounds, teethWhitening, teethActive
+        );
+        args.push("-filter_complex", complexGraph);
+        args.push("-map", "[v]", "-map", "0:a:0?");
+        res.setHeader("X-Vyron-Face-Preserve", "true");
+        res.setHeader("X-Vyron-Teeth-Applied", teethActive ? "true" : "off");
+      } else if (teethActive) {
+        // ── Teeth-only path: lumakey maskedmerge filter_complex ───────────────
+        // lumakey mask ensures correction only hits bright near-white pixels.
+        // Lips, skin, gums, and shadows are untouched.
         const complexGraph = buildTeethWhiteningComplex(baseFilters, teethWhitening);
         args.push("-filter_complex", complexGraph);
         // [v] is the labelled output from buildTeethWhiteningComplex
         args.push("-map", "[v]", "-map", "0:a:0?");
         res.setHeader("X-Vyron-Teeth-Applied", "true");
+        res.setHeader("X-Vyron-Face-Preserve", "none-detected");
       } else {
-        // Standard simple filter chain
+        // ── Standard simple filter chain ──────────────────────────────────────
         args.push("-map", "0:v:0", "-map", "0:a:0?");
         const vFilterChain = baseFilters.length > 0
           ? baseFilters.join(",")
@@ -3088,6 +3267,7 @@ app.post(
           "X-Vyron-Teeth-Applied",
           teethWhitening !== "off" ? "none-detected" : "off"
         );
+        res.setHeader("X-Vyron-Face-Preserve", "none-detected");
       }
       // libx264 + yuv420p is required for in-browser playback across all browsers
       args.push(

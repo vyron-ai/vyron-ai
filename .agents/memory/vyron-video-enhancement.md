@@ -91,9 +91,17 @@ Eq is split into two passes: saturation-only first (chroma safe), then brightnes
 **Why deblock before NR:** block artifact edges would be amplified by hqdn3d if not removed first.
 **Why chroma NR before main NR:** temporal chroma pass works on colour-clean frames.
 
-## Smart Face Denoise (auto, noise >= Medium)
-- Inserts `hqdn3d=2:2:6:6` + `unsharp=3:3:0.2` at step 2.2 inside `buildEnhanceFilters` — AFTER base eq, BEFORE Studio Look.
-- Activated by `faceDenoise` query param (`"true"` / `"false"`). Frontend sends `faceDenoise=true` when `analysis.noiseLabel` is Medium / High / Extreme.
+## VYRON Face Preserve (region-aware denoise, noise >= Medium)
+- **Activation:** `faceDenoise="true"` + valid `faceBoundsNX/NY/NW/NH` query params + `preset !== "audio_cleaner"`
+- **Frontend detection:** `detectFaceROI(data,W,H)` — YCrCb scan of the middle frame (50% point), Chai & Ngan thresholds (Y>40, Cr 133–177, Cb 77–127), 18% padding, 4% skin coverage min, bounds clamped to [0.08, 0.92].
+- **Server path:** `buildFacePreserveComplex()` — filter_complex with two streams:
+  - Background: `hqdn3d=STRONG` (strong spatial+temporal, walls/backgrounds)
+  - Face crop: `hqdn3d=0:0:5:5` (zero spatial — pores/beard/brows untouched) + `unsharp=3:3:0.4` (micro-contrast)
+  - Merged via `overlay=trunc(nx*main_w/2)*2:trunc(ny*main_h/2)*2`
+- **Teeth whitening** chained inside the same filter_complex graph when both are active.
+- **Fallback:** if face not detected → simple -vf path (no regression). If teeth only → existing `buildTeethWhiteningComplex`.
+- **Server validation:** nw/nh ≥ 0.08, nx+nw ≤ 1.0, ny+nh ≤ 1.0 — rejects false positives.
+- **Key constraint:** `hqdn3d=0:0:5:5` spatial=0 is the critical setting — prevents wax-doll by not blurring within-frame texture.
 - `buildEnhanceFilters` 6th param: `faceDenoise = false`.
 - No UI toggle — fully automatic. `QualityReport.faceDenoiseApplied: boolean` drives report display.
 - Report shows "Applied" / "Not Applied" status metric + SummaryItem "Smart Face Denoise Applied" when active.
