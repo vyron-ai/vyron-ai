@@ -2783,6 +2783,25 @@ function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhi
   if (toggles.colorCorrection && eq.gamma !== 1.0) expParts.push(`gamma=${eq.gamma}`);
   if (expParts.length) filters.push(`eq=${expParts.join(":")}`);
 
+  // ── 3.5. Highlight Roll-Off ───────────────────────────────────────────────
+  // Gentle luma S-curve that compresses the top 28 % of the brightness range.
+  // Protects skin highlights from harsh blown-out appearance under direct or
+  // ring-light conditions. The curve is identity (y = x) for all values below
+  // 0.72 — midtones, shadows, and most skin tones are completely untouched.
+  // Applied AFTER exposure recovery so the roll-off acts on the final corrected
+  // signal; applying it on a boosted (low_light) signal before this step would
+  // undo the exposure recovery. Excluded for cinematic which manages its own
+  // highlight treatment through dedicated R/G/B channel curves.
+  //   0.72 → 0.72  identity threshold (72 % brightness = no change)
+  //   0.82 → 0.79  bright highlights softened by 3 %
+  //   0.92 → 0.87  very bright skin softened by 5 %
+  //   1.00 → 0.92  blown-out whites roll off to 92 % (preserves texture)
+  if (preset !== "cinematic") {
+    filters.push(
+      "curves=luma='0/0 0.5/0.5 0.72/0.72 0.82/0.79 0.92/0.87 1/0.92'"
+    );
+  }
+
   // ── 4. Studio Look ────────────────────────────────────────────────────────
   // Tone curves and skin-balance applied after exposure recovery so the shadow-
   // lift curve works on correctly-exposed values, not dark raw signal.
@@ -2824,6 +2843,20 @@ function buildEnhanceFilters(preset, toggles, noiseStrength = "medium", teethWhi
   } else if (preset === "social_sharp") {
     filters.push("unsharp=3:3:0.8:3:3:0");
   }
+
+  // ── 5.5. Film Grain — recompression protection ────────────────────────────
+  // Injects subtle noise into the luma channel before platform upload.
+  // TikTok, Reels, and Shorts re-encode at CRF 23-28 (H.264/H.265) and
+  // aggressively block-compress flat uniform regions into large DCT blocks.
+  // Adding micro-variation in those areas forces the platform encoder to
+  // allocate more bits and preserve texture instead of crushing it.
+  //   alls=8   — strength 8 on a 0-64 scale; below perceptual threshold
+  //              but material for the encoder (≈ 2 % of signal range)
+  //   allf=t+u — temporal (frame-varying seed, not a static pattern) +
+  //              uniform distribution → organic film-grain character rather
+  //              than regular digital noise tiles
+  // Applied last before scale so sharpening does NOT amplify the grain.
+  filters.push("noise=alls=8:allf=t+u");
 
   // ── 6. Ensure even pixel dimensions (required for yuv420p / libx264) ─────
   filters.push("scale=trunc(iw/2)*2:trunc(ih/2)*2");
@@ -2924,6 +2957,12 @@ function buildFacePreserveComplex(
   if (toggles.contrast)   expP.push(`contrast=${eq.contrast}`);
   if (toggles.colorCorrection && eq.gamma !== 1.0) expP.push(`gamma=${eq.gamma}`);
   if (expP.length) post.push(`eq=${expP.join(":")}`);
+  // Highlight Roll-Off — same position as in buildEnhanceFilters (after exposure,
+  // before Studio Look). Identity below 0.72; gentle shoulder above to protect
+  // skin highlights. Excluded for cinematic (has its own channel-grade curves).
+  if (preset !== "cinematic") {
+    post.push("curves=luma='0/0 0.5/0.5 0.72/0.72 0.82/0.79 0.92/0.87 1/0.92'");
+  }
   // Studio Look
   if (studioLook && studioLook !== "off") {
     buildStudioLookFilters(studioLook).forEach(f => post.push(f));
@@ -2943,6 +2982,9 @@ function buildFacePreserveComplex(
   } else if (preset === "social_sharp") {
     post.push("unsharp=3:3:0.8:3:3:0");
   }
+  // Film Grain — added after sharpen so sharpening does not amplify the grain.
+  // Same parameters as buildEnhanceFilters for consistent platform protection.
+  post.push("noise=alls=8:allf=t+u");
 
   // ── Face crop/overlay FFmpeg expressions (even-pixel rounding for yuv420p) ─
   // In crop context  → iw/ih  = dimensions of the stream being cropped (full frame)

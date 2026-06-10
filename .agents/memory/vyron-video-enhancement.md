@@ -71,6 +71,12 @@ description: Critical decisions and calibration constants for the AI Video Enhan
 - Recommendation routing: medium/high/extreme noise **without** darkness → `deep_clean`. Dark + noisy → still `low_light`.
 - `forceDenoisePreset` includes `deep_clean` in both `computeRecommendation` post-process and `handleEnhance`.
 
+## VYRON Highlight Roll-Off + Film Grain
+- **Highlight Roll-Off:** `curves=luma='0/0 0.5/0.5 0.72/0.72 0.82/0.79 0.92/0.87 1/0.92'` — identity below 0.72, gentle shoulder above; excluded for `cinematic` preset (has own channel curves). Position: step 3.5 (after exposure eq, before Studio Look).
+- **Film Grain:** `noise=alls=8:allf=t+u` — all channels strength 8/64, temporal+uniform. Position: step 5.5 (after sharpen, before scale). Applied in BOTH `buildEnhanceFilters` AND `buildFacePreserveComplex` post chain.
+- **Why grain before scale not after:** scale resampling would soften the grain pattern. Scale must remain the absolute last step.
+- **Cinematic exclusion for Roll-Off:** cinematic grade has `r=1→0.97,b=1→1.04` highlight treatment — double-compressing highlights would break the look intent.
+
 ## VYRON Studio Clean Pipeline — full filter order (MANDATORY — do not reorder)
 Filter chain inside `buildEnhanceFilters` (in execution order):
 1. `pp=hb/vb` — deblock (needsHeavyClean gate)
